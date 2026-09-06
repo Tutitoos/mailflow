@@ -28,6 +28,8 @@ Mailflow es un cliente de correo personal, open source y self-hosted. Su objetiv
 | Archivos | CDN local sobre un volumen persistente |
 | Despliegue | Docker Compose |
 
+El commit del monorepo identifica toda la aplicación propia. Los repositorios externos, si llegan a ser necesarios, se fijarán de forma reproducible mediante [`deploy/repos.lock`](deploy/repos.lock).
+
 ## Primera versión
 
 La primera versión se centrará en Gmail y cubrirá:
@@ -46,6 +48,7 @@ Las funciones de productividad avanzada, Android, colaboración, calendarios e I
 - [Arquitectura](docs/architecture.md)
 - [Diseño Gmail × Vercel](docs/design.md)
 - [Roadmap](docs/roadmap.md)
+- [Flujo Git y repos.lock](docs/git-workflow.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)
 

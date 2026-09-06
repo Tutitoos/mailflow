@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mailflow: Create Branch"
+  short_description: "Create a policy-compliant Mailflow branch"
+  default_prompt: "Use $mailflow-create-branch to create a safe branch for this Mailflow change."

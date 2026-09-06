@@ -1,0 +1,6 @@
+# External repositories used by Mailflow.
+# path<TAB>SSH remote<TAB>40-character commit
+#
+# Mailflow is a monorepo, so its own commit must never be listed here. The
+# deployed root SHA identifies all first-party apps, services, and packages.
+# Add entries only when an external source repository must be checked out.

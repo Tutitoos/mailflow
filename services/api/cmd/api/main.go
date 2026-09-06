@@ -11,6 +11,7 @@ import (
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
 	getsentry "github.com/getsentry/sentry-go"
 )
 
@@ -30,6 +31,10 @@ func main() {
 	runtimeConfig, err := config.Load()
 	if err != nil {
 		logger.Error("configuration failed", "event", "config.invalid", "error", err)
+		os.Exit(1)
+	}
+	if err := privileges.Drop(); err != nil {
+		logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
 		os.Exit(1)
 	}
 	var options platformapp.Options

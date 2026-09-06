@@ -1,0 +1,16 @@
+[package]
+name = "mailflow-desktop"
+version = "0.1.0"
+description = "Mailflow for macOS"
+authors = ["Mailflow contributors"]
+edition = "2024"
+rust-version = "1.85"
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

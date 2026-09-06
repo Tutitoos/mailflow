@@ -187,6 +187,6 @@ Atajos iniciales: `/` buscar, `c` redactar, `j/k` navegar, `Enter` abrir, `r` re
 
 ## Validación visual
 
-Las regresiones visuales cubrirán 1440 × 900, 1280 × 800, 1024 × 768, 768 × 1024, 390 × 844 e iPad en ambas orientaciones.
+Las pruebas responsive cubrirán exactamente seis viewports: 1440 × 900, 1280 × 800, 1024 × 768, 768 × 1024, 430 × 932 y 390 × 844.
 
 Se probarán bandejas vacías y densas, mensajes leídos/no leídos, selección múltiple, textos largos, adjuntos, sidebar plegada, rail abierto, compositor en sus tres estados, HTML complejo, imágenes bloqueadas, offline, error y navegación mediante teclado.

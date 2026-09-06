@@ -1,0 +1,14 @@
+.git
+.github
+.codex
+.agents
+node_modules
+**/node_modules
+**/dist
+**/target
+**/gen
+data
+backups
+deploy/secrets
+*.log
+*.tsbuildinfo

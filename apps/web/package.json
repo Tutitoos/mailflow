@@ -1,0 +1,38 @@
+{
+  "name": "@mailflow/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@lexical/react": "0.50.0",
+    "@tanstack/react-query": "5.102.8",
+    "@tanstack/react-virtual": "3.14.10",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lexical": "0.50.0",
+    "lucide-react": "1.41.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router": "8.3.1",
+    "tailwind-merge": "3.6.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "28.0.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.0"
+  }
+}

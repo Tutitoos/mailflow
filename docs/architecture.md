@@ -10,7 +10,7 @@ Mailflow será una aplicación personal y self-hosted. La arquitectura prioriza 
 Internet
    │
    ▼
-Gateway Caddy ─────► SPA React
+Traefik ───────────► SPA React
    ├───────────────► Better Auth (Bun)
    ├───────────────► API Fiber (Go)
    └───────────────► WebSocket / CDN
@@ -22,19 +22,20 @@ Gateway Caddy ─────► SPA React
                 └──── Worker Go ────┘
 ```
 
-Docker Compose ejecutará siete servicios:
+Docker Compose ejecutará ocho servicios:
 
 | Servicio | Responsabilidad |
 | --- | --- |
-| `gateway` | TLS interno, rutas, cabeceras y entrega de la SPA |
+| `traefik` | HTTPS, ACME, rutas, límites y cabeceras |
+| `web` | Distribución inmutable de la SPA |
 | `auth` | Better Auth y sesiones |
 | `api` | API REST, WebSocket y CDN local |
 | `worker` | Sincronización, reintentos y trabajos programados |
 | `postgres` | Correo normalizado, configuración, traducciones y observabilidad |
 | `redis` | Colas, locks por cuenta y coordinación entre API y worker |
-| `backup` | Exportación diaria con `pg_dump` y Restic |
+| `backup` | Restic sobre volcados consistentes preparados por el worker; nunca lee el directorio de datos PostgreSQL en uso |
 
-Cloudflare Tunnel podrá publicar el gateway mediante HTTPS, pero no será un requisito del código.
+La configuración de producción expondrá únicamente Traefik en los puertos 80 y 443.
 
 ## Monorepo previsto
 
@@ -51,7 +52,7 @@ packages/
   api-client/
 openapi/
 deploy/
-  compose/
+  compose.yml
   repos.lock
 ```
 
@@ -82,7 +83,7 @@ services/api/
   cmd/
     api/
     worker/
-  modules/
+  internal/modules/
     authbridge/
     accounts/
     mail/
@@ -94,7 +95,7 @@ services/api/
     logs/
     admin/
     settings/
-  platform/
+  internal/platform/
     config/
     crypto/
     database/
@@ -137,15 +138,13 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 - OAuth configurado por la propia instalación.
 - Gmail API.
 - Sincronización inicial e incremental mediante historial.
-- Notificaciones mediante Pub/Sub.
-- Renovación de suscripciones y reconciliación periódica.
+- Polling incremental adaptativo y reconciliación diaria.
 
 ### Microsoft
 
 - OAuth configurado por la instalación.
 - Microsoft Graph.
-- Delta queries y webhooks.
-- Reconciliación ante notificaciones perdidas.
+- Delta queries mediante polling adaptativo y reconciliación diaria.
 
 ### iCloud e IMAP
 
@@ -189,9 +188,10 @@ Mailflow tendrá observabilidad local y sencilla.
 - Logs JSON con `slog`, emitidos a stdout e insertados por lotes en PostgreSQL.
 - Retención de métricas y logs de 30 días.
 - Prohibido registrar cuerpos, asuntos, destinatarios, tokens o URLs firmadas.
-- Sentry será opcional y solo se activará si existe un DSN.
-- El módulo Sentry usará el adaptador oficial para Fiber v3.
-- No se usarán Prometheus, Grafana, Loki ni trazas distribuidas.
+- Los SDK oficiales enviarán eventos a la ingesta compatible integrada en Mailflow.
+- Fiber usará el adaptador oficial Sentry para capturar errores del transporte cuando exista un DSN.
+- Eventos, trazas, perfiles y Replay tendrán retenciones separadas y cargas grandes en el namespace Sentry del CDN local.
+- No se usarán Prometheus, Grafana, Loki ni R2.
 
 ## Backups
 
@@ -203,4 +203,4 @@ Un job diario realizará:
 4. Limpieza según retención.
 5. Registro del resultado en el panel.
 
-El destino Restic será configurable. Los snapshots de Proxmox podrán complementar este proceso, pero estarán fuera del alcance de Mailflow.
+Restic respaldará tanto un destino NAS/disco como uno S3 compatible, con restauraciones periódicas verificadas.

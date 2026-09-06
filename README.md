@@ -1,49 +1,66 @@
 # Mailflow
 
-Mailflow es un cliente de correo personal, open source y self-hosted. Su objetivo es ofrecer una experiencia de correo familiar y eficiente, con la estructura de Gmail y un lenguaje visual oscuro, sobrio y preciso inspirado en Vercel.
+Mailflow is a personal, open-source and self-hosted email client. It combines a familiar, high-density mail structure with a restrained, dark visual language inspired by Vercel.
 
 > [!IMPORTANT]
-> Mailflow está en fase de planificación. Este repositorio contiene por ahora la arquitectura, la especificación de diseño y el roadmap; todavía no incluye una aplicación ejecutable.
+> Mailflow is under active development. The current foundation includes an interactive web shell, the macOS Tauri host, Better Auth service, modular Fiber API, worker, initial database migration, OpenAPI contract, Docker Compose and CI.
 
-## Principios
+## Principles
 
-- Personal primero: una instancia y un usuario.
-- Self-hosted: los mensajes, credenciales, métricas, logs y archivos permanecen en la instalación.
-- Multicuenta: Gmail, Microsoft y, posteriormente, iCloud e IMAP/SMTP genérico.
-- Multiplataforma: web y macOS primero; iPhone y iPad después.
-- Interfaz rápida: alta densidad, teclado, pocas animaciones y accesibilidad WCAG 2.2 AA.
-- Sin negocio alrededor: no hay suscripciones, planes premium ni telemetría obligatoria.
+- Personal first: one installation and one user.
+- Self-hosted: mail, credentials, metrics, logs and files remain under the owner's control.
+- Multi-account: Google, Microsoft and iCloud/generic IMAP and SMTP.
+- Multi-platform: web and macOS for 1.0; iPhone and iPad afterwards.
+- Fast by design: dense information, keyboard access, restrained motion and WCAG 2.2 AA.
+- No product tiers, subscriptions or mandatory telemetry.
 
-## Stack previsto
+## Stack
 
 | Área | Tecnología |
 | --- | --- |
 | Web | TypeScript 7, Bun, React Router, Tailwind CSS, shadcn/ui |
 | Escritorio | Tauri reutilizando la aplicación web |
 | iOS/iPadOS | SwiftUI y GRDB/SQLite |
-| API | Go 1.25+, Fiber v3, pgx, sqlc y Goose |
+| API | Go 1.26+, Fiber v3, pgx, sqlc and Goose |
 | Autenticación | Better Auth |
 | Datos | PostgreSQL |
 | Colas | Redis y worker Go |
 | Archivos | CDN local sobre un volumen persistente |
 | Despliegue | Docker Compose |
 
-El commit del monorepo identifica toda la aplicación propia. Los repositorios externos, si llegan a ser necesarios, se fijarán de forma reproducible mediante [`deploy/repos.lock`](deploy/repos.lock).
+The root commit identifies every first-party component. If source repositories become necessary later, [`deploy/repos.lock`](deploy/repos.lock) will pin them reproducibly without ever referencing this monorepo itself.
 
-## Primera versión
+## Run the current foundation
 
-La primera versión se centrará en Gmail y cubrirá:
+Requirements: Bun 1.4, Go 1.26, Rust 1.85+ and Docker.
 
-- Conexión y sincronización de cuentas.
-- Bandeja unificada y carpetas por cuenta.
-- Lectura, búsqueda y acciones básicas.
-- Redacción, respuesta, reenvío y adjuntos.
-- Aplicación web y aplicación macOS con Tauri.
-- Panel personal para estado, sincronización, métricas, logs y traducciones.
+```bash
+bun install
+bun run dev
+```
 
-Las funciones de productividad avanzada, Android, colaboración, calendarios e IA quedan fuera del primer alcance.
+The web application is available at `http://127.0.0.1:4310`. Run the complete local verification suite with:
 
-## Documentación
+```bash
+make check
+```
+
+For Compose, copy `deploy/.env.example`, create the four files documented in `deploy/secrets/README.md`, and run Docker Compose from the repository root.
+
+## Version 1.0
+
+The first stable version covers:
+
+- Google, Microsoft and iCloud/IMAP account connection and synchronization.
+- Unified inbox and account-scoped folders without cross-account thread merging.
+- Reading, local search, actions, drafts, sending and attachments.
+- Web and signed/notarized macOS applications.
+- A local Admin area for health, queues, metrics, logs, Sentry, translations and backups.
+- English and Spanish, with English as the default and fallback language.
+
+Advanced productivity features, Android, collaboration, calendars and AI remain outside 1.0.
+
+## Documentation
 
 - [Arquitectura](docs/architecture.md)
 - [Diseño Gmail × Vercel](docs/design.md)
@@ -52,10 +69,10 @@ Las funciones de productividad avanzada, Android, colaboración, calendarios e I
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)
 
-## Estado
+## Status
 
-`planning` — documentación inicial y decisiones de producto.
+`foundation` — the platform skeleton and interactive product shell are runnable; provider synchronization and persistence are not implemented yet.
 
-## Licencia
+## License
 
-Mailflow se publica bajo la [GNU Affero General Public License v3.0](LICENSE).
+Mailflow is released under the [GNU Affero General Public License v3.0](LICENSE).

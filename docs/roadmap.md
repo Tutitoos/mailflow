@@ -7,7 +7,7 @@ El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedor
 - Monorepo y convenciones.
 - Validación de `deploy/repos.lock` para dependencias fuente externas.
 - Docker Compose.
-- Caddy, PostgreSQL y Redis.
+- Traefik, PostgreSQL y Redis.
 - Contrato OpenAPI 3.1.
 - Tokens visuales y shell Gmail × Vercel con datos ficticios.
 
@@ -19,7 +19,13 @@ El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedor
 - Modelos de cuenta, conversación, mensaje y carpeta.
 - WebSocket y cliente TypeScript generado.
 
-## Fase 2 — Gmail y web
+## Fase 2 — Dominio de correo
+
+- Modelo normalizado, FTS y repositorios.
+- Interfaces de proveedor y transporte.
+- Acciones idempotentes, borradores, worker, locks y CDN local.
+
+## Fase 3 — Gmail y web
 
 - OAuth local de Google.
 - Sincronización completa e incremental.
@@ -28,27 +34,18 @@ El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedor
 - Adjuntos mediante CDN local.
 - Primera versión web utilizable.
 
-## Fase 3 — Operación personal
+## Fase 4 — Operación personal
 
 - Métricas y logs en PostgreSQL.
-- Sentry opcional.
+- Ingesta Sentry, issues, releases, alertas, tracing, perfiles y Replay.
 - Catálogo de traducciones en base de datos.
 - Panel Admin.
 - Backups diarios con Restic.
 
-## Fase 4 — macOS
-
-- Empaquetado Tauri.
-- Caché SQLite.
-- Keychain y notificaciones.
-- Atajos y menús nativos.
-- DMG firmado, notarizado y updater.
-
 ## Fase 5 — Microsoft
 
 - OAuth local de Microsoft.
-- Microsoft Graph.
-- Delta queries y webhooks.
+- Microsoft Graph y Delta queries.
 - Pruebas con Outlook y Microsoft 365.
 
 ## Fase 6 — iCloud e IMAP
@@ -58,7 +55,21 @@ El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedor
 - IMAP IDLE y polling de respaldo.
 - Matriz de compatibilidad con servidores genéricos.
 
-## Fase 7 — iPhone y iPad
+## Fase 7 — macOS
+
+- Empaquetado Tauri.
+- Caché SQLite.
+- Keychain y notificaciones.
+- Atajos y menús nativos.
+- DMG firmado, notarizado y updater.
+
+## Fase 8 — Release 1.0
+
+- Imágenes GHCR AMD64/ARM64, SBOM, firma y provenance.
+- Firma, notarización, updater y DMG universal.
+- Backups y restauración, instalación y rollback documentados.
+
+## Después de 1.0 — iPhone y iPad
 
 - SwiftUI y GRDB.
 - Caché local y Keychain.

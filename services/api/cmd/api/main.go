@@ -19,11 +19,11 @@ var version = "dev"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := privileges.Drop(); err != nil {
-		logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
-		os.Exit(1)
-	}
 	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		if err := privileges.Drop(); err != nil {
+			logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
+			os.Exit(1)
+		}
 		response, err := http.Get("http://127.0.0.1:8080/health/live")
 		if err != nil || response.StatusCode != http.StatusOK {
 			fmt.Fprintln(os.Stderr, "API healthcheck failed")
@@ -35,6 +35,10 @@ func main() {
 	runtimeConfig, err := config.Load()
 	if err != nil {
 		logger.Error("configuration failed", "event", "config.invalid", "error", err)
+		os.Exit(1)
+	}
+	if err := privileges.Drop(); err != nil {
+		logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
 		os.Exit(1)
 	}
 	var options platformapp.Options

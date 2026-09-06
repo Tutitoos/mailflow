@@ -43,3 +43,5 @@ backups/
 
 # Logs
 *.log
+# External repositories materialized from deploy/repos.lock
+/external/

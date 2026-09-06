@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mailflow: Create Commit"
+  short_description: "Create and verify a focused Mailflow commit"
+  default_prompt: "Use $mailflow-create-commit to review and commit the current Mailflow changes."

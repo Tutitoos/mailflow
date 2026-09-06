@@ -5,6 +5,7 @@ El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedor
 ## Fase 0 — Fundación
 
 - Monorepo y convenciones.
+- Validación de `deploy/repos.lock` para dependencias fuente externas.
 - Docker Compose.
 - Caddy, PostgreSQL y Redis.
 - Contrato OpenAPI 3.1.

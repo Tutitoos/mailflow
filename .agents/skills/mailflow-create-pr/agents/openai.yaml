@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mailflow: Create PR"
+  short_description: "Publish a verified Mailflow pull request"
+  default_prompt: "Use $mailflow-create-pr to push this Mailflow branch and open a verified pull request."

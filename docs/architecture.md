@@ -52,7 +52,26 @@ packages/
 openapi/
 deploy/
   compose/
+  repos.lock
 ```
+
+## Reproducibilidad con `repos.lock`
+
+Mailflow seguirá siendo un monorepo. El SHA del repositorio raíz fija conjuntamente `web`, `desktop`, `ios`, `api`, `auth`, los paquetes compartidos y la configuración de despliegue.
+
+`deploy/repos.lock` no incluirá esos componentes ni el propio repositorio. Su única función será fijar cualquier repositorio fuente externo que resulte imprescindible en el futuro mediante tres campos separados por tabuladores:
+
+```text
+external/<name>    git@github.com:<owner>/<repo>.git    <40-character-sha>
+```
+
+- `scripts/repos-lock.sh validate` valida el formato sin acceder a la red.
+- `scripts/repos-lock.sh verify` exige que cada checkout externo exista, tenga el remoto y SHA fijados, y esté limpio.
+- `scripts/repos-lock.sh clone-missing` clona únicamente los repositorios ausentes. Nunca resetea, cambia de commit ni sobrescribe un checkout existente.
+- `external/` está ignorado por el Git raíz; no se usarán submódulos ni gitlinks.
+- Toda actualización del lock debe ser explícita, contener SHAs completos y revisarse junto con el cambio que la necesita.
+
+Mientras no existan dependencias fuente externas, el lock permanecerá válidamente vacío. Las imágenes de contenedor se fijarán por digestos en la configuración de despliegue, no en `repos.lock`.
 
 ## API modular
 

@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: Mailflow API
+  version: 0.1.0
+  description: Stable public contract shared by the web, desktop and future Swift clients.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /accounts:
+    get:
+      operationId: listAccounts
+      responses:
+        "200":
+          description: Connected accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+  /accounts/{accountId}/sync:
+    post:
+      operationId: synchronizeAccount
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { description: Synchronization queued }
+        default: { $ref: "#/components/responses/Problem" }
+  /threads:
+    get:
+      operationId: listThreads
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of conversations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadPage"
+  /threads/{threadId}:
+    get:
+      operationId: getThread
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Conversation and messages
+        default: { $ref: "#/components/responses/Problem" }
+  /search:
+    get:
+      operationId: searchMail
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: Search results }
+  /actions:
+    post:
+      operationId: createMailAction
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { description: Action accepted }
+        default: { $ref: "#/components/responses/Problem" }
+  /drafts:
+    post:
+      operationId: saveDraft
+      responses:
+        "200": { description: Draft saved }
+  /send:
+    post:
+      operationId: sendMessage
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { description: Message queued for delivery }
+        default: { $ref: "#/components/responses/Problem" }
+  /attachments/{attachmentId}:
+    get:
+      operationId: downloadAttachment
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Attachment stream }
+        default: { $ref: "#/components/responses/Problem" }
+  /translations/{locale}:
+    get:
+      operationId: getTranslations
+      security: []
+      parameters:
+        - name: locale
+          in: path
+          required: true
+          schema: { type: string, enum: [en, es] }
+      responses:
+        "200": { description: Translation catalog with English fallback }
+  /admin/status:
+    get:
+      operationId: getAdminStatus
+      responses:
+        "200": { description: Operational status }
+  /admin/metrics:
+    get:
+      operationId: getAdminMetrics
+      responses:
+        "200": { description: Internal metric series }
+  /admin/logs:
+    get:
+      operationId: getAdminLogs
+      responses:
+        "200": { description: Redacted structured logs }
+  /admin/sentry:
+    get:
+      operationId: getSentryIssues
+      responses:
+        "200": { description: Grouped Sentry issues }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+  responses:
+    Problem:
+      description: RFC 9457 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Account:
+      type: object
+      required: [id, provider, displayName, syncState]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, enum: [google, microsoft, imap] }
+        displayName: { type: string }
+        syncState: { type: string, enum: [pending, syncing, idle, error] }
+    ThreadPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { type: object } }
+        nextCursor: { type: [string, "null"] }
+    Problem:
+      type: object
+      required: [type, title, status, code, detail, requestId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }

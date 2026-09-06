@@ -1,0 +1,170 @@
+name: mailflow
+
+services:
+  traefik:
+    image: traefik:v3.5
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/acme
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=Host(`${MAILFLOW_DOMAIN}`)
+      - traefik.http.routers.web.entrypoints=websecure
+      - traefik.http.routers.web.tls.certresolver=letsencrypt
+      - traefik.http.services.web.loadbalancer.server.port=8080
+    depends_on:
+      api: { condition: service_healthy }
+      auth: { condition: service_healthy }
+    restart: unless-stopped
+
+  auth:
+    build:
+      context: ..
+      dockerfile: services/auth/Dockerfile
+    environment:
+      PORT: "3001"
+      BETTER_AUTH_URL: https://${MAILFLOW_DOMAIN}
+      BETTER_AUTH_SECRET_FILE: /run/secrets/better_auth_secret
+      MAILFLOW_BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: mailflow
+      POSTGRES_DB: mailflow
+      TRUSTED_ORIGINS: https://${MAILFLOW_DOMAIN}
+    secrets: [better_auth_secret, bootstrap_token, postgres_password]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.auth.rule=Host(`${MAILFLOW_DOMAIN}`) && PathPrefix(`/api/auth`)
+      - traefik.http.routers.auth.entrypoints=websecure
+      - traefik.http.routers.auth.tls.certresolver=letsencrypt
+      - traefik.http.services.auth.loadbalancer.server.port=3001
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    environment:
+      MAILFLOW_API_ADDRESS: :8080
+      AUTH_JWKS_URL: http://auth:3001/api/auth/jwks
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: mailflow
+      POSTGRES_DB: mailflow
+    secrets: [postgres_password]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`${MAILFLOW_DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls.certresolver=letsencrypt
+      - traefik.http.services.api.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD, /usr/local/bin/api, --healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      auth: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - mailflow-cdn:/data/cdn
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    entrypoint: [/usr/local/bin/worker]
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_ADDRESS: redis:6379
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - mailflow-cdn:/data/cdn
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: mailflow
+      POSTGRES_USER: mailflow
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U mailflow -d mailflow]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backup:
+    image: restic/restic:0.18.1
+    profiles: [backup]
+    entrypoint: [restic]
+    environment:
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+    secrets: [restic_password]
+    volumes:
+      # The worker writes a consistent pg_dump and manifest here. Restic must
+      # never copy PostgreSQL's live data directory.
+      - backup-staging:/backup/database:ro
+      - mailflow-cdn:/backup/cdn:ro
+      - ${BACKUP_PATH:-./backups}:/repository
+
+secrets:
+  better_auth_secret:
+    file: ./secrets/better_auth_secret
+  bootstrap_token:
+    file: ./secrets/bootstrap_token
+  postgres_password:
+    file: ./secrets/postgres_password
+  restic_password:
+    file: ./secrets/restic_password
+
+volumes:
+  traefik-acme:
+  postgres-data:
+  redis-data:
+  mailflow-cdn:
+  backup-staging:

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Mailflow: Review and Merge PR"
-  short_description: "Review, approve, or safely merge a Mailflow PR"
-  default_prompt: "Use $mailflow-review-merge-pr to review this Mailflow PR and merge it only when every gate passes."
+  display_name: "Mailflow: Manage PR"
+  short_description: "Manage checks, bots, reviews, and safe merges"
+  default_prompt: "Use $mailflow-review-merge-pr to manage this PR, including checks, CodeRabbit, and dependency updates."

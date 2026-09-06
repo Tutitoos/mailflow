@@ -1,6 +1,6 @@
 ---
 name: mailflow-create-pr
-description: "Publish a Mailflow pull request. Use when the user asks to push a branch, open a PR, or publish completed repository work for review."
+description: "Publish and shepherd a Mailflow pull request through GitHub checks and CodeRabbit review. Use when the user asks to push a branch, open a PR, or publish completed repository work for review."
 ---
 
 # Create a Mailflow pull request
@@ -14,6 +14,13 @@ Read `../../../docs/git-workflow.md` before acting.
 5. Build the title from the complete branch diff using Conventional Commits.
 6. Fill every applicable section of `.github/pull_request_template.md` with concrete evidence. Mark unrun validation honestly.
 7. Open a draft if work or required validation remains; otherwise open a ready PR targeting `main`.
-8. Re-read the created PR to verify base, head, title, body, state, and URL. Report those values plus the pushed commit SHA.
+8. Re-read the created PR to verify base, head, title, body, state, and URL.
+9. Continue with the post-publication review loop in `../mailflow-review-merge-pr/SKILL.md`, even when merge was not requested:
+   - Wait for GitHub Actions and CodeRabbit to finish reviewing the exact current head SHA.
+   - Inspect check failures, reviews, issue comments, inline comments, and unresolved threads rather than relying on the PR summary.
+   - Verify every finding against the code. Fix valid in-scope findings, validate, commit with `mailflow-create-commit`, push normally, and restart the loop for the new head.
+   - Reply with evidence and resolve a bot thread only after its finding is fixed or demonstrably inapplicable. Never blindly apply bot suggestions.
+   - Stop and report when a finding requires a material scope expansion, unavailable credentials, a repository setting, or user authority not already granted.
+10. Report the final reviewed head SHA, checks, CodeRabbit state, unresolved findings, and merge readiness. Distinguish an open reviewed PR from a merged PR.
 
 Creating a PR does not authorize approving, enabling auto-merge, or merging it.

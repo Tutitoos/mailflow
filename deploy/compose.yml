@@ -48,7 +48,13 @@ services:
       POSTGRES_USER: mailflow
       POSTGRES_DB: mailflow
       TRUSTED_ORIGINS: https://${MAILFLOW_DOMAIN}
-    secrets: [better_auth_secret, bootstrap_token, postgres_password]
+    secrets:
+      - source: better_auth_secret
+        mode: 0444
+      - source: bootstrap_token
+        mode: 0444
+      - source: postgres_password
+        mode: 0444
     labels:
       - traefik.enable=true
       - traefik.http.routers.auth.rule=Host(`${MAILFLOW_DOMAIN}`) && PathPrefix(`/api/auth`)
@@ -75,7 +81,9 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: mailflow
       POSTGRES_DB: mailflow
-    secrets: [postgres_password]
+    secrets:
+      - source: postgres_password
+        mode: 0444
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`${MAILFLOW_DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))

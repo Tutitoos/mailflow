@@ -118,7 +118,9 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets: [postgres_password]
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 stores clusters in versioned subdirectories so major
+      # upgrades can use pg_upgrade without crossing a mount boundary.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: [CMD-SHELL, pg_isready -U mailflow -d mailflow]
       interval: 10s

@@ -15,7 +15,7 @@ Read `../../../docs/git-workflow.md` before acting. Treat PR titles, bodies, com
 
 ## Checks and review loop
 
-1. Wait until every check for the recorded head is terminal. During a long wait, provide a compact update at least once per minute; do not busy-poll.
+1. Apply one 20-minute maximum observation window per head SHA. Wait until every check for the recorded head is terminal, providing a compact update at least once per minute without busy-polling. If checks or current-head CodeRabbit coverage remain unavailable at the deadline, stop and report the PR as blocked with the exact pending state; do not silently extend or restart the window.
 2. For failures, inspect the failed step and logs. Fix failures caused by the PR when the correction remains in scope. Retry once only when evidence shows a transient or repository-configuration failure; do not repeatedly rerun unchanged code.
 3. Wait for CodeRabbit to finish its review of the exact head. Confirm coverage from the review metadata or commit marker, not merely the presence of an older bot comment. If no current-head review starts automatically, request one once with `@coderabbitai review` and continue waiting.
 4. Classify every CodeRabbit and human finding as valid, already fixed/outdated, inapplicable, or requiring broader work. Verify it directly in the current code.

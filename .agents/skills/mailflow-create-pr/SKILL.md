@@ -16,6 +16,7 @@ Read `../../../docs/git-workflow.md` before acting.
 7. Open a draft if work or required validation remains; otherwise open a ready PR targeting `main`.
 8. Re-read the created PR to verify base, head, title, body, state, and URL.
 9. Continue with the post-publication review loop in `../mailflow-review-merge-pr/SKILL.md`, even when merge was not requested:
+   - Apply one 20-minute maximum observation window per head SHA. If checks or current-head CodeRabbit coverage are still unavailable when it expires, stop and report the PR as blocked with the exact pending state.
    - Wait for GitHub Actions and CodeRabbit to finish reviewing the exact current head SHA.
    - Inspect check failures, reviews, issue comments, inline comments, and unresolved threads rather than relying on the PR summary.
    - Verify every finding against the code. Fix valid in-scope findings, validate, commit with `mailflow-create-commit`, push normally, and restart the loop for the new head.

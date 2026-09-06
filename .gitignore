@@ -1,0 +1,45 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# JavaScript / Bun
+node_modules/
+.bun/
+dist/
+build/
+.react-router/
+
+# Go
+bin/
+coverage.out
+*.test
+
+# Rust / Tauri
+target/
+
+# Swift / Xcode
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local data
+data/
+backups/
+*.db
+*.sqlite
+*.sqlite3
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

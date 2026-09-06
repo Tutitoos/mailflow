@@ -110,6 +110,20 @@ services:
       - mailflow-cdn:/data/cdn
     restart: unless-stopped
 
+  postgres-preflight:
+    image: postgres:18-alpine
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        if [ -f /var/lib/postgresql/PG_VERSION ]; then
+          echo >&2 "Legacy PostgreSQL volume layout detected at /var/lib/postgresql."
+          echo >&2 "Run a documented pg_dump/restore or pg_upgrade migration before PostgreSQL 18."
+          exit 1
+        fi
+    volumes:
+      - postgres-data:/var/lib/postgresql:ro
+    restart: "no"
+
   postgres:
     image: postgres:18-alpine
     environment:
@@ -117,6 +131,8 @@ services:
       POSTGRES_USER: mailflow
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets: [postgres_password]
+    depends_on:
+      postgres-preflight: { condition: service_completed_successfully }
     volumes:
       # PostgreSQL 18 stores clusters in versioned subdirectories so major
       # upgrades can use pg_upgrade without crossing a mount boundary.

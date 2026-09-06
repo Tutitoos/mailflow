@@ -10,6 +10,7 @@ import (
 
 const nonRootID = 65532
 
+// Drop permanently switches a root process to Mailflow's unprivileged runtime identity.
 func Drop() error {
 	if os.Geteuid() != 0 {
 		return nil

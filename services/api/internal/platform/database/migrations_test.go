@@ -289,3 +289,53 @@ func TestMailSearchMigrationRebuildsAndRollsBackExistingIndex(t *testing.T) {
 		t.Fatalf("rolled-back search index: matches=%d error=%v", matches, err)
 	}
 }
+
+func TestSyncStateMigrationPreservesAndRollsBackExistingCursor(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 8); err != nil {
+		t.Fatalf("apply search migrations: %v", err)
+	}
+
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb758")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb759")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "sync-migration@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities) values ($1, $2, 'google', 'sync-migration', 'Personal', $3, $4, '{}')`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into sync_cursors (account_id, kind, cursor) values ($1, 'gmail', '{"historyId":"42"}')`, accountID); err != nil {
+		t.Fatalf("insert legacy cursor: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply sync migration: %v", err)
+	}
+
+	var kind, state, cursor string
+	var checkpoint, version int64
+	if err := database.QueryRowContext(ctx, `select kind, state, cursor::text, checkpoint, version from sync_cursors where account_id = $1`, accountID).Scan(&kind, &state, &cursor, &checkpoint, &version); err != nil {
+		t.Fatalf("load migrated cursor: %v", err)
+	}
+	if kind != "google_history" || state != "active" || cursor != `{"historyId": "42"}` || checkpoint != 0 || version != 1 {
+		t.Fatalf("migrated cursor = kind %q, state %q, value %q, checkpoint %d, version %d", kind, state, cursor, checkpoint, version)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 8); err != nil {
+		t.Fatalf("roll back sync migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select kind, cursor::text from sync_cursors where account_id = $1`, accountID).Scan(&kind, &cursor); err != nil {
+		t.Fatalf("load rolled-back cursor: %v", err)
+	}
+	if kind != "gmail" || cursor != `{"historyId": "42"}` {
+		t.Fatalf("rolled-back cursor = kind %q, value %q", kind, cursor)
+	}
+}

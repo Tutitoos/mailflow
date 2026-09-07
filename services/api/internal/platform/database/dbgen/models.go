@@ -226,10 +226,17 @@ type SentryIssue struct {
 }
 
 type SyncCursor struct {
-	AccountID pgtype.UUID        `json:"account_id"`
-	Kind      string             `json:"kind"`
-	Cursor    []byte             `json:"cursor"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	AccountID          pgtype.UUID        `json:"account_id"`
+	Kind               string             `json:"kind"`
+	Cursor             []byte             `json:"cursor"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	State              string             `json:"state"`
+	Checkpoint         int64              `json:"checkpoint"`
+	UidValidity        pgtype.Int8        `json:"uid_validity"`
+	Version            int64              `json:"version"`
+	LastSuccessAt      pgtype.Timestamptz `json:"last_success_at"`
+	InvalidatedAt      pgtype.Timestamptz `json:"invalidated_at"`
+	InvalidationReason pgtype.Text        `json:"invalidation_reason"`
 }
 
 type Thread struct {

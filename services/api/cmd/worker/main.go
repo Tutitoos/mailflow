@@ -81,6 +81,7 @@ func main() {
 	var cleanupDone chan struct{}
 	var schedulerDone chan struct{}
 	var actionDone chan struct{}
+	var metricsDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -94,6 +95,16 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		metricService := metrics.NewService(registry, pool, "worker")
+		metricsDone = make(chan struct{})
+		go func() {
+			defer close(metricsDone)
+			if metricErr := metricService.Run(ctx, func(metricErr error) {
+				logger.Error("metric persistence failed", "event", "metrics.persistence_failed", "error", metricErr)
+			}); metricErr != nil && !errors.Is(metricErr, context.Canceled) {
+				logger.Error("metric persistence stopped", "event", "metrics.persistence_stopped", "error", metricErr)
+			}
+		}()
 		accountService := accounts.NewService(accounts.NewRepository(queries, vault))
 		normalizer, err := mail.NewNormalizer(mail.DefaultMIMEPolicy())
 		if err != nil {
@@ -144,7 +155,11 @@ func main() {
 					for {
 						processed, processErr := actionProcessor.ProcessNext(ctx, userID)
 						if processErr != nil && !errors.Is(processErr, context.Canceled) {
+							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": "google", "operation": "apply", "result": "failure"})
 							logger.Error("mail action processing failed", "event", "mail.action_failed")
+						}
+						if processed && processErr == nil {
+							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": "google", "operation": "apply", "result": "success"})
 						}
 						if !processed || processErr != nil {
 							break
@@ -198,9 +213,13 @@ func main() {
 					return
 				}
 				if cleanupErr != nil {
+					_ = registry.Add("mailflow_cdn_cleanup_total", 1, map[string]string{"service": "worker", "module": "cdn", "operation": "cleanup", "result": "failure"})
 					logger.Error("CDN cleanup failed", "event", "cdn.cleanup_failed", "error", cleanupErr)
 					return
 				}
+				_ = registry.Add("mailflow_cdn_cleanup_total", 1, map[string]string{"service": "worker", "module": "cdn", "operation": "cleanup", "result": "success"})
+				_ = registry.Set("mailflow_cdn_expired_objects", string(metrics.Gauge), float64(result.Expired), map[string]string{"service": "worker", "module": "cdn"})
+				_ = registry.Set("mailflow_cdn_orphan_objects", string(metrics.Gauge), float64(result.Orphans), map[string]string{"service": "worker", "module": "cdn"})
 				logger.Info("CDN cleanup completed", "event", "cdn.cleanup_completed", "expired", result.Expired, "orphans", result.Orphans)
 			})
 		}()
@@ -222,6 +241,9 @@ func main() {
 	}
 	if actionDone != nil {
 		<-actionDone
+	}
+	if metricsDone != nil {
+		<-metricsDone
 	}
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)

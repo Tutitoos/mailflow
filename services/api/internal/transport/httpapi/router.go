@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
@@ -11,6 +13,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -37,6 +40,7 @@ type Dependencies struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         InboxReader
 	Mailboxes     MailboxLabelReader
+	Metrics       *metrics.Registry
 	Search        SearchReader
 	Threads       ThreadReader
 	Readiness     func(context.Context) error
@@ -101,9 +105,12 @@ func New(deps Dependencies) *fiber.App {
 		ErrorHandler:        problemHandler,
 	})
 	app.Use(recover.New(), requestid.New())
+	if deps.Metrics != nil {
+		app.Use(metricMiddleware(deps.Metrics))
+	}
 
-	app.Post("/sentry/api/1/envelope/", sentryIngest(deps.Sentry))
-	app.Post("/sentry/api/1/store/", sentryIngest(deps.Sentry))
+	app.Post("/sentry/api/1/envelope/", sentryIngest(deps.Sentry, deps.Metrics))
+	app.Post("/sentry/api/1/store/", sentryIngest(deps.Sentry, deps.Metrics))
 	if deps.CaptureSentry {
 		app.Use(fibersentry.New(fibersentry.Config{Repanic: true, WaitForDelivery: false}))
 	}
@@ -191,9 +198,83 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })
-	adminRoutes.Get("/metrics", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"items": deps.Admin.Metrics()}) })
+	adminRoutes.Get("/metrics", adminMetrics(deps.Admin))
 
 	return app
+}
+
+func metricMiddleware(registry *metrics.Registry) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		started := time.Now()
+		err := c.Next()
+		status := c.Response().StatusCode()
+		if err != nil {
+			status = metricErrorStatus(err)
+		}
+		result := "success"
+		if status >= 500 {
+			result = "server_error"
+		} else if status >= 400 {
+			result = "client_error"
+		}
+		labels := map[string]string{"service": "api", "module": "http", "operation": strings.ToLower(c.Method()), "result": result}
+		_ = registry.Add("mailflow_http_requests_total", 1, labels)
+		_ = registry.Observe("mailflow_http_request_duration_seconds", time.Since(started).Seconds(), labels)
+		return err
+	}
+}
+
+func metricErrorStatus(err error) int {
+	var problem *problemError
+	if errors.As(err, &problem) {
+		return problem.status
+	}
+	var fiberError *fiber.Error
+	if errors.As(err, &fiberError) {
+		return fiberError.Code
+	}
+	return fiber.StatusInternalServerError
+}
+
+func adminMetrics(service *admin.Service) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		now := time.Now().UTC()
+		resolution := metrics.Resolution(c.Query("resolution", string(metrics.Minute)))
+		from, err := metricTime(c.Query("from"), now.Add(-time.Hour))
+		if err != nil {
+			return invalidMetricsQuery()
+		}
+		until, err := metricTime(c.Query("until"), now.Add(time.Minute))
+		if err != nil {
+			return invalidMetricsQuery()
+		}
+		limit := metrics.DefaultQueryLimit
+		if raw := c.Query("limit"); raw != "" {
+			limit, err = strconv.Atoi(raw)
+			if err != nil {
+				return invalidMetricsQuery()
+			}
+		}
+		items, err := service.Metrics(c.Context(), metrics.Query{Resolution: resolution, Name: c.Query("name"), From: from, Until: until, Limit: limit})
+		if errors.Is(err, metrics.ErrInvalidMetric) {
+			return invalidMetricsQuery()
+		}
+		if err != nil {
+			return newProblem(fiber.StatusServiceUnavailable, "metrics_unavailable", "Metrics unavailable", "Metric series could not be loaded.")
+		}
+		return c.JSON(fiber.Map{"items": items})
+	}
+}
+
+func metricTime(raw string, fallback time.Time) (time.Time, error) {
+	if raw == "" {
+		return fallback, nil
+	}
+	return time.Parse(time.RFC3339, raw)
+}
+
+func invalidMetricsQuery() error {
+	return newProblem(fiber.StatusBadRequest, "invalid_metrics_query", "Invalid metrics query", "The requested resolution, range, name, or limit is invalid.")
 }
 
 func currentUserHandler(users authbridge.UserResolver) fiber.Handler {
@@ -228,17 +309,32 @@ func newProblem(status int, code, title, detail string) error {
 	return &problemError{status: status, code: code, title: title, detail: detail}
 }
 
-func sentryIngest(service *mailflowsentry.Service) fiber.Handler {
+func sentryIngest(service *mailflowsentry.Service, registry *metrics.Registry) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		receipt, err := service.Accept(c.Get("X-Sentry-Event-ID"), c.Body())
+		result := "success"
 		if errors.Is(err, mailflowsentry.ErrEnvelopeTooLarge) {
+			result = "rejected"
+			observeSentryIngest(registry, result, len(c.Body()))
 			return fiber.NewError(fiber.StatusRequestEntityTooLarge, err.Error())
 		}
 		if err != nil {
+			result = "failure"
+			observeSentryIngest(registry, result, len(c.Body()))
 			return err
 		}
+		observeSentryIngest(registry, result, len(c.Body()))
 		return c.Status(fiber.StatusAccepted).JSON(receipt)
 	}
+}
+
+func observeSentryIngest(registry *metrics.Registry, result string, size int) {
+	if registry == nil {
+		return
+	}
+	labels := map[string]string{"service": "api", "module": "sentry", "operation": "ingest", "result": result}
+	_ = registry.Add("mailflow_sentry_envelopes_total", 1, labels)
+	_ = registry.Observe("mailflow_sentry_envelope_bytes", float64(size), labels)
 }
 
 func problemHandler(c fiber.Ctx, err error) error {

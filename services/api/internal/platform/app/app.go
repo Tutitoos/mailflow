@@ -32,6 +32,7 @@ type Options struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         *mail.ThreadRepositoryStore
 	Mailboxes     *mail.MailboxLabelRepositoryStore
+	Metrics       *metrics.Service
 	Search        *mail.ThreadRepositoryStore
 	Threads       *mail.ThreadRepositoryStore
 	Readiness     func(context.Context) error
@@ -41,8 +42,6 @@ type Options struct {
 }
 
 func Build(version string, options ...Options) *fiber.App {
-	registry := metrics.NewRegistry()
-	_ = registry.Set("mailflow_build_info", "gauge", 1, map[string]string{"service": "api", "result": "ready"})
 	var runtimeOptions Options
 	if len(options) > 0 {
 		runtimeOptions = options[0]
@@ -51,12 +50,17 @@ func Build(version string, options ...Options) *fiber.App {
 	if runtimeOptions.Attachments != nil {
 		attachmentService = runtimeOptions.Attachments
 	}
+	metricService := runtimeOptions.Metrics
+	if metricService == nil {
+		metricService = metrics.NewService(metrics.NewRegistry(), nil)
+	}
+	_ = metricService.Registry().Set("mailflow_build_info", "gauge", 1, map[string]string{"service": "api", "result": "ready"})
 	return httpapi.New(httpapi.Dependencies{
 		Accounts:      runtimeOptions.Accounts,
 		Actions:       runtimeOptions.Actions,
 		ActionState:   runtimeOptions.ActionState,
 		Attachments:   attachmentService,
-		Admin:         admin.NewService(version, registry),
+		Admin:         admin.NewServiceWithMetrics(version, metricService),
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
@@ -66,6 +70,7 @@ func Build(version string, options ...Options) *fiber.App {
 		GoogleOAuth:   runtimeOptions.GoogleOAuth,
 		Inbox:         runtimeOptions.Inbox,
 		Mailboxes:     runtimeOptions.Mailboxes,
+		Metrics:       metricService.Registry(),
 		Search:        runtimeOptions.Search,
 		Threads:       runtimeOptions.Threads,
 		Readiness:     runtimeOptions.Readiness,

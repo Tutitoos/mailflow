@@ -194,6 +194,29 @@ export type DraftAttachment = {
     sizeBytes: number;
 };
 
+export type MetricSeriesPage = {
+    items: Array<MetricSeriesPoint>;
+};
+
+export type MetricSeriesPoint = {
+    bucket: string;
+    resolution: 'minute' | 'hour' | 'day';
+    name: string;
+    kind: 'counter' | 'gauge' | 'histogram';
+    labels?: {
+        [key: string]: string;
+    };
+    value: number;
+    count: number;
+    min: number;
+    max: number;
+    average?: number;
+    ratePerSecond?: number;
+    p50?: number;
+    p95?: number;
+    p99?: number;
+};
+
 export type MessageAttachment = {
     id: string;
     position: number;
@@ -990,16 +1013,37 @@ export type GetAdminStatusResponses = {
 export type GetAdminMetricsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        resolution?: 'minute' | 'hour' | 'day';
+        name?: string;
+        from?: string;
+        until?: string;
+        limit?: number;
+    };
     url: '/admin/metrics';
 };
 
+export type GetAdminMetricsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminMetricsError = GetAdminMetricsErrors[keyof GetAdminMetricsErrors];
+
 export type GetAdminMetricsResponses = {
     /**
-     * Internal metric series
+     * Bounded internal metric series with rates and histogram percentiles
      */
-    200: unknown;
+    200: MetricSeriesPage;
 };
+
+export type GetAdminMetricsResponse = GetAdminMetricsResponses[keyof GetAdminMetricsResponses];
 
 export type GetAdminLogsData = {
     body?: never;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
@@ -79,6 +81,8 @@ func main() {
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	var accountService *accounts.Service
 	var databasePool *pgxpool.Pool
+	var metricsDone chan struct{}
+	var metricsCancel context.CancelFunc
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	googleClient := googleoauth.NewClient(googleConfig, nil)
 	var gmailResolver *mailflowsync.GmailAccountResolver
@@ -103,6 +107,19 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		metricService := metrics.NewService(metrics.NewRegistry(), pool, "api")
+		options.Metrics = metricService
+		metricsDone = make(chan struct{})
+		metricsContext, cancelMetrics := context.WithCancel(shutdown)
+		metricsCancel = cancelMetrics
+		go func() {
+			defer close(metricsDone)
+			if metricErr := metricService.Run(metricsContext, func(metricErr error) {
+				logger.Error("metric persistence failed", "event", "metrics.persistence_failed", "error", metricErr)
+			}); metricErr != nil && !errors.Is(metricErr, context.Canceled) {
+				logger.Error("metric persistence stopped", "event", "metrics.persistence_stopped", "error", metricErr)
+			}
+		}()
 		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
 		normalizer, normalizerErr := mail.NewNormalizer(mail.DefaultMIMEPolicy())
 		if normalizerErr != nil {
@@ -186,8 +203,15 @@ func main() {
 	}
 	options.SentryEnabled = sentryEnabled
 	logger.Info("api starting", "event", "api.started", "address", runtimeConfig.Address, "version", version)
-	if err := platformapp.Build(version, options).Listen(runtimeConfig.Address, fiber.ListenConfig{GracefulContext: shutdown, ShutdownTimeout: 15 * time.Second}); err != nil {
-		logger.Error("api stopped", "event", "api.stopped", "error", err)
+	listenErr := platformapp.Build(version, options).Listen(runtimeConfig.Address, fiber.ListenConfig{GracefulContext: shutdown, ShutdownTimeout: 15 * time.Second})
+	if metricsCancel != nil {
+		metricsCancel()
+	}
+	if metricsDone != nil {
+		<-metricsDone
+	}
+	if listenErr != nil {
+		logger.Error("api stopped", "event", "api.stopped", "error", listenErr)
 		os.Exit(1)
 	}
 }

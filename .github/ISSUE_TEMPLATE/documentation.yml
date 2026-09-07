@@ -1,0 +1,65 @@
+name: Documentation
+description: Plan a scoped documentation-only change.
+title: "docs: "
+labels: ["type:docs"]
+body:
+  - type: input
+    id: plan-reference
+    attributes:
+      label: Plan reference
+      description: Related roadmap phase, workflow, or operational guide.
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: Describe what readers must understand or accomplish.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      placeholder: "- [ ] Update the canonical document\n- [ ] Verify links and examples"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Structural checks, link checks, and any rendered review.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blockers or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Note stale instructions or behavior/documentation mismatch risks.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: true

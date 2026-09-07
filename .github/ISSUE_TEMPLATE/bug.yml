@@ -1,0 +1,75 @@
+name: Bug
+description: Define a reproducible Mailflow defect and its expected correction.
+title: "fix: "
+labels: ["type:bug"]
+body:
+  - type: input
+    id: plan-reference
+    attributes:
+      label: Plan reference
+      description: Related roadmap item, release, or operational area.
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the expected corrected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction and evidence
+      description: Provide sanitized steps, actual behavior, and evidence. Never include mail or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Define the smallest complete correction.
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      placeholder: "- [ ] Add a regression test\n- [ ] Correct the defect\n- [ ] Update documentation if needed"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List measurable regression and behavior checks.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Commands and manual checks expected.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blockers or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Include regression and rollback concerns.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: List adjacent cleanup or features not included.
+    validations:
+      required: true

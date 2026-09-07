@@ -1,0 +1,72 @@
+name: Hotfix
+description: Plan an urgent correction against the production baseline.
+title: "fix: "
+labels: ["type:hotfix", "priority:p0"]
+body:
+  - type: input
+    id: plan-reference
+    attributes:
+      label: Production reference
+      description: Affected release, deployment, and related roadmap area.
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the urgent outcome and user impact.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized incident evidence
+      description: Describe impact without exposing credentials, mail, or personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Define the smallest safe production correction.
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      placeholder: "- [ ] Add a regression test\n- [ ] Implement the correction\n- [ ] Prepare rollback"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Include production-safe verification and rollback checks.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blockers or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and rollback
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: true

@@ -1,0 +1,64 @@
+name: Release
+description: Plan versioning, artifacts, and release-only work.
+title: "chore(release): "
+labels: ["type:release"]
+body:
+  - type: input
+    id: plan-reference
+    attributes:
+      label: Release and plan reference
+      placeholder: "Phase 8 — Release 1.0: v1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Versions, artifacts, documentation, and release-only fixes included.
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      placeholder: "- [ ] Confirm release contents\n- [ ] Build and verify artifacts\n- [ ] Publish release notes"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Include artifact, install, upgrade, backup, and rollback checks as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link every release blocker or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and rollback
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: true

@@ -8,6 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 FROM gcr.io/distroless/static-debian12:nonroot
+USER root
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/worker /usr/local/bin/worker
 EXPOSE 8080

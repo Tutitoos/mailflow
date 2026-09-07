@@ -19,6 +19,8 @@ type Account struct {
 	SyncState            string             `json:"sync_state"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	RemoteID             string             `json:"remote_id"`
+	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
 }
 
 type AuthAccount struct {

@@ -89,11 +89,12 @@ services:
       AUTH_JWKS_URL: http://auth:3001/api/auth/jwks
       MAILFLOW_AUTH_AUDIENCE: mailflow-api
       MAILFLOW_AUTH_ISSUER: https://${MAILFLOW_DOMAIN}
+      MAILFLOW_MASTER_KEY_FILE: /run/secrets/master_key
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_HOST: postgres
       POSTGRES_USER: mailflow
       POSTGRES_DB: mailflow
-    secrets: [postgres_password]
+    secrets: [master_key, postgres_password]
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`${MAILFLOW_DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))
@@ -121,6 +122,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_ADDRESS: redis:6379
+      MAILFLOW_MASTER_KEY_FILE: /run/secrets/master_key
       MAILFLOW_QUEUE_PREFIX: mailflow
       MAILFLOW_QUEUE_CLAIM_TIMEOUT: 6m
       MAILFLOW_QUEUE_HANDLE_TIMEOUT: 5m
@@ -130,6 +132,7 @@ services:
       redis: { condition: service_healthy }
     volumes:
       - mailflow-cdn:/data/cdn
+    secrets: [master_key]
     restart: unless-stopped
 
   postgres-preflight:
@@ -201,6 +204,8 @@ secrets:
     file: ./secrets/postgres_password
   restic_password:
     file: ./secrets/restic_password
+  master_key:
+    file: ./secrets/master_key
 
 volumes:
   traefik-acme:

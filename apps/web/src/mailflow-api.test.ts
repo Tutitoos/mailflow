@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createGoogleAuthorization, disconnectAccount, loadGoogleAccounts } from "./mailflow-api";
+import {
+  createGoogleAuthorization,
+  disconnectAccount,
+  loadGoogleAccounts,
+  loadInboxPage,
+  loadMailNavigation,
+} from "./mailflow-api";
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
@@ -59,5 +65,46 @@ describe("Mailflow API client", () => {
     const result = await disconnectAccount("account-1");
     expect(authorizationUrl).toBe("https://accounts.example.test/authorize");
     expect(result.remoteRevoked).toBe(true);
+  });
+
+  it("loads account-scoped navigation and opaque inbox pages", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ items: [{ id: "mailbox-1", role: "inbox" }] }))
+      .mockResolvedValueOnce(json({ items: [{ id: "label-1", category: "primary" }] }))
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(
+        json({
+          items: [
+            {
+              id: "thread-1",
+              accountId: "account-1",
+              senderName: "Fixture sender",
+              senderAddress: "sender@example.test",
+              subject: "",
+              preview: "",
+              lastMessageAt: "2026-09-07T17:00:00Z",
+              isRead: false,
+              isStarred: false,
+              isImportant: false,
+              category: "primary",
+              messageCount: 1,
+              attachmentCount: 0,
+            },
+          ],
+          nextCursor: "opaque-cursor",
+        }),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    const navigation = await loadMailNavigation("account-1");
+    const page = await loadInboxPage("account-1", "primary", "previous-cursor");
+
+    expect(navigation.mailboxes).toHaveLength(1);
+    expect(page.nextCursor).toBe("opaque-cursor");
+    expect(fetch.mock.calls[2]?.[0]).toContain("accountId=account-1");
+    expect(fetch.mock.calls[5]?.[0]).toContain("cursor=previous-cursor");
   });
 });

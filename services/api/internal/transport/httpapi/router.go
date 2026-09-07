@@ -10,6 +10,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -31,6 +32,8 @@ type Dependencies struct {
 	CurrentUsers  authbridge.UserResolver
 	Events        EventStream
 	GoogleOAuth   *googleoauth.Service
+	Inbox         InboxReader
+	Mailboxes     MailboxLabelReader
 	Readiness     func(context.Context) error
 	Sentry        *mailflowsentry.Service
 	Translations  *translations.Catalog
@@ -46,6 +49,15 @@ type AccountLister interface {
 type SyncRequester interface {
 	Request(context.Context, string, string) (mailflowsync.Run, error)
 	StartInitial(context.Context, string, string) (mailflowsync.Run, error)
+}
+
+type InboxReader interface {
+	ListInbox(context.Context, string, string, mail.Category, *mail.ThreadCursor, int) (mail.InboxPage, error)
+}
+
+type MailboxLabelReader interface {
+	ListMailboxes(context.Context, string, string) ([]mail.Mailbox, error)
+	ListLabels(context.Context, string, string) ([]mail.Label, error)
 }
 
 func New(deps Dependencies) *fiber.App {
@@ -124,6 +136,9 @@ func New(deps Dependencies) *fiber.App {
 		}
 		return c.JSON(fiber.Map{"items": items})
 	})
+	v1.Get("/mailboxes", listMailboxes(deps.Mailboxes))
+	v1.Get("/labels", listLabels(deps.Mailboxes))
+	v1.Get("/threads", listInbox(deps.Inbox))
 	v1.Get("/oauth/google/status", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
 	})

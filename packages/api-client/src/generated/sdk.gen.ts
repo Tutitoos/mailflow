@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListThreadsData, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
+import type { CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -75,9 +75,21 @@ export const streamEvents = <ThrowOnError extends boolean = false>(options?: Opt
     ...options
 });
 
-export const listThreads = <ThrowOnError extends boolean = false>(options?: Options<ListThreadsData, ThrowOnError>): RequestResult<ListThreadsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListThreadsResponses, unknown, ThrowOnError>({
+export const listThreads = <ThrowOnError extends boolean = false>(options: Options<ListThreadsData, ThrowOnError>): RequestResult<ListThreadsResponses, ListThreadsErrors, ThrowOnError> => (options.client ?? client).get<ListThreadsResponses, ListThreadsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/threads',
+    ...options
+});
+
+export const listMailboxes = <ThrowOnError extends boolean = false>(options: Options<ListMailboxesData, ThrowOnError>): RequestResult<ListMailboxesResponses, ListMailboxesErrors, ThrowOnError> => (options.client ?? client).get<ListMailboxesResponses, ListMailboxesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/mailboxes',
+    ...options
+});
+
+export const listLabels = <ThrowOnError extends boolean = false>(options: Options<ListLabelsData, ThrowOnError>): RequestResult<ListLabelsResponses, ListLabelsErrors, ThrowOnError> => (options.client ?? client).get<ListLabelsResponses, ListLabelsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/labels',
     ...options
 });
 

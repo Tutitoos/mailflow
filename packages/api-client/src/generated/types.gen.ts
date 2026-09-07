@@ -40,10 +40,51 @@ export type EventEnvelope = {
 };
 
 export type ThreadPage = {
-    items: Array<{
-        [key: string]: unknown;
-    }>;
-    nextCursor?: string | null;
+    items: Array<InboxThread>;
+    nextCursor: string | null;
+};
+
+export type MailCategory = 'primary' | 'promotions' | 'social' | 'notifications' | 'forums';
+
+export type InboxThread = {
+    id: string;
+    accountId: string;
+    senderName: string;
+    senderAddress: string;
+    subject: string;
+    preview: string;
+    lastMessageAt: string;
+    isRead: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+    category: MailCategory;
+    messageCount: number;
+    attachmentCount: number;
+};
+
+export type Mailbox = {
+    id: string;
+    accountId: string;
+    remoteId: string;
+    remoteName: string;
+    localName: string | null;
+    role: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'all';
+    selectable: boolean;
+    totalCount: number;
+    unreadCount: number;
+};
+
+export type Label = {
+    id: string;
+    accountId: string;
+    remoteId: string | null;
+    remoteName: string;
+    localName: string | null;
+    kind: 'system' | 'user' | 'category';
+    category: MailCategory | null;
+    color: string | null;
+    totalCount: number;
+    unreadCount: number;
 };
 
 export type Problem = {
@@ -60,6 +101,8 @@ export type Problem = {
 };
 
 export type AccountId = string;
+
+export type AccountIdQuery = string;
 
 export type Cursor = string;
 
@@ -334,11 +377,23 @@ export type StreamEventsError = StreamEventsErrors[keyof StreamEventsErrors];
 export type ListThreadsData = {
     body?: never;
     path?: never;
-    query?: {
+    query: {
+        accountId: string;
+        category: MailCategory;
         cursor?: string;
+        limit?: number;
     };
     url: '/threads';
 };
+
+export type ListThreadsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ListThreadsError = ListThreadsErrors[keyof ListThreadsErrors];
 
 export type ListThreadsResponses = {
     /**
@@ -348,6 +403,64 @@ export type ListThreadsResponses = {
 };
 
 export type ListThreadsResponse = ListThreadsResponses[keyof ListThreadsResponses];
+
+export type ListMailboxesData = {
+    body?: never;
+    path?: never;
+    query: {
+        accountId: string;
+    };
+    url: '/mailboxes';
+};
+
+export type ListMailboxesErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ListMailboxesError = ListMailboxesErrors[keyof ListMailboxesErrors];
+
+export type ListMailboxesResponses = {
+    /**
+     * Mailboxes for one owned account
+     */
+    200: {
+        items: Array<Mailbox>;
+    };
+};
+
+export type ListMailboxesResponse = ListMailboxesResponses[keyof ListMailboxesResponses];
+
+export type ListLabelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        accountId: string;
+    };
+    url: '/labels';
+};
+
+export type ListLabelsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ListLabelsError = ListLabelsErrors[keyof ListLabelsErrors];
+
+export type ListLabelsResponses = {
+    /**
+     * Labels and category counters for one owned account
+     */
+    200: {
+        items: Array<Label>;
+    };
+};
+
+export type ListLabelsResponse = ListLabelsResponses[keyof ListLabelsResponses];
 
 export type GetThreadData = {
     body?: never;

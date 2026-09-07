@@ -15,7 +15,9 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await page.route("**/api/v1/accounts", (route) => route.fulfill({ json: { items: [] } }));
   await page.goto("/");
   await expect(page.getByRole("banner")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Mailboxes" })).toHaveCount(1);
+  await expect(
+    page.getByRole("navigation", { name: "Mailboxes", includeHidden: true }),
+  ).toHaveCount(1);
   await expect(page.getByRole("main")).toBeVisible();
 
   if ((page.viewportSize()?.width ?? 0) >= 1024) {

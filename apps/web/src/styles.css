@@ -140,12 +140,20 @@ select:focus-visible {
   gap: 2px;
 }
 .sync-dot,
-.online-dot {
+.online-dot,
+.offline-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 0 3px rgb(34 197 94 / 10%);
+}
+.offline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 10%);
 }
 .topbar-actions .sync-dot {
   margin: 0 10px;
@@ -368,6 +376,16 @@ select:focus-visible {
   height: calc(100% - 104px);
   overflow-y: auto;
 }
+.virtual-message-list {
+  position: relative;
+  width: 100%;
+}
+.virtual-message-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
 .message-row {
   position: relative;
   min-height: 45px;
@@ -425,7 +443,6 @@ select:focus-visible {
   background: transparent;
   color: inherit;
   text-align: left;
-  cursor: pointer;
 }
 .sender,
 .subject-line {
@@ -501,6 +518,48 @@ select:focus-visible {
   justify-items: center;
   gap: 12px;
   color: var(--faint);
+}
+.mail-state {
+  height: calc(100% - 104px);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--faint);
+  text-align: center;
+}
+.mail-state strong {
+  color: var(--text);
+}
+.partial-banner {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-bottom: 1px solid #422006;
+  background: #1c1205;
+  color: #fbbf24;
+  font-size: 12px;
+}
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-strong);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+    border-top-color: var(--border-strong);
+  }
 }
 .context-rail {
   display: flex;

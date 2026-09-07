@@ -1,4 +1,5 @@
 export type AuthConfig = {
+  audience: string;
   databaseUrl: string;
   secret: string;
   baseUrl: string;
@@ -33,6 +34,7 @@ function databaseUrl(): string {
 
 export function loadConfig(): AuthConfig {
   return {
+    audience: process.env.MAILFLOW_AUTH_AUDIENCE ?? "mailflow-api",
     databaseUrl: databaseUrl(),
     secret: secret("BETTER_AUTH_SECRET"),
     baseUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:3001",

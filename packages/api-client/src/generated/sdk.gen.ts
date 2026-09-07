@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsResponses, ListThreadsData, ListThreadsResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
+import type { CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsResponses, ListThreadsData, ListThreadsResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,12 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+export const getCurrentUser = <ThrowOnError extends boolean = false>(options?: Options<GetCurrentUserData, ThrowOnError>): RequestResult<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError> => (options?.client ?? client).get<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/me',
+    ...options
+});
 
 export const listAccounts = <ThrowOnError extends boolean = false>(options?: Options<ListAccountsData, ThrowOnError>): RequestResult<ListAccountsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAccountsResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

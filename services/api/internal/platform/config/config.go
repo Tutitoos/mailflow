@@ -8,15 +8,22 @@ import (
 )
 
 type Config struct {
-	AuthJWKSURL string
-	Address     string
-	DatabaseURL string
+	AuthAudience string
+	AuthIssuer   string
+	AuthJWKSURL  string
+	Address      string
+	DatabaseURL  string
 }
 
 func Load() (Config, error) {
 	config := Config{
-		Address:     valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
-		AuthJWKSURL: os.Getenv("AUTH_JWKS_URL"),
+		AuthAudience: valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
+		AuthIssuer:   os.Getenv("MAILFLOW_AUTH_ISSUER"),
+		Address:      valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
+		AuthJWKSURL:  os.Getenv("AUTH_JWKS_URL"),
+	}
+	if config.AuthJWKSURL != "" && config.AuthIssuer == "" {
+		return Config{}, fmt.Errorf("MAILFLOW_AUTH_ISSUER is required when AUTH_JWKS_URL is configured")
 	}
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
 		config.DatabaseURL = databaseURL

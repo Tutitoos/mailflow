@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -11,7 +12,10 @@ import (
 )
 
 type Options struct {
+	AuthAudience  string
+	AuthIssuer    string
 	AuthJWKSURL   string
+	CurrentUsers  authbridge.UserResolver
 	Readiness     func(context.Context) error
 	SentryEnabled bool
 }
@@ -25,7 +29,10 @@ func Build(version string, options ...Options) *fiber.App {
 	}
 	return httpapi.New(httpapi.Dependencies{
 		Admin:         admin.NewService(version, registry),
+		AuthAudience:  runtimeOptions.AuthAudience,
+		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
+		CurrentUsers:  runtimeOptions.CurrentUsers,
 		Readiness:     runtimeOptions.Readiness,
 		Sentry:        sentry.NewService(5 << 20),
 		Translations:  translations.NewCatalog(),

@@ -81,4 +81,28 @@ databaseTest("Better Auth creates one canonical Mailflow profile", async () => {
     }),
   );
   expect(signInResponse.status).toBe(200);
+
+  const sessionCookie = signInResponse.headers.get("set-cookie")?.split(";", 1)[0];
+  expect(sessionCookie).toBeTruthy();
+  const tokenResponse = await handleRequest(
+    new Request("http://localhost:3001/api/auth/token", {
+      headers: { cookie: sessionCookie ?? "" },
+    }),
+  );
+  expect(tokenResponse.status).toBe(200);
+  const { token } = (await tokenResponse.json()) as { token: string };
+  const encodedPayload = token.split(".")[1];
+  expect(encodedPayload).toBeTruthy();
+  const payload = JSON.parse(Buffer.from(encodedPayload ?? "", "base64url").toString("utf8")) as {
+    aud: string;
+    exp: number;
+    iss: string;
+    sub: string;
+  };
+  expect(payload).toMatchObject({
+    aud: "mailflow-api",
+    iss: "http://localhost:3001",
+    sub: profiles.rows[0]?.id,
+  });
+  expect(payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
 });

@@ -8,6 +8,17 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /me:
+    get:
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Canonical Mailflow user for the authenticated token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentUser" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /accounts:
     get:
       operationId: listAccounts
@@ -158,6 +169,13 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    CurrentUser:
+      type: object
+      required: [id, email, locale]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        locale: { type: string, enum: [en, es] }
     Account:
       type: object
       required: [id, provider, displayName, syncState]

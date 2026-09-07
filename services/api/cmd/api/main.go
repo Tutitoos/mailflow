@@ -8,9 +8,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
 	getsentry "github.com/getsentry/sentry-go"
 )
@@ -56,6 +58,8 @@ func main() {
 		return
 	}
 	var options platformapp.Options
+	options.AuthAudience = runtimeConfig.AuthAudience
+	options.AuthIssuer = runtimeConfig.AuthIssuer
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	if runtimeConfig.DatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -72,6 +76,7 @@ func main() {
 		}
 		defer pool.Close()
 		options.Readiness = pool.Ping
+		options.CurrentUsers = authbridge.NewRepository(dbgen.New(pool))
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

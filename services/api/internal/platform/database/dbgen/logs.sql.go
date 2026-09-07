@@ -84,7 +84,7 @@ WHERE occurred_at >= $1 AND occurred_at < $2
   AND ($6::text = '' OR event = $6)
   AND ($7::text = '' OR request_id = $7)
 ORDER BY occurred_at DESC, id DESC
-LIMIT $8
+LIMIT $8::bigint
 `
 
 type ListLogEntriesParams struct {
@@ -95,7 +95,7 @@ type ListLogEntriesParams struct {
 	Column5      string             `json:"column_5"`
 	Column6      string             `json:"column_6"`
 	Column7      string             `json:"column_7"`
-	Limit        int32              `json:"limit"`
+	QueryLimit   int64              `json:"query_limit"`
 }
 
 func (q *Queries) ListLogEntries(ctx context.Context, arg ListLogEntriesParams) ([]LogEntry, error) {
@@ -107,7 +107,7 @@ func (q *Queries) ListLogEntries(ctx context.Context, arg ListLogEntriesParams) 
 		arg.Column5,
 		arg.Column6,
 		arg.Column7,
-		arg.Limit,
+		arg.QueryLimit,
 	)
 	if err != nil {
 		return nil, err

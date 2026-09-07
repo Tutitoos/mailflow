@@ -109,7 +109,7 @@ func (store *Store) Query(ctx context.Context, query Query) ([]Entry, error) {
 	rows, err := store.queries.ListLogEntries(ctx, dbgen.ListLogEntriesParams{
 		OccurredAt: timestamp(query.From.UTC()), OccurredAt_2: timestamp(query.Until.UTC()),
 		Column3: query.Service, Column4: query.Module, Column5: query.Level,
-		Column6: query.Event, Column7: query.RequestID, Limit: int32(query.Limit),
+		Column6: query.Event, Column7: query.RequestID, QueryLimit: int64(query.Limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("query log entries: %w", err)

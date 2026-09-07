@@ -13,7 +13,7 @@ WHERE occurred_at >= $1 AND occurred_at < $2
   AND ($6::text = '' OR event = $6)
   AND ($7::text = '' OR request_id = $7)
 ORDER BY occurred_at DESC, id DESC
-LIMIT $8;
+LIMIT sqlc.arg(query_limit)::bigint;
 
 -- name: DeleteExpiredLogEntries :execrows
 DELETE FROM log_entries WHERE occurred_at < $1;

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/server.ts",
-    "start": "bun run migrate && bun src/server.ts",
+    "start": "bun src/server.ts",
     "typecheck": "tsc --noEmit --pretty false",
-    "migrate": "bunx auth migrate --config src/auth.ts --yes"
+    "test": "bun test src"
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.3",

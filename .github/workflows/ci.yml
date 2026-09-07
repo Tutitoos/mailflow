@@ -33,6 +33,23 @@ jobs:
 
   go:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: mailflow_test
+          POSTGRES_USER: mailflow
+          POSTGRES_PASSWORD: mailflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mailflow -d mailflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://mailflow:mailflow_test@127.0.0.1:5432/mailflow_test?sslmode=disable
+      MAILFLOW_TEST_DATABASE_URL: postgres://mailflow:mailflow_test@127.0.0.1:5432/mailflow_test?sslmode=disable
     defaults:
       run:
         working-directory: services/api
@@ -47,6 +64,18 @@ jobs:
       - run: git diff --exit-code -- internal/platform/database/dbgen
       - run: go test -race ./...
       - run: go vet ./...
+      - run: go run ./cmd/api --migrate
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run --cwd services/auth test
+        working-directory: .
+        env:
+          BETTER_AUTH_URL: http://localhost:3001
+          BETTER_AUTH_SECRET: integration-secret-0123456789abcdef
+          MAILFLOW_BOOTSTRAP_TOKEN: integration-bootstrap-token
 
   browser:
     runs-on: ubuntu-latest

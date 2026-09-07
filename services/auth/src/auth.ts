@@ -29,11 +29,78 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 12,
   },
+  user: {
+    modelName: "users",
+    fields: {
+      emailVerified: "email_verified",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
+  session: {
+    modelName: "auth_sessions",
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+      ipAddress: "ip_address",
+      userAgent: "user_agent",
+      userId: "user_id",
+    },
+  },
+  account: {
+    modelName: "auth_accounts",
+    fields: {
+      accountId: "account_id",
+      providerId: "provider_id",
+      userId: "user_id",
+      accessToken: "access_token",
+      refreshToken: "refresh_token",
+      idToken: "id_token",
+      accessTokenExpiresAt: "access_token_expires_at",
+      refreshTokenExpiresAt: "refresh_token_expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
+  verification: {
+    modelName: "auth_verifications",
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
   plugins: [
-    passkey(),
+    passkey({
+      schema: {
+        passkey: {
+          modelName: "auth_passkeys",
+          fields: {
+            publicKey: "public_key",
+            userId: "user_id",
+            credentialID: "credential_id",
+            deviceType: "device_type",
+            backedUp: "backed_up",
+            createdAt: "created_at",
+          },
+        },
+      },
+    }),
     jwt({
       jwks: { rotationInterval: 60 * 60 * 24 * 30, gracePeriod: 60 * 60 * 24 * 30 },
       jwt: { expirationTime: "15m" },
+      schema: {
+        jwks: {
+          modelName: "auth_jwks",
+          fields: {
+            publicKey: "public_key",
+            privateKey: "private_key",
+            createdAt: "created_at",
+            expiresAt: "expires_at",
+          },
+        },
+      },
     }),
   ],
   databaseHooks: {
@@ -41,7 +108,7 @@ export const auth = betterAuth({
       create: {
         before: async (user, context) => {
           const result = await pool.query<{ count: string }>(
-            'select count(*)::text as count from "user"',
+            "select count(*)::text as count from users",
           );
           if (result.rows[0]?.count !== "0") {
             throw new APIError("FORBIDDEN", { message: "Registration is closed" });
@@ -56,7 +123,7 @@ export const auth = betterAuth({
     },
   },
   advanced: {
-    database: { joins: true },
+    database: { generateId: "uuid", joins: true },
     useSecureCookies: config.baseUrl.startsWith("https://"),
   },
 });

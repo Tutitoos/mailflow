@@ -3,8 +3,9 @@ package authbridge
 import "context"
 
 type User struct {
-	ID    string
-	Email string
+	ID     string
+	Email  string
+	Locale string
 }
 
 type userContextKey struct{}

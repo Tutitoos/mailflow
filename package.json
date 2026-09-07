@@ -15,7 +15,7 @@
     "generate": "bun run --cwd packages/api-client generate",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "bun run --cwd apps/web test"
+    "test": "bun run --cwd apps/web test && bun run --cwd services/auth test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

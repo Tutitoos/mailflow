@@ -41,6 +41,20 @@ func main() {
 		logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
 		os.Exit(1)
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--migrate" {
+		if runtimeConfig.DatabaseURL == "" {
+			logger.Error("database migration failed", "event", "database.migration_failed", "error", "database URL is required")
+			os.Exit(1)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := database.Migrate(ctx, runtimeConfig.DatabaseURL); err != nil {
+			logger.Error("database migration failed", "event", "database.migration_failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("database migrations applied", "event", "database.migrations_applied")
+		return
+	}
 	var options platformapp.Options
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	if runtimeConfig.DatabaseURL != "" {

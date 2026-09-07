@@ -26,6 +26,37 @@ type RemoteMessage struct {
 	Content  NormalizedMessageContent
 }
 
+type ProviderProfile struct {
+	RemoteID string
+	Address  string
+	History  SyncCursor
+}
+
+type RemoteMailbox struct {
+	RemoteID    string
+	Name        string
+	Role        MailboxRole
+	Selectable  bool
+	TotalCount  int32
+	UnreadCount int32
+}
+
+type RemoteLabel struct {
+	RemoteID    string
+	Name        string
+	Kind        LabelKind
+	Category    *Category
+	TotalCount  int32
+	UnreadCount int32
+}
+
+type CatalogPage struct {
+	Mailboxes  []RemoteMailbox
+	Labels     []RemoteLabel
+	NextCursor SyncCursor
+	HasMore    bool
+}
+
 type ChangePage struct {
 	Messages   []RemoteMessage
 	NextCursor SyncCursor
@@ -35,6 +66,7 @@ type ChangePage struct {
 type RemoteAction struct {
 	IdempotencyKey string
 	Kind           string
+	TargetKind     string
 	TargetIDs      []string
 }
 
@@ -47,8 +79,14 @@ type Provider interface {
 	Kind() ProviderKind
 	Capabilities(ctx context.Context) (map[string]bool, error)
 	Changes(ctx context.Context, cursor SyncCursor) (ChangePage, error)
-	Backfill(ctx context.Context, before time.Time, limit int) (ChangePage, error)
+	Profile(ctx context.Context) (ProviderProfile, error)
+	Catalog(ctx context.Context, cursor SyncCursor) (CatalogPage, error)
+	Backfill(ctx context.Context, cursor SyncCursor, before time.Time, limit int) (ChangePage, error)
 	Apply(ctx context.Context, action RemoteAction) error
 	SaveDraft(ctx context.Context, draft OutgoingMessage) (string, error)
 	Send(ctx context.Context, message OutgoingMessage) (string, error)
+}
+
+type AttachmentProvider interface {
+	DownloadAttachment(ctx context.Context, messageID, attachmentID string) (io.ReadCloser, error)
 }

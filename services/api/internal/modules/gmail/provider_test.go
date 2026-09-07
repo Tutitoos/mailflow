@@ -1,0 +1,175 @@
+package gmail
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
+)
+
+const sanitizedMessage = "From: Sender <sender@example.test>\r\nTo: Owner <owner@example.test>\r\nSubject: Sanitized fixture\r\nMessage-ID: <fixture@example.test>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nFixture body"
+
+func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
+	t.Helper()
+	requests := &[]string{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gmail/v1/users/me/", func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer test-access" {
+			response.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		*requests = append(*requests, request.Method+" "+request.URL.RequestURI())
+		response.Header().Set("Content-Type", "application/json")
+		path := strings.TrimPrefix(request.URL.Path, "/gmail/v1/users/me")
+		switch {
+		case path == "/profile":
+			writeJSON(response, map[string]string{"emailAddress": "owner@example.test", "historyId": "100"})
+		case path == "/labels":
+			writeJSON(response, map[string]any{"labels": []map[string]any{
+				{"id": "INBOX", "name": "INBOX", "type": "system", "messagesTotal": 8, "messagesUnread": 2},
+				{"id": "CATEGORY_PROMOTIONS", "name": "CATEGORY_PROMOTIONS", "type": "system", "messagesTotal": 3},
+				{"id": "Label_1", "name": "Projects", "type": "user", "messagesTotal": 4},
+			}})
+		case path == "/history" && request.URL.Query().Get("pageToken") == "":
+			writeJSON(response, map[string]any{"history": []any{map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "message-1"}}}}}, "historyId": "101", "nextPageToken": "history-page-2"})
+		case path == "/history":
+			writeJSON(response, map[string]any{"history": []any{}, "historyId": "102"})
+		case path == "/messages" && request.Method == http.MethodGet:
+			writeJSON(response, map[string]any{"messages": []any{map[string]string{"id": "message-1"}}, "nextPageToken": "backfill-page-2"})
+		case path == "/messages/message-1" && request.Method == http.MethodGet:
+			writeJSON(response, map[string]string{"id": "message-1", "threadId": "thread-1", "internalDate": "1788782400000", "raw": base64.RawURLEncoding.EncodeToString([]byte(sanitizedMessage))})
+		case strings.HasSuffix(path, "/modify"):
+			response.WriteHeader(http.StatusOK)
+			_, _ = response.Write([]byte(`{}`))
+		case path == "/drafts":
+			writeJSON(response, map[string]string{"id": "draft-1"})
+		case path == "/messages/send":
+			writeJSON(response, map[string]string{"id": "sent-1"})
+		case path == "/messages/message-1/attachments/attachment-1":
+			writeJSON(response, map[string]string{"data": base64.RawURLEncoding.EncodeToString([]byte("attachment fixture"))})
+		default:
+			http.NotFound(response, request)
+		}
+	})
+	server := httptest.NewServer(mux)
+	normalizer, err := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := NewWithBaseURL("test-access", server.URL+"/gmail/v1/users/me", server.Client(), normalizer)
+	if err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	return provider, server, requests
+}
+
+func TestProviderMapsProfileLabelsAndPaginatedChanges(t *testing.T) {
+	provider, server, _ := gmailFixture(t)
+	defer server.Close()
+	ctx := context.Background()
+	profile, err := provider.Profile(ctx)
+	if err != nil || profile.Address != "owner@example.test" || profile.History.Kind != "google_history" {
+		t.Fatalf("profile = %+v, %v", profile, err)
+	}
+	catalog, err := provider.Catalog(ctx, mail.SyncCursor{})
+	if err != nil || len(catalog.Mailboxes) != 1 || catalog.Mailboxes[0].Role != mail.MailboxInbox || len(catalog.Labels) != 2 || catalog.Labels[0].Category == nil || *catalog.Labels[0].Category != mail.CategoryPromotions || catalog.Labels[1].Kind != mail.LabelUser {
+		t.Fatalf("catalog = %+v, %v", catalog, err)
+	}
+	first, err := provider.Changes(ctx, profile.History)
+	if err != nil || !first.HasMore || len(first.Messages) != 1 || first.Messages[0].ThreadID != "thread-1" || first.Messages[0].Content.Subject != "Sanitized fixture" {
+		t.Fatalf("first changes = %+v, %v", first, err)
+	}
+	second, err := provider.Changes(ctx, first.NextCursor)
+	if err != nil || second.HasMore || len(second.Messages) != 0 {
+		t.Fatalf("second changes = %+v, %v", second, err)
+	}
+}
+
+func TestProviderBackfillActionsDraftSendAndAttachment(t *testing.T) {
+	provider, server, requests := gmailFixture(t)
+	defer server.Close()
+	ctx := context.Background()
+	page, err := provider.Backfill(ctx, mail.SyncCursor{}, time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC), 25)
+	if err != nil || !page.HasMore || string(page.NextCursor.Value) != "backfill-page-2" || len(page.Messages) != 1 {
+		t.Fatalf("backfill = %+v, %v", page, err)
+	}
+	if err := provider.Apply(ctx, mail.RemoteAction{Kind: "mark_read", TargetKind: "thread", TargetIDs: []string{"thread-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	draftID, err := provider.SaveDraft(ctx, mail.OutgoingMessage{Raw: strings.NewReader(sanitizedMessage)})
+	if err != nil || draftID != "draft-1" {
+		t.Fatalf("draft = %q, %v", draftID, err)
+	}
+	sentID, err := provider.Send(ctx, mail.OutgoingMessage{Raw: strings.NewReader(sanitizedMessage)})
+	if err != nil || sentID != "sent-1" {
+		t.Fatalf("send = %q, %v", sentID, err)
+	}
+	attachment, err := provider.DownloadAttachment(ctx, "message-1", "attachment-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(attachment)
+	_ = attachment.Close()
+	if string(payload) != "attachment fixture" {
+		t.Fatalf("attachment = %q", payload)
+	}
+	joined := strings.Join(*requests, "\n")
+	if !strings.Contains(joined, "before%3A1788825600") || !strings.Contains(joined, "/threads/thread-1/modify") {
+		t.Fatalf("unexpected requests:\n%s", joined)
+	}
+}
+
+func TestProviderClassifiesFailuresWithoutResponseDetails(t *testing.T) {
+	for _, test := range []struct {
+		status int
+		kind   ErrorKind
+	}{{401, ErrorAuthorization}, {403, ErrorAuthorization}, {429, ErrorQuota}, {503, ErrorTransient}, {404, ErrorPermanent}} {
+		err := classify(test.status, "5")
+		var providerError *ProviderError
+		if !errors.As(err, &providerError) || providerError.Kind != test.kind || providerError.StatusCode != test.status || providerError.RetryAfter != 5*time.Second {
+			t.Fatalf("status %d classified as %+v", test.status, err)
+		}
+		if strings.Contains(err.Error(), "private") {
+			t.Fatal("provider error exposed response details")
+		}
+	}
+	quota := classify(http.StatusForbidden, "", []byte(`{"error":{"errors":[{"reason":"userRateLimitExceeded"}],"message":"private provider detail"}}`))
+	var quotaError *ProviderError
+	if !errors.As(quota, &quotaError) || quotaError.Kind != ErrorQuota || strings.Contains(quota.Error(), "private") {
+		t.Fatalf("quota error = %v", quota)
+	}
+}
+
+func TestHistoryCursorRejectsWrongProvider(t *testing.T) {
+	provider, server, _ := gmailFixture(t)
+	defer server.Close()
+	_, err := provider.Changes(context.Background(), mail.SyncCursor{Kind: "microsoft_delta", Value: []byte(`{"historyId":"100"}`)})
+	if !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("cursor error = %v", err)
+	}
+}
+
+func writeJSON(response http.ResponseWriter, value any) {
+	_ = json.NewEncoder(response).Encode(value)
+}
+
+func TestBackfillCursorEncodesPageToken(t *testing.T) {
+	value, err := decodePageCursor(mail.SyncCursor{Kind: "google_backfill", Value: []byte("page-token")}, "google_backfill")
+	if err != nil || value != "page-token" {
+		t.Fatalf("page token = %q, %v", value, err)
+	}
+	encoded := url.QueryEscape(value)
+	if encoded != "page-token" {
+		t.Fatalf("escaped token = %q", encoded)
+	}
+}

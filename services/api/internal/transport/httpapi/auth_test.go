@@ -221,9 +221,13 @@ func authenticatedApp(jwksURL string, users authbridge.UserResolver) *fiber.App 
 }
 
 func authenticatedAppWithAccounts(jwksURL string, users authbridge.UserResolver, accountLister httpapi.AccountLister) *fiber.App {
+	return authenticatedAppWithDependencies(jwksURL, users, accountLister, nil)
+}
+
+func authenticatedAppWithDependencies(jwksURL string, users authbridge.UserResolver, accountLister httpapi.AccountLister, attachments httpapi.AttachmentReader) *fiber.App {
 	registry := metrics.NewRegistry()
 	return httpapi.New(httpapi.Dependencies{
-		Accounts: accountLister, Admin: admin.NewService("test", registry), AuthAudience: testAudience,
+		Accounts: accountLister, Attachments: attachments, Admin: admin.NewService("test", registry), AuthAudience: testAudience,
 		AuthIssuer: testIssuer, AuthJWKSURL: jwksURL, CurrentUsers: users,
 		Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})

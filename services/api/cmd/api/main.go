@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
@@ -91,7 +92,18 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		cdnStore, err := cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
+		if err != nil {
+			logger.Error("CDN storage configuration failed", "event", "cdn.storage_unavailable", "error", err)
+			os.Exit(1)
+		}
+		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention)
+		if err != nil {
+			logger.Error("CDN service configuration failed", "event", "cdn.service_unavailable", "error", err)
+			os.Exit(1)
+		}
 		options.Readiness = pool.Ping
+		options.Attachments = cdnService
 		options.CurrentUsers = authbridge.NewRepository(queries)
 		options.Accounts = accounts.NewService(accounts.NewRepository(queries, vault))
 	}

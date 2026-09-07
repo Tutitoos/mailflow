@@ -86,6 +86,8 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       MAILFLOW_API_ADDRESS: :8080
+      MAILFLOW_CDN_ROOT: /data/cdn
+      MAILFLOW_CDN_MAX_BYTES: 26214400
       AUTH_JWKS_URL: http://auth:3001/api/auth/jwks
       MAILFLOW_AUTH_AUDIENCE: mailflow-api
       MAILFLOW_AUTH_ISSUER: https://${MAILFLOW_DOMAIN}
@@ -121,7 +123,13 @@ services:
       dockerfile: services/api/Dockerfile
     entrypoint: [/usr/local/bin/worker]
     environment:
+      MAILFLOW_CDN_ROOT: /data/cdn
+      MAILFLOW_CDN_MAX_BYTES: 26214400
+      MAILFLOW_CDN_CLEANUP_INTERVAL: 24h
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_HOST: postgres
+      POSTGRES_USER: mailflow
+      POSTGRES_DB: mailflow
       REDIS_ADDRESS: redis:6379
       MAILFLOW_MASTER_KEY_FILE: /run/secrets/master_key
       MAILFLOW_QUEUE_PREFIX: mailflow
@@ -133,7 +141,7 @@ services:
       redis: { condition: service_healthy }
     volumes:
       - mailflow-cdn:/data/cdn
-    secrets: [master_key]
+    secrets: [master_key, postgres_password]
     restart: unless-stopped
 
   postgres-preflight:

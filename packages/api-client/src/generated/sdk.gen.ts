@@ -81,6 +81,9 @@ export const sendMessage = <ThrowOnError extends boolean = false>(options: Optio
     ...options
 });
 
+/**
+ * Streams an authenticated cached attachment. Expired entries return a recovery-required problem so the provider can be queried again.
+ */
 export const downloadAttachment = <ThrowOnError extends boolean = false>(options: Options<DownloadAttachmentData, ThrowOnError>): RequestResult<DownloadAttachmentResponses, DownloadAttachmentErrors, ThrowOnError> => (options.client ?? client).get<DownloadAttachmentResponses, DownloadAttachmentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/attachments/{attachmentId}',

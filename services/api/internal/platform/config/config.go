@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,8 @@ type Config struct {
 	AuthIssuer   string
 	AuthJWKSURL  string
 	Address      string
+	CDNMaxBytes  int64
+	CDNRoot      string
 	DatabaseURL  string
 	MasterKey    []byte
 	RedisAddress string
@@ -24,8 +27,14 @@ func Load() (Config, error) {
 		AuthIssuer:   os.Getenv("MAILFLOW_AUTH_ISSUER"),
 		Address:      valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
 		AuthJWKSURL:  os.Getenv("AUTH_JWKS_URL"),
+		CDNRoot:      valueOrDefault("MAILFLOW_CDN_ROOT", "/data/cdn"),
 		RedisAddress: os.Getenv("REDIS_ADDRESS"),
 	}
+	maxBytes, err := strconv.ParseInt(valueOrDefault("MAILFLOW_CDN_MAX_BYTES", "26214400"), 10, 64)
+	if err != nil || maxBytes <= 0 {
+		return Config{}, fmt.Errorf("MAILFLOW_CDN_MAX_BYTES must be a positive integer")
+	}
+	config.CDNMaxBytes = maxBytes
 	if config.AuthJWKSURL != "" && config.AuthIssuer == "" {
 		return Config{}, fmt.Errorf("MAILFLOW_AUTH_ISSUER is required when AUTH_JWKS_URL is configured")
 	}

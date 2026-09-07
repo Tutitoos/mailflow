@@ -36,6 +36,7 @@ type Options struct {
 	Logs          *logs.Pipeline
 	Metrics       *metrics.Service
 	Search        *mail.ThreadRepositoryStore
+	Sentry        *sentry.Service
 	Threads       *mail.ThreadRepositoryStore
 	Readiness     func(context.Context) error
 	SentryEnabled bool
@@ -55,6 +56,9 @@ func Build(version string, options ...Options) *fiber.App {
 	metricService := runtimeOptions.Metrics
 	if metricService == nil {
 		metricService = metrics.NewService(metrics.NewRegistry(), nil)
+	}
+	if runtimeOptions.Sentry == nil {
+		runtimeOptions.Sentry = sentry.NewService(sentry.DefaultMaxEnvelopeBytes)
 	}
 	_ = metricService.Registry().Set("mailflow_build_info", "gauge", 1, map[string]string{"service": "api", "result": "ready"})
 	return httpapi.New(httpapi.Dependencies{
@@ -77,7 +81,7 @@ func Build(version string, options ...Options) *fiber.App {
 		Search:        runtimeOptions.Search,
 		Threads:       runtimeOptions.Threads,
 		Readiness:     runtimeOptions.Readiness,
-		Sentry:        sentry.NewService(5 << 20),
+		Sentry:        runtimeOptions.Sentry,
 		Translations:  translations.NewCatalog(),
 		CaptureSentry: runtimeOptions.SentryEnabled,
 		Shutdown:      runtimeOptions.Shutdown,

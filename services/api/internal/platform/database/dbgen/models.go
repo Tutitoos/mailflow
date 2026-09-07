@@ -313,6 +313,33 @@ type PendingActionAttempt struct {
 	FinishedAt pgtype.Timestamptz `json:"finished_at"`
 }
 
+type SentryEvent struct {
+	ID            int64              `json:"id"`
+	EventID       string             `json:"event_id"`
+	Component     string             `json:"component"`
+	EventType     string             `json:"event_type"`
+	Environment   pgtype.Text        `json:"environment"`
+	Release       pgtype.Text        `json:"release"`
+	Level         pgtype.Text        `json:"level"`
+	SdkName       pgtype.Text        `json:"sdk_name"`
+	ReceivedBytes int64              `json:"received_bytes"`
+	ItemCount     int64              `json:"item_count"`
+	ReceivedAt    pgtype.Timestamptz `json:"received_at"`
+}
+
+type SentryEventItem struct {
+	ID               int64       `json:"id"`
+	EventID          int64       `json:"event_id"`
+	ItemType         string      `json:"item_type"`
+	ContentType      pgtype.Text `json:"content_type"`
+	ReceivedBytes    int64       `json:"received_bytes"`
+	PayloadSha256    string      `json:"payload_sha256"`
+	Summary          []byte      `json:"summary"`
+	PayloadObjectID  pgtype.Text `json:"payload_object_id"`
+	PayloadNamespace pgtype.Text `json:"payload_namespace"`
+	Discarded        bool        `json:"discarded"`
+}
+
 type SentryIssue struct {
 	ID          pgtype.UUID        `json:"id"`
 	Fingerprint string             `json:"fingerprint"`
@@ -323,6 +350,14 @@ type SentryIssue struct {
 	FirstSeenAt pgtype.Timestamptz `json:"first_seen_at"`
 	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
 	EventCount  int64              `json:"event_count"`
+}
+
+type SentryProject struct {
+	Component string             `json:"component"`
+	PublicKey string             `json:"public_key"`
+	Enabled   bool               `json:"enabled"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SyncCursor struct {

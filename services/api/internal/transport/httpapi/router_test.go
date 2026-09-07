@@ -66,6 +66,13 @@ func TestProblemDetailsAndSentryEnvelopeLimit(t *testing.T) {
 		body, _ := io.ReadAll(response.Body)
 		t.Fatalf("expected 413, got %d: %s", response.StatusCode, body)
 	}
+
+	unavailableApp := httpapi.New(httpapi.Dependencies{Admin: admin.NewService("test", registry), Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog()})
+	request = httptest.NewRequest("POST", "/sentry/api/1/envelope/", strings.NewReader("{}\n{\"type\":\"event\"}\n{}"))
+	response, err = unavailableApp.Test(request)
+	if err != nil || response.StatusCode != 503 {
+		t.Fatalf("expected unavailable ingestion without persistence, got %d: %v", response.StatusCode, err)
+	}
 }
 
 func TestAdminMetricsValidatesAndReturnsBoundedSeries(t *testing.T) {

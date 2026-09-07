@@ -8,6 +8,66 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /sentry/api/1/envelope/:
+    servers: [{ url: / }]
+    post:
+      operationId: ingestSentryEnvelope
+      security: []
+      parameters:
+        - name: X-Sentry-Auth
+          in: header
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: sentry_key
+          in: query
+          required: false
+          schema: { type: string, pattern: "^[0-9a-f]{32}$" }
+      requestBody:
+        required: true
+        content:
+          application/x-sentry-envelope:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Envelope accepted or already present
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryReceipt" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "507": { $ref: "#/components/responses/Problem" }
+  /sentry/api/1/store/:
+    servers: [{ url: / }]
+    post:
+      operationId: ingestLegacySentryEvent
+      security: []
+      parameters:
+        - name: X-Sentry-Auth
+          in: header
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: sentry_key
+          in: query
+          required: false
+          schema: { type: string, pattern: "^[0-9a-f]{32}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Legacy event accepted or already present
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryReceipt" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "507": { $ref: "#/components/responses/Problem" }
   /me:
     get:
       operationId: getCurrentUser
@@ -559,6 +619,12 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    SentryReceipt:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, pattern: "^[0-9a-f]{32}$" }
+        receivedAt: { type: string, format: date-time }
     CurrentUser:
       type: object
       required: [id, email, locale]

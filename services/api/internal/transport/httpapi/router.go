@@ -316,20 +316,52 @@ func newProblem(status int, code, title, detail string) error {
 
 func sentryIngest(service *mailflowsentry.Service, registry *metrics.Registry) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		receipt, err := service.Accept(c.Get("X-Sentry-Event-ID"), c.Body())
+		if service == nil {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "Sentry ingestion unavailable")
+		}
+		authorization := c.Get("X-Sentry-Auth")
+		if authorization == "" {
+			authorization = c.Get("Authorization")
+		}
+		receipt, err := service.Ingest(c.Context(), mailflowsentry.Request{
+			Authorization: authorization, QueryKey: c.Query("sentry_key"),
+			LegacyEventID: c.Get("X-Sentry-Event-ID"), Body: c.Body(),
+			Legacy: strings.HasSuffix(c.Path(), "/store/"),
+		})
 		result := "success"
-		if errors.Is(err, mailflowsentry.ErrEnvelopeTooLarge) {
+		switch {
+		case errors.Is(err, mailflowsentry.ErrEnvelopeTooLarge):
 			result = "rejected"
 			observeSentryIngest(registry, result, len(c.Body()))
 			return fiber.NewError(fiber.StatusRequestEntityTooLarge, err.Error())
-		}
-		if err != nil {
+		case errors.Is(err, mailflowsentry.ErrInvalidEnvelope):
+			result = "rejected"
+			observeSentryIngest(registry, result, len(c.Body()))
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		case errors.Is(err, mailflowsentry.ErrUnauthenticated):
+			result = "rejected"
+			observeSentryIngest(registry, result, len(c.Body()))
+			return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		case errors.Is(err, mailflowsentry.ErrRateLimited):
+			result = "rejected"
+			observeSentryIngest(registry, result, len(c.Body()))
+			c.Set("Retry-After", "60")
+			return fiber.NewError(fiber.StatusTooManyRequests, err.Error())
+		case errors.Is(err, mailflowsentry.ErrStorageQuota):
+			result = "rejected"
+			observeSentryIngest(registry, result, len(c.Body()))
+			return fiber.NewError(fiber.StatusInsufficientStorage, err.Error())
+		case errors.Is(err, mailflowsentry.ErrUnavailable):
 			result = "failure"
 			observeSentryIngest(registry, result, len(c.Body()))
-			return err
+			return fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
+		case err != nil:
+			result = "failure"
+			observeSentryIngest(registry, result, len(c.Body()))
+			return fiber.NewError(fiber.StatusInternalServerError, "Sentry ingestion failed")
 		}
 		observeSentryIngest(registry, result, len(c.Body()))
-		return c.Status(fiber.StatusAccepted).JSON(receipt)
+		return c.JSON(receipt)
 	}
 }
 

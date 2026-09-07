@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
@@ -22,6 +23,29 @@ type inboxCursor struct {
 type messageCursor struct {
 	SentAt time.Time `json:"sentAt"`
 	ID     string    `json:"id"`
+}
+
+type searchCursor struct {
+	Rank   float32   `json:"rank"`
+	SentAt time.Time `json:"sentAt"`
+	ID     string    `json:"id"`
+}
+
+type searchResult struct {
+	ID              string    `json:"id"`
+	ThreadID        string    `json:"threadId"`
+	AccountID       string    `json:"accountId"`
+	SenderName      string    `json:"senderName"`
+	SenderAddress   string    `json:"senderAddress"`
+	Subject         string    `json:"subject"`
+	Preview         string    `json:"preview"`
+	SentAt          time.Time `json:"sentAt"`
+	IsRead          bool      `json:"isRead"`
+	IsStarred       bool      `json:"isStarred"`
+	IsImportant     bool      `json:"isImportant"`
+	HasAttachment   bool      `json:"hasAttachment"`
+	AttachmentCount int       `json:"attachmentCount"`
+	Rank            float32   `json:"rank"`
 }
 
 type conversationThread struct {
@@ -176,6 +200,76 @@ func getConversation(reader ThreadReader) fiber.Handler {
 	}
 }
 
+func searchMail(reader SearchReader) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		user, accountID, problem := mailScope(c, reader != nil)
+		if problem != nil {
+			return problem
+		}
+		rawQuery := c.Query("q")
+		if len(rawQuery) > 1024 {
+			return invalidSearchQuery("query_too_long")
+		}
+		query, err := mail.ParseSearch(rawQuery)
+		if err != nil {
+			var validation *mail.SearchValidationError
+			if errors.As(err, &validation) {
+				return invalidSearchQuery(validation.Code)
+			}
+			return invalidSearchQuery("invalid_query")
+		}
+		limit, err := strconv.Atoi(c.Query("limit", strconv.Itoa(defaultInboxPageSize)))
+		if err != nil || limit < 1 || limit > 100 {
+			return invalidSearchQuery("invalid_limit")
+		}
+		cursor, err := decodeSearchCursor(c.Query("cursor"))
+		if err != nil {
+			return invalidSearchQuery("invalid_cursor")
+		}
+		page, err := reader.SearchMessages(c.Context(), user.ID, accountID, query, cursor, limit)
+		var validation *mail.SearchValidationError
+		if errors.As(err, &validation) {
+			return invalidSearchQuery(validation.Code)
+		}
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "search_failed", "Search unavailable", "Mail search could not be completed.")
+		}
+		items := make([]searchResult, 0, len(page.Items))
+		for _, hit := range page.Items {
+			message := hit.Message
+			senderName, senderAddress := "", ""
+			for _, address := range message.Addresses {
+				if address.Role == mail.AddressFrom || address.Role == mail.AddressSender {
+					senderAddress = address.Address
+					if address.DisplayName != nil {
+						senderName = *address.DisplayName
+					}
+					break
+				}
+			}
+			if senderName == "" {
+				senderName = senderAddress
+			}
+			preview := strings.Join(strings.Fields(message.BodyText), " ")
+			if len([]rune(preview)) > 240 {
+				preview = string([]rune(preview)[:240])
+			}
+			items = append(items, searchResult{
+				ID: message.ID, ThreadID: message.ThreadID, AccountID: message.AccountID,
+				SenderName: senderName, SenderAddress: senderAddress, Subject: message.Subject,
+				Preview: preview, SentAt: message.SentAt, IsRead: message.IsRead,
+				IsStarred: message.IsStarred, IsImportant: message.IsImportant,
+				HasAttachment: len(message.Attachments) > 0, AttachmentCount: len(message.Attachments), Rank: hit.Rank,
+			})
+		}
+		next, err := encodeSearchCursor(page.Next)
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "search_failed", "Search unavailable", "Search pagination could not be created.")
+		}
+		return c.JSON(fiber.Map{"items": items, "nextCursor": next})
+	}
+}
+
 func mailScope(c fiber.Ctx, available bool) (authbridge.User, string, error) {
 	user, ok := authbridge.UserFromContext(c.Context())
 	if !ok {
@@ -197,6 +291,10 @@ func invalidInboxQuery() error {
 
 func invalidConversationQuery() error {
 	return newProblem(fiber.StatusBadRequest, "invalid_thread_query", "Invalid thread query", "The account, thread, or cursor is invalid.")
+}
+
+func invalidSearchQuery(code string) error {
+	return newProblem(fiber.StatusBadRequest, "search_"+code, "Invalid search query", "The search expression is invalid.")
 }
 
 func encodeInboxCursor(cursor *mail.ThreadCursor) (*string, error) {
@@ -257,4 +355,34 @@ func decodeMessageCursor(encoded string) (*mail.MessageCursor, error) {
 		return nil, errors.New("invalid cursor")
 	}
 	return &mail.MessageCursor{SentAt: cursor.SentAt, ID: cursor.ID}, nil
+}
+
+func encodeSearchCursor(cursor *mail.SearchCursor) (*string, error) {
+	if cursor == nil {
+		return nil, nil
+	}
+	payload, err := json.Marshal(searchCursor{Rank: cursor.Rank, SentAt: cursor.SentAt, ID: cursor.ID})
+	if err != nil {
+		return nil, err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	return &encoded, nil
+}
+
+func decodeSearchCursor(encoded string) (*mail.SearchCursor, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	if len(encoded) > 768 {
+		return nil, errors.New("invalid cursor")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(payload) > 512 {
+		return nil, errors.New("invalid cursor")
+	}
+	var cursor searchCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.SentAt.IsZero() || cursor.ID == "" {
+		return nil, errors.New("invalid cursor")
+	}
+	return &mail.SearchCursor{Rank: cursor.Rank, SentAt: cursor.SentAt, ID: cursor.ID}, nil
 }

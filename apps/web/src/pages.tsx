@@ -51,9 +51,12 @@ import {
   type Mailbox,
   type MailCategory,
   type MailLabel,
+  type SearchResult,
+  searchMail,
   startGoogleConnection,
   subscribeMailEvents,
 } from "./mailflow-api";
+import { type SearchSyntaxError, searchSuggestions, validateSearchSyntax } from "./search-syntax";
 
 type Translator = (key: TranslationKey) => string;
 
@@ -86,6 +89,8 @@ function Header({
   onLocaleChange,
   query,
   onQueryChange,
+  onSearch,
+  searchInvalid,
   onMenu,
   syncLabel,
   connected,
@@ -95,12 +100,30 @@ function Header({
   onLocaleChange: () => void;
   query: string;
   onQueryChange: (value: string) => void;
+  onSearch: (value: string) => void;
+  searchInvalid: boolean;
   onMenu: () => void;
   syncLabel: string;
   connected: boolean;
   t: Translator;
 }) {
   const navigate = useNavigate();
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [showSearchHelp, setShowSearchHelp] = useState(false);
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if (
+        event.key === "/" &&
+        !(event.target instanceof HTMLInputElement) &&
+        !(event.target instanceof HTMLTextAreaElement)
+      ) {
+        event.preventDefault();
+        searchInput.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -109,19 +132,68 @@ function Header({
         </Button>
         <Brand />
       </div>
-      <label className="search-box">
-        <Search size={18} aria-hidden="true" />
-        <input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={t("search")}
-          aria-label={t("search")}
-        />
-        <kbd>/</kbd>
-        <Button size="icon" aria-label="Search filters">
-          <SlidersHorizontal size={17} />
-        </Button>
-      </label>
+      <search>
+        <form
+          className="search-box"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setShowSearchHelp(false);
+            onSearch(query);
+          }}
+        >
+          <Search size={18} aria-hidden="true" />
+          <input
+            ref={searchInput}
+            type="search"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                onQueryChange("");
+                onSearch("");
+              }
+            }}
+            placeholder={t("search")}
+            aria-label={t("search")}
+            aria-invalid={searchInvalid || undefined}
+            aria-describedby={searchInvalid ? "search-error" : undefined}
+            list="mailflow-search-operators"
+          />
+          <datalist id="mailflow-search-operators">
+            {searchSuggestions.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
+          <kbd>/</kbd>
+          <Button
+            size="icon"
+            aria-label={t("searchFilters")}
+            type="button"
+            aria-expanded={showSearchHelp}
+            onClick={() => setShowSearchHelp((value) => !value)}
+          >
+            <SlidersHorizontal size={17} />
+          </Button>
+          {showSearchHelp && (
+            <fieldset className="search-help">
+              <legend>{t("searchFilters")}</legend>
+              {searchSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    onQueryChange(`${query}${query.trim() ? " " : ""}${suggestion}`);
+                    setShowSearchHelp(false);
+                    searchInput.current?.focus();
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </fieldset>
+          )}
+        </form>
+      </search>
       <div className="topbar-actions">
         <span className={connected ? "sync-dot" : "offline-dot"} title={syncLabel} />
         <Button
@@ -550,8 +622,20 @@ function VirtualMessageList({
 
 export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const navigate = useNavigate();
+  const initialQuery = new URLSearchParams(window.location.search).get("q") ?? "";
   const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [submittedSearch, setSubmittedSearch] = useState(
+    validateSearchSyntax(initialQuery) === null ? initialQuery : "",
+  );
+  const [searchError, setSearchError] = useState<SearchSyntaxError | "request_failed" | null>(
+    initialQuery && validateSearchSyntax(initialQuery) ? validateSearchSyntax(initialQuery) : null,
+  );
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchNextCursor, setSearchNextCursor] = useState<string | null>(null);
+  const [searchCursor, setSearchCursor] = useState<string | undefined>();
+  const [searchCursorHistory, setSearchCursorHistory] = useState<string[]>([]);
+  const [searchLoadState, setSearchLoadState] = useState<"loading" | "ready" | "error">("ready");
   const [category, setCategory] = useState<MailCategory>("primary");
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
@@ -640,6 +724,25 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   }, [activeAccountId, category, online, pageCursor, refreshRevision]);
 
   useEffect(() => {
+    if (!activeAccountId || !online || !submittedSearch) return;
+    const controller = new AbortController();
+    setSearchLoadState("loading");
+    void searchMail(activeAccountId, submittedSearch, searchCursor, controller.signal)
+      .then((page) => {
+        setSearchResults(page.items);
+        setSearchNextCursor(page.nextCursor);
+        setSearchLoadState("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSearchError("request_failed");
+          setSearchLoadState("error");
+        }
+      });
+    return () => controller.abort();
+  }, [activeAccountId, online, searchCursor, submittedSearch]);
+
+  useEffect(() => {
     const becameOnline = () => {
       setOnline(true);
       setRefreshRevision((current) => current + 1);
@@ -671,16 +774,78 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     return () => controller.abort();
   }, [activeAccountId, online]);
 
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return threads.filter(
-      (message) =>
-        !normalized ||
-        `${message.senderName} ${message.senderAddress} ${message.subject} ${message.preview}`
-          .toLowerCase()
-          .includes(normalized),
-    );
-  }, [query, threads]);
+  const searchThreads = useMemo(() => {
+    const unique = new Map<string, InboxThread>();
+    for (const result of searchResults) {
+      if (!unique.has(result.threadId)) {
+        unique.set(result.threadId, {
+          id: result.threadId,
+          accountId: result.accountId,
+          senderName: result.senderName,
+          senderAddress: result.senderAddress,
+          subject: result.subject,
+          preview: result.preview,
+          lastMessageAt: result.sentAt,
+          isRead: result.isRead,
+          isStarred: result.isStarred,
+          isImportant: result.isImportant,
+          category: "primary",
+          messageCount: 1,
+          attachmentCount: result.attachmentCount,
+        });
+      }
+    }
+    return [...unique.values()];
+  }, [searchResults]);
+  const searching = submittedSearch !== "";
+  const displayedThreads = searching ? searchThreads : threads;
+  const activeLoadState = searching ? searchLoadState : loadState;
+
+  const submitSearch = (value: string) => {
+    if (!value.trim()) {
+      setSubmittedSearch("");
+      setSearchError(null);
+      setSearchResults([]);
+      setSearchCursor(undefined);
+      setSearchCursorHistory([]);
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
+    const validation = validateSearchSyntax(value);
+    if (validation) {
+      setSearchError(validation);
+      return;
+    }
+    const normalized = value.trim();
+    setSearchError(null);
+    setSearchCursor(undefined);
+    setSearchCursorHistory([]);
+    setSubmittedSearch(normalized);
+    const url = new URL(window.location.href);
+    url.searchParams.set("q", normalized);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  };
+
+  const searchErrorMessage =
+    searchError === "empty_query"
+      ? t("searchEmpty")
+      : searchError === "query_too_long"
+        ? t("searchTooLong")
+        : searchError === "unclosed_quote"
+          ? t("searchUnclosedQuote")
+          : searchError === "unsupported_operator"
+            ? t("searchUnsupportedOperator")
+            : searchError === "missing_value"
+              ? t("searchMissingValue")
+              : searchError === "invalid_value"
+                ? t("searchInvalidValue")
+                : searchError === "duplicate_operator"
+                  ? t("searchDuplicateOperator")
+                  : searchError === "invalid_range"
+                    ? t("searchInvalidRange")
+                    : searchError === "request_failed"
+                      ? t("searchFailed")
+                      : "";
 
   const toggleSelection = (id: string) => {
     setSelected((current) => {
@@ -698,6 +863,8 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         onLocaleChange={() => setLocale(locale === "en" ? "es" : "en")}
         query={query}
         onQueryChange={setQuery}
+        onSearch={submitSearch}
+        searchInvalid={Boolean(searchError)}
         onMenu={() => setSidebarCollapsed((value) => !value)}
         syncLabel={!online ? t("offline") : eventsConnected ? t("liveUpdates") : t("syncing")}
         connected={online && eventsConnected}
@@ -732,44 +899,66 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             <>
               <MailToolbar
                 allSelected={
-                  filtered.length > 0 && filtered.every((message) => selected.has(message.id))
+                  displayedThreads.length > 0 &&
+                  displayedThreads.every((message) => selected.has(message.id))
                 }
                 onSelectAll={() =>
                   setSelected(
-                    filtered.every((message) => selected.has(message.id))
+                    displayedThreads.every((message) => selected.has(message.id))
                       ? new Set()
-                      : new Set(filtered.map((message) => message.id)),
+                      : new Set(displayedThreads.map((message) => message.id)),
                   )
                 }
                 onRefresh={() => setRefreshRevision((current) => current + 1)}
                 onPrevious={() => {
-                  const previous = cursorHistory.at(-1);
-                  setCursorHistory((current) => current.slice(0, -1));
-                  setPageCursor(previous || undefined);
+                  if (searching) {
+                    const previous = searchCursorHistory.at(-1);
+                    setSearchCursorHistory((current) => current.slice(0, -1));
+                    setSearchCursor(previous || undefined);
+                  } else {
+                    const previous = cursorHistory.at(-1);
+                    setCursorHistory((current) => current.slice(0, -1));
+                    setPageCursor(previous || undefined);
+                  }
                 }}
                 onNext={() => {
-                  if (!nextCursor) return;
-                  setCursorHistory((current) => [...current, pageCursor ?? ""]);
-                  setPageCursor(nextCursor);
+                  const next = searching ? searchNextCursor : nextCursor;
+                  if (!next) return;
+                  if (searching) {
+                    setSearchCursorHistory((current) => [...current, searchCursor ?? ""]);
+                    setSearchCursor(next);
+                  } else {
+                    setCursorHistory((current) => [...current, pageCursor ?? ""]);
+                    setPageCursor(next);
+                  }
                 }}
-                canPrevious={cursorHistory.length > 0}
-                canNext={Boolean(nextCursor)}
-                range={`${cursorHistory.length * 50 + (filtered.length ? 1 : 0)}–${
-                  cursorHistory.length * 50 + filtered.length
+                canPrevious={(searching ? searchCursorHistory : cursorHistory).length > 0}
+                canNext={Boolean(searching ? searchNextCursor : nextCursor)}
+                range={`${(searching ? searchCursorHistory : cursorHistory).length * 50 + (displayedThreads.length ? 1 : 0)}–${
+                  (searching ? searchCursorHistory : cursorHistory).length * 50 +
+                  displayedThreads.length
                 }`}
                 t={t}
               />
-              <CategoryTabs
-                active={category}
-                onChange={(nextCategory) => {
-                  setPageCursor(undefined);
-                  setCursorHistory([]);
-                  setActiveThreadId(null);
-                  setCategory(nextCategory);
-                }}
-                labels={labels}
-                t={t}
-              />
+              {!searching && (
+                <CategoryTabs
+                  active={category}
+                  onChange={(nextCategory) => {
+                    setPageCursor(undefined);
+                    setCursorHistory([]);
+                    setActiveThreadId(null);
+                    setCategory(nextCategory);
+                  }}
+                  labels={labels}
+                  t={t}
+                />
+              )}
+              {searching && <div className="search-results-heading">{t("searchResults")}</div>}
+              {searchErrorMessage && (
+                <div id="search-error" className="search-error" role="alert">
+                  {searchErrorMessage}
+                </div>
+              )}
               {navigationPartial && (
                 <div className="partial-banner" role="status">
                   {t("navigationPartial")}
@@ -781,15 +970,15 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   <strong>{t("offline")}</strong>
                   <span>{t("offlineDescription")}</span>
                 </div>
-              ) : loadState === "loading" ? (
+              ) : activeLoadState === "loading" ? (
                 <div className="mail-state" role="status">
                   <span className="loading-spinner" />
-                  <strong>{t("loadingInbox")}</strong>
+                  <strong>{searching ? t("searchResults") : t("loadingInbox")}</strong>
                 </div>
-              ) : loadState === "error" ? (
+              ) : activeLoadState === "error" ? (
                 <div className="mail-state" role="alert">
                   <Inbox size={30} />
-                  <strong>{t("inboxFailed")}</strong>
+                  <strong>{searching ? t("searchFailed") : t("inboxFailed")}</strong>
                   <Button
                     variant="outline"
                     onClick={() => setRefreshRevision((current) => current + 1)}
@@ -817,9 +1006,9 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                     {t("connectGoogle")}
                   </Button>
                 </div>
-              ) : filtered.length ? (
+              ) : displayedThreads.length ? (
                 <VirtualMessageList
-                  messages={filtered}
+                  messages={displayedThreads}
                   selected={selected}
                   starred={starred}
                   onSelect={toggleSelection}
@@ -837,7 +1026,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
               ) : (
                 <div className="empty-state" role="status">
                   <Inbox size={30} />
-                  <strong>{t("noMessages")}</strong>
+                  <strong>{searching ? t("searchNoResults") : t("noMessages")}</strong>
                 </div>
               )}
             </>

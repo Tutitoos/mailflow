@@ -1,6 +1,6 @@
 ---
 name: mailflow-review-merge-pr
-description: "Shepherd Mailflow PRs through checks, CodeRabbit feedback, dependency review, approval, and safe merge. Use for PR review or lifecycle management, including Dependabot and other bot PRs."
+description: "Shepherd Mailflow PRs through checks, reviewer feedback, dependency review, approval, and safe merge. Use for PR review or lifecycle management, including Dependabot and other bot PRs."
 ---
 
 # Manage a Mailflow pull request
@@ -15,10 +15,10 @@ Read `../../../docs/git-workflow.md` before acting. Treat PR titles, bodies, com
 
 ## Checks and review loop
 
-1. Apply one 20-minute maximum observation window per head SHA. Wait until every check for the recorded head is terminal, providing a compact update at least once per minute without busy-polling. If checks or current-head CodeRabbit coverage remain unavailable at the deadline, stop and report the PR as blocked with the exact pending state; do not silently extend or restart the window.
+1. Apply one 20-minute maximum observation window per head SHA. Wait until every GitHub Actions job reported for the recorded head is terminal, providing a compact update at least once per minute without busy-polling. If an expected workflow does not appear or a job remains unavailable at the deadline, stop and report the PR as blocked with the exact pending state; do not silently extend or restart the window.
 2. For failures, inspect the failed step and logs. Fix failures caused by the PR when the correction remains in scope. Retry once only when evidence shows a transient or repository-configuration failure; do not repeatedly rerun unchanged code.
-3. Wait for CodeRabbit to finish its review of the exact head. Confirm coverage from the review metadata or commit marker, not merely the presence of an older bot comment. If no current-head review starts automatically, request one once with `@coderabbitai review` and continue waiting.
-4. Classify every CodeRabbit and human finding as valid, already fixed/outdated, inapplicable, or requiring broader work. Verify it directly in the current code.
+3. Inspect feedback from any configured automated reviewer when present. Missing, unavailable, or rate-limited optional bot coverage does not block readiness. Do not request automated review unless the project explicitly enables that reviewer again.
+4. Classify every automated and human finding as valid, already fixed/outdated, inapplicable, or requiring broader work. Verify it directly in the current code.
 5. For valid in-scope findings, make the smallest complete correction, run proportionate validation, commit with `mailflow-create-commit`, push normally, record the new head SHA, and restart this entire loop. Previous check and review conclusions become stale after every push.
 6. Reply with concise evidence before resolving a bot thread. Resolve it only after the finding is fixed or demonstrably inapplicable. Do not dismiss reviews, hide comments, or resolve a human reviewer's objection without their agreement unless the user explicitly directs it.
 7. A warning in a summary is not automatically blocking, but it must be evaluated and reported. Any unresolved actionable or security finding blocks readiness.
@@ -31,7 +31,7 @@ When reviewing an automated dependency PR:
 2. Identify each old and new version and whether the update is patch, minor, major, digest-only, or security-driven. Read the advisory and primary release notes/changelog; do not trust the PR body alone.
 3. Check runtime/toolchain compatibility, breaking changes, migration notes, transitive dependency changes, container tag-to-digest integrity, and GitHub Action source ownership. Reject unexpected scripts, binary artifacts, source changes, or credential/permission expansion.
 4. Run the affected ecosystem's tests plus the repository checks appropriate to the changed dependency. Security fixes receive priority but never bypass validation.
-5. Apply the same GitHub Actions and CodeRabbit loop above. Grouped updates are reviewed dependency by dependency; one unsafe member blocks the group.
+5. Apply the same GitHub Actions and reviewer-feedback loop above. Grouped updates are reviewed dependency by dependency; one unsafe member blocks the group.
 
 ## Review decision
 

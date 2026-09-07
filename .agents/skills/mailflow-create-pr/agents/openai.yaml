@@ -1,4 +1,4 @@
 interface:
   display_name: "Mailflow: Create PR"
   short_description: "Publish and shepherd a Mailflow pull request"
-  default_prompt: "Use $mailflow-create-pr to publish this branch, then review its checks and CodeRabbit feedback."
+  default_prompt: "Use $mailflow-create-pr to publish this branch, then review its checks and all available reviewer feedback."

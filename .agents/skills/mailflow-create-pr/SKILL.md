@@ -1,6 +1,6 @@
 ---
 name: mailflow-create-pr
-description: "Publish and shepherd a Mailflow pull request through GitHub checks and CodeRabbit review. Use when the user asks to push a branch, open a PR, or publish completed repository work for review."
+description: "Publish and shepherd a Mailflow pull request through GitHub checks and reviewer feedback. Use when the user asks to push a branch, open a PR, or publish completed repository work for review."
 ---
 
 # Create a Mailflow pull request
@@ -16,12 +16,13 @@ Read `../../../docs/git-workflow.md` before acting.
 7. Open a draft if work or required validation remains; otherwise open a ready PR targeting `main`.
 8. Re-read the created PR to verify base, head, title, body, state, and URL.
 9. Continue with the post-publication review loop in `../mailflow-review-merge-pr/SKILL.md`, even when merge was not requested:
-   - Apply one 20-minute maximum observation window per head SHA. If checks or current-head CodeRabbit coverage are still unavailable when it expires, stop and report the PR as blocked with the exact pending state.
-   - Wait for GitHub Actions and CodeRabbit to finish reviewing the exact current head SHA.
+   - Apply one 20-minute maximum observation window per head SHA. If an expected GitHub Actions workflow does not appear or a job remains unavailable when it expires, stop and report the PR as blocked with the exact pending state.
+   - Wait for every GitHub Actions job reported for the exact current head SHA to finish.
    - Inspect check failures, reviews, issue comments, inline comments, and unresolved threads rather than relying on the PR summary.
+   - Inspect automated reviewer feedback when present, but do not block on an absent, unavailable, or rate-limited optional bot and do not request bot review unless the project explicitly enables it again.
    - Verify every finding against the code. Fix valid in-scope findings, validate, commit with `mailflow-create-commit`, push normally, and restart the loop for the new head.
    - Reply with evidence and resolve a bot thread only after its finding is fixed or demonstrably inapplicable. Never blindly apply bot suggestions.
    - Stop and report when a finding requires a material scope expansion, unavailable credentials, a repository setting, or user authority not already granted.
-10. Report the final reviewed head SHA, checks, CodeRabbit state, unresolved findings, and merge readiness. Distinguish an open reviewed PR from a merged PR.
+10. Report the final reviewed head SHA, checks, reviewer feedback, unresolved findings, and merge readiness. Distinguish an open reviewed PR from a merged PR.
 
 Creating a PR does not authorize approving, enabling auto-merge, or merging it.

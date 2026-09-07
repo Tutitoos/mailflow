@@ -1,4 +1,4 @@
 interface:
   display_name: "Mailflow: Manage PR"
   short_description: "Manage checks, bots, reviews, and safe merges"
-  default_prompt: "Use $mailflow-review-merge-pr to manage this PR, including checks, CodeRabbit, and dependency updates."
+  default_prompt: "Use $mailflow-review-merge-pr to manage this PR, including checks, reviewer feedback, and dependency updates."

@@ -132,7 +132,10 @@ La tabla `users` es la identidad canónica y usa UUID de extremo a extremo. Bett
 - Passkey opcional.
 - Registro desactivado después del primer usuario.
 - Cookies seguras para web.
-- JWT cortos y JWKS para que Fiber valide sesiones sin llamar a Bun en cada petición.
+- JWT EdDSA de 15 minutos y JWKS para que Fiber valide sesiones sin llamar a Bun en cada petición.
+- Better Auth y Fiber comparten un emisor configurado y la audiencia fija `mailflow-api`; la API exige `iss`, `aud`, `sub` y `exp` antes de resolver el perfil.
+- Las claves JWKS se refrescan periódicamente y de inmediato ante un `kid` nuevo para tolerar rotaciones sin relajar la validación.
+- El usuario actual se expone a los servicios mediante `context.Context`; los módulos de dominio no importan Fiber.
 - Sesiones nativas renovables y revocables almacenadas en Keychain.
 
 Las identidades de Mailflow estarán separadas de las credenciales utilizadas para acceder a los buzones.

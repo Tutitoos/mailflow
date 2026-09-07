@@ -97,7 +97,11 @@ export const auth = betterAuth({
     }),
     jwt({
       jwks: { rotationInterval: 60 * 60 * 24 * 30, gracePeriod: 60 * 60 * 24 * 30 },
-      jwt: { expirationTime: "15m" },
+      jwt: {
+        audience: config.audience,
+        expirationTime: "15m",
+        issuer: new URL(config.baseUrl).origin,
+      },
       schema: {
         jwks: {
           modelName: "auth_jwks",

@@ -4,6 +4,12 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}/api/v1` | (string & {});
 };
 
+export type CurrentUser = {
+    id: string;
+    email: string;
+    locale: 'en' | 'es';
+};
+
 export type Account = {
     id: string;
     provider: 'google' | 'microsoft' | 'imap';
@@ -36,6 +42,35 @@ export type AccountId = string;
 export type Cursor = string;
 
 export type IdempotencyKey = string;
+
+export type GetCurrentUserData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me';
+};
+
+export type GetCurrentUserErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetCurrentUserError = GetCurrentUserErrors[keyof GetCurrentUserErrors];
+
+export type GetCurrentUserResponses = {
+    /**
+     * Canonical Mailflow user for the authenticated token
+     */
+    200: CurrentUser;
+};
+
+export type GetCurrentUserResponse = GetCurrentUserResponses[keyof GetCurrentUserResponses];
 
 export type ListAccountsData = {
     body?: never;

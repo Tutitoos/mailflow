@@ -176,6 +176,17 @@ Los proveedores se implementarán en orden: Google, Microsoft e IMAP.
 - Tokens y secretos cifrados a nivel de aplicación.
 - Base de datos, backups y conexiones cifrados por la infraestructura.
 
+### Cola durable
+
+El worker consume una cola Redis Streams versionada con entrega **at least once**. Los handlers deben ser idempotentes; confirmar un trabajo elimina de forma atómica su entrada, mientras que un proceso caído deja un claim pendiente que otro consumer recupera después del visibility timeout.
+
+- Un idempotency key opcional, almacenado únicamente como SHA-256 y con caducidad, evita enqueues duplicados y devuelve el ID original.
+- Los fallos pasan a un sorted set hasta que vence un backoff exponencial acotado; la promoción a la cola lista es atómica.
+- Al agotar los intentos, el envelope pasa a un stream de dead letters consultable. Solo se persiste un código de error acotado, nunca respuestas de proveedor ni datos del mensaje.
+- Al recibir una señal, el worker deja de reclamar trabajo. El handler activo dispone de una gracia acotada y, si no termina, el claim se libera sin consumir un intento.
+- La profundidad lista, pendiente, diferida y muerta puede consultarse por el sistema de salud. Los eventos de claim, éxito, retry, dead letter y release alimentan métricas propias con dimensiones acotadas.
+- `MAILFLOW_QUEUE_CLAIM_TIMEOUT`, `MAILFLOW_QUEUE_HANDLE_TIMEOUT` y `MAILFLOW_QUEUE_SHUTDOWN_GRACE` permiten ajustar los límites operativos sin cambiar el contrato del envelope. El visibility timeout debe superar siempre al tiempo máximo de handler para impedir que otro consumer reclame trabajo aún activo.
+
 ## CDN local
 
 El módulo `cdn` servirá los archivos desde un volumen persistente local.

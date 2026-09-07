@@ -121,6 +121,10 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_ADDRESS: redis:6379
+      MAILFLOW_QUEUE_PREFIX: mailflow
+      MAILFLOW_QUEUE_CLAIM_TIMEOUT: 6m
+      MAILFLOW_QUEUE_HANDLE_TIMEOUT: 5m
+      MAILFLOW_QUEUE_SHUTDOWN_GRACE: 15s
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

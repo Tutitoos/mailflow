@@ -6,6 +6,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -19,8 +20,10 @@ type Options struct {
 	AuthIssuer    string
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
+	Events        *events.Store
 	Readiness     func(context.Context) error
 	SentryEnabled bool
+	Shutdown      context.Context
 }
 
 func Build(version string, options ...Options) *fiber.App {
@@ -37,9 +40,11 @@ func Build(version string, options ...Options) *fiber.App {
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
 		CurrentUsers:  runtimeOptions.CurrentUsers,
+		Events:        runtimeOptions.Events,
 		Readiness:     runtimeOptions.Readiness,
 		Sentry:        sentry.NewService(5 << 20),
 		Translations:  translations.NewCatalog(),
 		CaptureSentry: runtimeOptions.SentryEnabled,
+		Shutdown:      runtimeOptions.Shutdown,
 	})
 }

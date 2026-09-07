@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
@@ -17,6 +20,8 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
 	getsentry "github.com/getsentry/sentry-go"
+	"github.com/gofiber/fiber/v3"
+	redis "github.com/redis/go-redis/v9"
 )
 
 var version = "dev"
@@ -60,6 +65,9 @@ func main() {
 		return
 	}
 	var options platformapp.Options
+	shutdown, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	options.Shutdown = shutdown
 	options.AuthAudience = runtimeConfig.AuthAudience
 	options.AuthIssuer = runtimeConfig.AuthIssuer
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
@@ -87,6 +95,19 @@ func main() {
 		options.CurrentUsers = authbridge.NewRepository(queries)
 		options.Accounts = accounts.NewService(accounts.NewRepository(queries, vault))
 	}
+	if runtimeConfig.RedisAddress != "" {
+		client := redis.NewClient(&redis.Options{Addr: runtimeConfig.RedisAddress})
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		store, err := events.NewStore(ctx, client, events.DefaultConfig())
+		cancel()
+		if err != nil {
+			_ = client.Close()
+			logger.Error("event store connection failed", "event", "events.unavailable", "error", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+		options.Events = store
+	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {
 		if err := getsentry.Init(getsentry.ClientOptions{Dsn: os.Getenv("SENTRY_DSN"), Release: version, ServerName: "api"}); err != nil {
@@ -97,7 +118,7 @@ func main() {
 	}
 	options.SentryEnabled = sentryEnabled
 	logger.Info("api starting", "event", "api.started", "address", runtimeConfig.Address, "version", version)
-	if err := platformapp.Build(version, options).Listen(runtimeConfig.Address); err != nil {
+	if err := platformapp.Build(version, options).Listen(runtimeConfig.Address, fiber.ListenConfig{GracefulContext: shutdown, ShutdownTimeout: 15 * time.Second}); err != nil {
 		logger.Error("api stopped", "event", "api.stopped", "error", err)
 		os.Exit(1)
 	}

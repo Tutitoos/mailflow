@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListThreadsData, ListThreadsResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
+import type { CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListThreadsData, ListThreadsResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -33,6 +33,15 @@ export const listAccounts = <ThrowOnError extends boolean = false>(options?: Opt
 export const synchronizeAccount = <ThrowOnError extends boolean = false>(options: Options<SynchronizeAccountData, ThrowOnError>): RequestResult<SynchronizeAccountResponses, SynchronizeAccountErrors, ThrowOnError> => (options.client ?? client).post<SynchronizeAccountResponses, SynchronizeAccountErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/accounts/{accountId}/sync',
+    ...options
+});
+
+/**
+ * Upgrade to an authenticated WebSocket. Reconnect with the last acknowledged cursor to replay missed events.
+ */
+export const streamEvents = <ThrowOnError extends boolean = false>(options?: Options<StreamEventsData, ThrowOnError>): RequestResult<unknown, StreamEventsErrors, ThrowOnError> => (options?.client ?? client).get<unknown, StreamEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/events',
     ...options
 });
 

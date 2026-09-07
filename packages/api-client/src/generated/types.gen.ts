@@ -24,6 +24,16 @@ export type Account = {
     updatedAt: string;
 };
 
+export type EventEnvelope = {
+    version: 1;
+    cursor: string;
+    type: 'mail.changed' | 'sync.progress' | 'draft.changed' | 'admin.alert' | 'system.status' | 'system.resync_required';
+    timestamp: string;
+    payload: {
+        [key: string]: unknown;
+    };
+};
+
 export type ThreadPage = {
     items: Array<{
         [key: string]: unknown;
@@ -141,6 +151,32 @@ export type SynchronizeAccountResponses = {
      */
     202: unknown;
 };
+
+export type StreamEventsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+    };
+    url: '/events';
+};
+
+export type StreamEventsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    426: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type StreamEventsError = StreamEventsErrors[keyof StreamEventsErrors];
 
 export type ListThreadsData = {
     body?: never;

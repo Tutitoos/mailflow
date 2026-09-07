@@ -19,6 +19,47 @@ type inboxCursor struct {
 	ID            string    `json:"id"`
 }
 
+type messageCursor struct {
+	SentAt time.Time `json:"sentAt"`
+	ID     string    `json:"id"`
+}
+
+type conversationThread struct {
+	ID            string        `json:"id"`
+	AccountID     string        `json:"accountId"`
+	LastMessageAt time.Time     `json:"lastMessageAt"`
+	IsRead        bool          `json:"isRead"`
+	IsStarred     bool          `json:"isStarred"`
+	IsImportant   bool          `json:"isImportant"`
+	Category      mail.Category `json:"category"`
+	MessageCount  int32         `json:"messageCount"`
+	UnreadCount   int32         `json:"unreadCount"`
+}
+
+type conversationAttachment struct {
+	ID          string  `json:"id"`
+	Position    int32   `json:"position"`
+	Filename    *string `json:"filename"`
+	MediaType   string  `json:"mediaType"`
+	Disposition string  `json:"disposition"`
+	SizeBytes   int64   `json:"sizeBytes"`
+}
+
+type conversationMessage struct {
+	ID          string                   `json:"id"`
+	ThreadID    string                   `json:"threadId"`
+	AccountID   string                   `json:"accountId"`
+	Subject     string                   `json:"subject"`
+	BodyText    string                   `json:"bodyText"`
+	BodyHTML    string                   `json:"bodyHtml"`
+	SentAt      time.Time                `json:"sentAt"`
+	IsRead      bool                     `json:"isRead"`
+	IsStarred   bool                     `json:"isStarred"`
+	IsImportant bool                     `json:"isImportant"`
+	Addresses   []mail.MessageAddress    `json:"addresses"`
+	Attachments []conversationAttachment `json:"attachments"`
+}
+
 func listMailboxes(reader MailboxLabelReader) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		user, accountID, problem := mailScope(c, reader != nil)
@@ -77,6 +118,64 @@ func listInbox(reader InboxReader) fiber.Handler {
 	}
 }
 
+func getConversation(reader ThreadReader) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		user, accountID, problem := mailScope(c, reader != nil)
+		if problem != nil {
+			return problem
+		}
+		cursor, err := decodeMessageCursor(c.Query("cursor"))
+		if err != nil {
+			return invalidConversationQuery()
+		}
+		thread, err := reader.GetThread(c.Context(), user.ID, accountID, c.Params("threadId"))
+		if errors.Is(err, mail.ErrInvalidThread) {
+			return invalidConversationQuery()
+		}
+		if errors.Is(err, mail.ErrThreadNotFound) {
+			return newProblem(fiber.StatusNotFound, "thread_not_found", "Thread not found", "The requested thread does not exist.")
+		}
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "thread_failed", "Thread unavailable", "The conversation could not be loaded.")
+		}
+		page, err := reader.ListMessages(c.Context(), user.ID, accountID, thread.ID, cursor, 100)
+		if errors.Is(err, mail.ErrInvalidMessage) {
+			return invalidConversationQuery()
+		}
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "thread_failed", "Thread unavailable", "Conversation messages could not be loaded.")
+		}
+		next, err := encodeMessageCursor(page.Next)
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "thread_failed", "Thread unavailable", "Conversation pagination could not be created.")
+		}
+		messages := make([]conversationMessage, 0, len(page.Items))
+		for _, message := range page.Items {
+			attachments := make([]conversationAttachment, 0, len(message.Attachments))
+			for _, attachment := range message.Attachments {
+				attachments = append(attachments, conversationAttachment{
+					ID: attachment.ID, Position: attachment.Position, Filename: attachment.Filename,
+					MediaType: attachment.MediaType, Disposition: attachment.Disposition, SizeBytes: attachment.SizeBytes,
+				})
+			}
+			messages = append(messages, conversationMessage{
+				ID: message.ID, ThreadID: message.ThreadID, AccountID: message.AccountID,
+				Subject: message.Subject, BodyText: message.BodyText, BodyHTML: message.BodyHTML,
+				SentAt: message.SentAt, IsRead: message.IsRead, IsStarred: message.IsStarred,
+				IsImportant: message.IsImportant, Addresses: message.Addresses, Attachments: attachments,
+			})
+		}
+		return c.JSON(fiber.Map{
+			"thread": conversationThread{
+				ID: thread.ID, AccountID: thread.AccountID, LastMessageAt: thread.LastMessageAt,
+				IsRead: thread.IsRead, IsStarred: thread.IsStarred, IsImportant: thread.IsImportant,
+				Category: thread.Category, MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount,
+			},
+			"messages": messages, "nextCursor": next,
+		})
+	}
+}
+
 func mailScope(c fiber.Ctx, available bool) (authbridge.User, string, error) {
 	user, ok := authbridge.UserFromContext(c.Context())
 	if !ok {
@@ -94,6 +193,10 @@ func mailScope(c fiber.Ctx, available bool) (authbridge.User, string, error) {
 
 func invalidInboxQuery() error {
 	return newProblem(fiber.StatusBadRequest, "invalid_mail_query", "Invalid mail query", "The category, cursor, or page size is invalid.")
+}
+
+func invalidConversationQuery() error {
+	return newProblem(fiber.StatusBadRequest, "invalid_thread_query", "Invalid thread query", "The account, thread, or cursor is invalid.")
 }
 
 func encodeInboxCursor(cursor *mail.ThreadCursor) (*string, error) {
@@ -124,4 +227,34 @@ func decodeInboxCursor(encoded string) (*mail.ThreadCursor, error) {
 		return nil, errors.New("invalid cursor")
 	}
 	return &mail.ThreadCursor{LastMessageAt: cursor.LastMessageAt, ID: cursor.ID}, nil
+}
+
+func encodeMessageCursor(cursor *mail.MessageCursor) (*string, error) {
+	if cursor == nil {
+		return nil, nil
+	}
+	payload, err := json.Marshal(messageCursor{SentAt: cursor.SentAt, ID: cursor.ID})
+	if err != nil {
+		return nil, err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	return &encoded, nil
+}
+
+func decodeMessageCursor(encoded string) (*mail.MessageCursor, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	if len(encoded) > 768 {
+		return nil, errors.New("invalid cursor")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(payload) > 512 {
+		return nil, errors.New("invalid cursor")
+	}
+	var cursor messageCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.SentAt.IsZero() || cursor.ID == "" {
+		return nil, errors.New("invalid cursor")
+	}
+	return &mail.MessageCursor{SentAt: cursor.SentAt, ID: cursor.ID}, nil
 }

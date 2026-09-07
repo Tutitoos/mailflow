@@ -212,9 +212,14 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
           description: Conversation and messages
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationPage" }
         default: { $ref: "#/components/responses/Problem" }
   /search:
     get:
@@ -414,6 +419,68 @@ components:
         category: { $ref: "#/components/schemas/MailCategory" }
         messageCount: { type: integer, minimum: 0 }
         attachmentCount: { type: integer, minimum: 0 }
+    ConversationPage:
+      type: object
+      required: [thread, messages, nextCursor]
+      properties:
+        thread: { $ref: "#/components/schemas/Thread" }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/ConversationMessage" }
+        nextCursor: { type: [string, "null"] }
+    Thread:
+      type: object
+      required: [id, accountId, lastMessageAt, isRead, isStarred, isImportant, category, messageCount, unreadCount]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        lastMessageAt: { type: string, format: date-time }
+        isRead: { type: boolean }
+        isStarred: { type: boolean }
+        isImportant: { type: boolean }
+        category: { $ref: "#/components/schemas/MailCategory" }
+        messageCount: { type: integer, minimum: 0 }
+        unreadCount: { type: integer, minimum: 0 }
+    ConversationMessage:
+      type: object
+      required: [id, threadId, accountId, subject, bodyText, bodyHtml, sentAt, isRead, isStarred, isImportant, addresses, attachments]
+      properties:
+        id: { type: string, format: uuid }
+        threadId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        subject: { type: string }
+        bodyText: { type: string }
+        bodyHtml:
+          type: string
+          description: Server-sanitized HTML. Remote image URLs remain inert in data-mailflow-src until explicit client authorization.
+        sentAt: { type: string, format: date-time }
+        isRead: { type: boolean }
+        isStarred: { type: boolean }
+        isImportant: { type: boolean }
+        addresses:
+          type: array
+          items: { $ref: "#/components/schemas/MessageAddress" }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/MessageAttachment" }
+    MessageAddress:
+      type: object
+      required: [role, position, displayName, address]
+      properties:
+        role: { type: string, enum: [from, sender, reply_to, to, cc, bcc] }
+        position: { type: integer, minimum: 0 }
+        displayName: { type: [string, "null"] }
+        address: { type: string, format: email }
+    MessageAttachment:
+      type: object
+      required: [id, position, filename, mediaType, disposition, sizeBytes]
+      properties:
+        id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+        filename: { type: [string, "null"] }
+        mediaType: { type: string }
+        disposition: { type: string, enum: [attachment, inline] }
+        sizeBytes: { type: integer, minimum: 0 }
     Mailbox:
       type: object
       required: [id, accountId, remoteId, remoteName, localName, role, selectable, totalCount, unreadCount]

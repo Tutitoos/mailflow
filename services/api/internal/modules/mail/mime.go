@@ -324,7 +324,7 @@ func trimMessageID(value string) string {
 var safeElements = map[string]bool{
 	"a": true, "abbr": true, "b": true, "blockquote": true, "br": true, "code": true,
 	"del": true, "div": true, "em": true, "h1": true, "h2": true, "h3": true,
-	"h4": true, "h5": true, "h6": true, "hr": true, "i": true, "li": true,
+	"h4": true, "h5": true, "h6": true, "hr": true, "i": true, "img": true, "li": true,
 	"ol": true, "p": true, "pre": true, "span": true, "strong": true, "sub": true,
 	"sup": true, "table": true, "tbody": true, "td": true, "tfoot": true, "th": true,
 	"thead": true, "tr": true, "u": true, "ul": true,
@@ -372,8 +372,26 @@ func sanitizeNode(node *xhtml.Node) []*xhtml.Node {
 	}
 	clone := &xhtml.Node{Type: xhtml.ElementNode, Data: node.Data, DataAtom: node.DataAtom}
 	for _, attribute := range node.Attr {
+		if node.Data == "img" && (strings.EqualFold(attribute.Key, "src") || strings.EqualFold(attribute.Key, "data-mailflow-src")) {
+			if safeRemoteImageURL(attribute.Val) {
+				clone.Attr = append(clone.Attr, xhtml.Attribute{Key: "data-mailflow-src", Val: strings.TrimSpace(attribute.Val)})
+			}
+			continue
+		}
 		if safeAttribute(node.Data, attribute.Key, attribute.Val) {
 			clone.Attr = append(clone.Attr, xhtml.Attribute{Key: attribute.Key, Val: attribute.Val})
+		}
+	}
+	if node.Data == "img" {
+		hasSource := false
+		for _, attribute := range clone.Attr {
+			if attribute.Key == "data-mailflow-src" {
+				hasSource = true
+				break
+			}
+		}
+		if !hasSource {
+			return nil
 		}
 	}
 	if node.Data == "a" {
@@ -398,6 +416,9 @@ func safeAttribute(element, key, value string) bool {
 	if key == "title" || key == "dir" || key == "lang" || ((element == "td" || element == "th") && (key == "colspan" || key == "rowspan")) {
 		return true
 	}
+	if element == "img" {
+		return key == "alt" || ((key == "width" || key == "height") && safeImageDimension(value))
+	}
 	if element != "a" || key != "href" {
 		return false
 	}
@@ -407,6 +428,28 @@ func safeAttribute(element, key, value string) bool {
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	return scheme == "" || scheme == "http" || scheme == "https" || scheme == "mailto"
+}
+
+func safeRemoteImageURL(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme == "http" || scheme == "https"
+}
+
+func safeImageDimension(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 4 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func htmlText(value string) string {

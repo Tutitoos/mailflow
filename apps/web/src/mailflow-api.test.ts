@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGoogleAuthorization,
   disconnectAccount,
+  loadConversationPage,
   loadGoogleAccounts,
   loadInboxPage,
   loadMailNavigation,
@@ -96,15 +97,26 @@ describe("Mailflow API client", () => {
           ],
           nextCursor: "opaque-cursor",
         }),
+      )
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(
+        json({
+          thread: { id: "thread-1", accountId: "account-1", category: "primary", messageCount: 1 },
+          messages: [],
+          nextCursor: null,
+        }),
       );
     vi.stubGlobal("fetch", fetch);
 
     const navigation = await loadMailNavigation("account-1");
     const page = await loadInboxPage("account-1", "primary", "previous-cursor");
+    const conversation = await loadConversationPage("account-1", "thread-1");
 
     expect(navigation.mailboxes).toHaveLength(1);
     expect(page.nextCursor).toBe("opaque-cursor");
+    expect(conversation.thread.id).toBe("thread-1");
     expect(fetch.mock.calls[2]?.[0]).toContain("accountId=account-1");
     expect(fetch.mock.calls[5]?.[0]).toContain("cursor=previous-cursor");
+    expect(fetch.mock.calls[7]?.[0]).toContain("/threads/thread-1?accountId=account-1");
   });
 });

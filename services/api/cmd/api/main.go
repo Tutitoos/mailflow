@@ -114,6 +114,7 @@ func main() {
 		options.Attachments = cdnService
 		options.CurrentUsers = authbridge.NewRepository(queries)
 		options.Inbox = mail.NewThreadRepository(pool)
+		options.Threads = options.Inbox
 		options.Mailboxes = mail.NewMailboxLabelRepository(queries)
 		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
 		options.Accounts = accountService

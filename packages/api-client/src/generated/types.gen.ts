@@ -62,6 +62,58 @@ export type InboxThread = {
     attachmentCount: number;
 };
 
+export type ConversationPage = {
+    thread: Thread;
+    messages: Array<ConversationMessage>;
+    nextCursor: string | null;
+};
+
+export type Thread = {
+    id: string;
+    accountId: string;
+    lastMessageAt: string;
+    isRead: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+    category: MailCategory;
+    messageCount: number;
+    unreadCount: number;
+};
+
+export type ConversationMessage = {
+    id: string;
+    threadId: string;
+    accountId: string;
+    subject: string;
+    bodyText: string;
+    /**
+     * Server-sanitized HTML. Remote image URLs remain inert in data-mailflow-src until explicit client authorization.
+     */
+    bodyHtml: string;
+    sentAt: string;
+    isRead: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+    addresses: Array<MessageAddress>;
+    attachments: Array<MessageAttachment>;
+};
+
+export type MessageAddress = {
+    role: 'from' | 'sender' | 'reply_to' | 'to' | 'cc' | 'bcc';
+    position: number;
+    displayName: string | null;
+    address: string;
+};
+
+export type MessageAttachment = {
+    id: string;
+    position: number;
+    filename: string | null;
+    mediaType: string;
+    disposition: 'attachment' | 'inline';
+    sizeBytes: number;
+};
+
 export type Mailbox = {
     id: string;
     accountId: string;
@@ -467,7 +519,10 @@ export type GetThreadData = {
     path: {
         threadId: string;
     };
-    query?: never;
+    query: {
+        accountId: string;
+        cursor?: string;
+    };
     url: '/threads/{threadId}';
 };
 
@@ -484,8 +539,10 @@ export type GetThreadResponses = {
     /**
      * Conversation and messages
      */
-    200: unknown;
+    200: ConversationPage;
 };
+
+export type GetThreadResponse = GetThreadResponses[keyof GetThreadResponses];
 
 export type SearchMailData = {
     body?: never;

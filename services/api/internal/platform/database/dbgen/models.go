@@ -140,6 +140,23 @@ type Message struct {
 	BodyHtmlSanitized string             `json:"body_html_sanitized"`
 	SentAt            pgtype.Timestamptz `json:"sent_at"`
 	SearchVector      interface{}        `json:"search_vector"`
+	AccountID         pgtype.UUID        `json:"account_id"`
+	IsRead            bool               `json:"is_read"`
+	IsStarred         bool               `json:"is_starred"`
+	IsImportant       bool               `json:"is_important"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MessageAddress struct {
+	MessageID   pgtype.UUID        `json:"message_id"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	Role        string             `json:"role"`
+	Position    int32              `json:"position"`
+	DisplayName pgtype.Text        `json:"display_name"`
+	Address     string             `json:"address"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type MetricPoint struct {
@@ -192,6 +209,12 @@ type Thread struct {
 	IsRead        bool               `json:"is_read"`
 	IsStarred     bool               `json:"is_starred"`
 	Category      string             `json:"category"`
+	IsImportant   bool               `json:"is_important"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	MessageCount  int32              `json:"message_count"`
+	UnreadCount   int32              `json:"unread_count"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

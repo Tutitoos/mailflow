@@ -116,3 +116,76 @@ func TestMailboxMigrationPreservesExistingUnreadCounters(t *testing.T) {
 		t.Fatalf("migrated mailbox = name %q, total %d, unread %d", remoteName, total, unread)
 	}
 }
+
+func TestThreadMigrationPreservesExistingThreadState(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 5); err != nil {
+		t.Fatalf("apply mailbox migrations: %v", err)
+	}
+
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb728")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb729")
+	threadID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb730")
+	messageID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb731")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "thread-migration@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		insert into accounts (
+			id, user_id, provider, remote_id, display_name,
+			encrypted_credentials, credential_nonce, capabilities
+		) values ($1, $2, 'google', 'thread-migration', 'Personal', $3, $4, '{}')
+	`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		insert into threads (
+			id, account_id, remote_id, last_message_at, is_read, is_starred, category
+		) values ($1, $2, 'legacy-thread', '2026-09-07T16:00:00Z', true, true, 'primary')
+	`, threadID, accountID); err != nil {
+		t.Fatalf("insert legacy thread: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		insert into messages (
+			id, thread_id, remote_id, sender, recipients, sent_at
+		) values ($1, $2, 'legacy-message', '{}', '[]', '2026-09-07T16:00:00Z')
+	`, messageID, threadID); err != nil {
+		t.Fatalf("insert legacy message: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply thread migration: %v", err)
+	}
+
+	var messageAccount uuid.UUID
+	var messageRead, messageStarred bool
+	if err := database.QueryRowContext(ctx, `
+		select account_id, is_read, is_starred
+		from messages where id = $1
+	`, messageID).Scan(&messageAccount, &messageRead, &messageStarred); err != nil {
+		t.Fatalf("load migrated message: %v", err)
+	}
+	if messageAccount != accountID || !messageRead || !messageStarred {
+		t.Fatalf("migrated message = account %s, read %v, starred %v", messageAccount, messageRead, messageStarred)
+	}
+	var count, unread int
+	var threadRead, threadStarred bool
+	if err := database.QueryRowContext(ctx, `
+		select message_count, unread_count, is_read, is_starred
+		from threads where id = $1
+	`, threadID).Scan(&count, &unread, &threadRead, &threadStarred); err != nil {
+		t.Fatalf("load migrated thread: %v", err)
+	}
+	if count != 1 || unread != 0 || !threadRead || !threadStarred {
+		t.Fatalf("migrated thread = count %d, unread %d, read %v, starred %v", count, unread, threadRead, threadStarred)
+	}
+}

@@ -68,6 +68,77 @@ paths:
         "413": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
         "507": { $ref: "#/components/responses/Problem" }
+  /api/0/organizations/mailflow/releases/:
+    servers: [{ url: / }]
+    post:
+      operationId: createSentryRelease
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, maxLength: 128 }
+                projects:
+                  type: array
+                  maxItems: 1
+                  items: { type: string, enum: [api, web, desktop, ios] }
+      responses:
+        "201":
+          description: Release created or returned idempotently
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryRelease" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /api/0/projects/mailflow/{component}/releases/{version}/files/:
+    servers: [{ url: / }]
+    post:
+      operationId: uploadSentryReleaseArtifact
+      security: []
+      parameters:
+        - name: component
+          in: path
+          required: true
+          schema: { type: string, enum: [api, web, desktop, ios] }
+        - name: version
+          in: path
+          required: true
+          schema: { type: string, maxLength: 128 }
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                name: { type: string, maxLength: 255 }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Artifact stored and queued for processing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryArtifact" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+        "507": { $ref: "#/components/responses/Problem" }
   /me:
     get:
       operationId: getCurrentUser
@@ -584,8 +655,53 @@ paths:
   /admin/sentry:
     get:
       operationId: getSentryIssues
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [unresolved, resolved, ignored] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
       responses:
-        "200": { description: Grouped Sentry issues }
+        "200":
+          description: Grouped Sentry issues
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SentryIssue" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /admin/sentry/{issueId}:
+    put:
+      operationId: setSentryIssueStatus
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [unresolved, resolved, ignored] }
+      responses:
+        "200":
+          description: Updated Sentry issue
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryIssue" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     bearerAuth:
@@ -625,6 +741,39 @@ components:
       properties:
         id: { type: string, pattern: "^[0-9a-f]{32}$" }
         receivedAt: { type: string, format: date-time }
+    SentryRelease:
+      type: object
+      required: [id, component, version, status, dateCreated]
+      properties:
+        id: { type: integer, format: int64 }
+        component: { type: string, enum: [api, web, desktop, ios] }
+        version: { type: string }
+        status: { type: string, enum: [open, finalized] }
+        dateCreated: { type: string, format: date-time }
+    SentryArtifact:
+      type: object
+      required: [id, name, kind, sha256, size, status, dateCreated]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string, enum: [sourcemap, dsym, dif] }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size: { type: integer, format: int64 }
+        status: { type: string, enum: [pending, processed, failed] }
+        dateCreated: { type: string, format: date-time }
+    SentryIssue:
+      type: object
+      required: [id, fingerprint, component, environment, title, status, firstSeenAt, lastSeenAt, eventCount]
+      properties:
+        id: { type: string, format: uuid }
+        fingerprint: { type: string, pattern: "^[0-9a-f]{64}$" }
+        component: { type: string, enum: [api, web, desktop, ios] }
+        environment: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [unresolved, resolved, ignored] }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        eventCount: { type: integer, format: int64, minimum: 1 }
     CurrentUser:
       type: object
       required: [id, email, locale]

@@ -236,6 +236,7 @@ Mailflow tendrá observabilidad local y sencilla.
 - Prohibido registrar cuerpos, asuntos, destinatarios, tokens o URLs firmadas.
 - Los SDK oficiales enviarán eventos a la ingesta compatible integrada en Mailflow.
 - El contrato inicial de ingesta, límites y privacidad se documenta en [Sentry-compatible ingestion](sentry-ingestion.md).
+- Los errores Sentry se agrupan por componente y entorno; los source maps, dSYM y DIF se cargan con compatibilidad mínima de `sentry-cli` y se procesan de forma reintentable en el worker.
 - Fiber usará el adaptador oficial Sentry para capturar errores del transporte cuando exista un DSN.
 - Eventos, trazas, perfiles y Replay tendrán retenciones separadas y cargas grandes en el namespace Sentry del CDN local.
 - No se usarán Prometheus, Grafana, Loki ni R2.

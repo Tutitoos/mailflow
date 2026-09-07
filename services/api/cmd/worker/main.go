@@ -17,6 +17,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
@@ -218,6 +219,12 @@ func main() {
 			logger.Error("CDN cleanup storage unavailable", "event", "cdn.cleanup_unavailable", "error", err)
 			os.Exit(1)
 		}
+		artifactProcessor, err := mailflowsentry.NewArtifactProcessor(pool, cdnStore)
+		if err != nil {
+			logger.Error("Sentry artifact processor unavailable", "event", "sentry.artifacts_unavailable", "error", err)
+			os.Exit(1)
+		}
+		handlers[mailflowsentry.ArtifactProcessJobKind] = artifactProcessor.Handler()
 		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention)
 		if err != nil {
 			logger.Error("CDN cleanup service unavailable", "event", "cdn.cleanup_unavailable", "error", err)

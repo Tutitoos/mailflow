@@ -73,6 +73,13 @@ func TestProblemDetailsAndSentryEnvelopeLimit(t *testing.T) {
 	if err != nil || response.StatusCode != 503 {
 		t.Fatalf("expected unavailable ingestion without persistence, got %d: %v", response.StatusCode, err)
 	}
+	release := httptest.NewRequest("POST", "/api/0/organizations/mailflow/releases/", strings.NewReader(`{"version":"v1.2.3","projects":["web"]}`))
+	release.Header.Set("Content-Type", "application/json")
+	release.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 64))
+	response, err = unavailableApp.Test(release)
+	if err != nil || response.StatusCode != 503 {
+		t.Fatalf("expected unavailable releases without persistence, got %d: %v", response.StatusCode, err)
+	}
 }
 
 func TestAdminMetricsValidatesAndReturnsBoundedSeries(t *testing.T) {

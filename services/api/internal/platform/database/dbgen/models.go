@@ -314,17 +314,21 @@ type PendingActionAttempt struct {
 }
 
 type SentryEvent struct {
-	ID            int64              `json:"id"`
-	EventID       string             `json:"event_id"`
-	Component     string             `json:"component"`
-	EventType     string             `json:"event_type"`
-	Environment   pgtype.Text        `json:"environment"`
-	Release       pgtype.Text        `json:"release"`
-	Level         pgtype.Text        `json:"level"`
-	SdkName       pgtype.Text        `json:"sdk_name"`
-	ReceivedBytes int64              `json:"received_bytes"`
-	ItemCount     int64              `json:"item_count"`
-	ReceivedAt    pgtype.Timestamptz `json:"received_at"`
+	ID                  int64              `json:"id"`
+	EventID             string             `json:"event_id"`
+	Component           string             `json:"component"`
+	EventType           string             `json:"event_type"`
+	Environment         pgtype.Text        `json:"environment"`
+	Release             pgtype.Text        `json:"release"`
+	Level               pgtype.Text        `json:"level"`
+	SdkName             pgtype.Text        `json:"sdk_name"`
+	ReceivedBytes       int64              `json:"received_bytes"`
+	ItemCount           int64              `json:"item_count"`
+	ReceivedAt          pgtype.Timestamptz `json:"received_at"`
+	IssueID             pgtype.UUID        `json:"issue_id"`
+	GroupingKey         pgtype.Text        `json:"grouping_key"`
+	NormalizedStack     []byte             `json:"normalized_stack"`
+	SymbolicationStatus string             `json:"symbolication_status"`
 }
 
 type SentryEventItem struct {
@@ -353,11 +357,37 @@ type SentryIssue struct {
 }
 
 type SentryProject struct {
-	Component string             `json:"component"`
-	PublicKey string             `json:"public_key"`
-	Enabled   bool               `json:"enabled"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Component         string             `json:"component"`
+	PublicKey         string             `json:"public_key"`
+	Enabled           bool               `json:"enabled"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ArtifactTokenHash pgtype.Text        `json:"artifact_token_hash"`
+}
+
+type SentryRelease struct {
+	ID          int64              `json:"id"`
+	Component   string             `json:"component"`
+	Version     string             `json:"version"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	FinalizedAt pgtype.Timestamptz `json:"finalized_at"`
+}
+
+type SentryReleaseArtifact struct {
+	ID              int64              `json:"id"`
+	ReleaseID       int64              `json:"release_id"`
+	ObjectID        string             `json:"object_id"`
+	ObjectNamespace pgtype.Text        `json:"object_namespace"`
+	Name            string             `json:"name"`
+	Kind            string             `json:"kind"`
+	ChecksumSha256  string             `json:"checksum_sha256"`
+	SizeBytes       int64              `json:"size_bytes"`
+	Status          string             `json:"status"`
+	Attempts        int32              `json:"attempts"`
+	ErrorCode       pgtype.Text        `json:"error_code"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ProcessedAt     pgtype.Timestamptz `json:"processed_at"`
 }
 
 type SyncCursor struct {

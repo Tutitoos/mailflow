@@ -73,6 +73,9 @@ func TestAuthIdentityMigrationPreservesFoundationUser(t *testing.T) {
 	if legacyTableExists {
 		t.Fatal("legacy Better Auth user table unexpectedly exists")
 	}
+	if _, err := database.ExecContext(ctx, "insert into users (email, name) values ($1, $2)", "second@example.test", "Second"); err == nil {
+		t.Fatal("single-user database constraint accepted a second profile")
+	}
 }
 
 func resetSchema(t *testing.T, ctx context.Context, database *sql.DB) {

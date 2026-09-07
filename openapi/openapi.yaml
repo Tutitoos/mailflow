@@ -475,8 +475,52 @@ paths:
   /admin/logs:
     get:
       operationId: getAdminLogs
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+        - { name: service, in: query, schema: { type: string } }
+        - { name: module, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string, enum: [debug, info, warning, error] } }
+        - { name: event, in: query, schema: { type: string } }
+        - { name: requestId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 500 } }
       responses:
-        "200": { description: Redacted structured logs }
+        "200":
+          description: Filtered redacted operational logs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogEntryPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /admin/logs/debug:
+    get:
+      operationId: getAdminLogDebug
+      responses:
+        "200":
+          description: Current temporary debug lease
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogDebugStatus" }
+        "503": { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: setAdminLogDebug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [durationSeconds]
+              properties:
+                durationSeconds: { type: integer, minimum: 0, maximum: 3600 }
+      responses:
+        "200":
+          description: Updated temporary debug lease; zero disables debug
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogDebugStatus" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /admin/sentry:
     get:
       operationId: getSentryIssues
@@ -551,7 +595,7 @@ components:
         cursor: { type: string, pattern: "^[0-9]+-[0-9]+$" }
         type:
           type: string
-          enum: [mail.changed, sync.progress, draft.changed, admin.alert, system.status, system.resync_required]
+          enum: [mail.changed, sync.progress, draft.changed, admin.alert, admin.log, system.status, system.resync_required]
         timestamp: { type: string, format: date-time }
         payload: { type: object, additionalProperties: true }
     ThreadPage:
@@ -782,6 +826,33 @@ components:
         p50: { type: number, format: double }
         p95: { type: number, format: double }
         p99: { type: number, format: double }
+    LogEntryPage:
+      type: object
+      required: [items, dropped]
+      properties:
+        items:
+          type: array
+          maxItems: 2000
+          items: { $ref: "#/components/schemas/LogEntry" }
+        dropped: { type: integer, format: int64, minimum: 0 }
+    LogEntry:
+      type: object
+      required: [id, occurredAt, service, module, level, event]
+      properties:
+        id: { type: integer, format: int64 }
+        occurredAt: { type: string, format: date-time }
+        service: { type: string }
+        module: { type: string }
+        level: { type: string, enum: [debug, info, warning, error] }
+        event: { type: string }
+        requestId: { type: string }
+        attributes: { type: object, additionalProperties: true }
+    LogDebugStatus:
+      type: object
+      required: [enabled, enabledUntil]
+      properties:
+        enabled: { type: boolean }
+        enabledUntil: { type: [string, "null"], format: date-time }
     MessageAttachment:
       type: object
       required: [id, position, filename, mediaType, disposition, sizeBytes]

@@ -16,6 +16,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
@@ -35,7 +36,12 @@ import (
 var version = "dev"
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logPipeline, err := logs.NewPipeline(os.Stdout, "api", "runtime")
+	if err != nil {
+		panic(err)
+	}
+	logger := slog.New(logPipeline)
+	slog.SetDefault(logger)
 	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
 		if err := privileges.Drop(); err != nil {
 			logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
@@ -83,6 +89,8 @@ func main() {
 	var databasePool *pgxpool.Pool
 	var metricsDone chan struct{}
 	var metricsCancel context.CancelFunc
+	var logsDone chan struct{}
+	var logsCancel context.CancelFunc
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	googleClient := googleoauth.NewClient(googleConfig, nil)
 	var gmailResolver *mailflowsync.GmailAccountResolver
@@ -107,6 +115,17 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		logStore, err := logs.NewStore(pool)
+		if err != nil {
+			logger.Error("log persistence unavailable", "event", "logs.persistence_unavailable")
+			os.Exit(1)
+		}
+		logPipeline.Attach(logStore)
+		options.Logs = logPipeline
+		logsDone = make(chan struct{})
+		logsContext, cancelLogs := context.WithCancel(shutdown)
+		logsCancel = cancelLogs
+		go func() { defer close(logsDone); _ = logPipeline.Run(logsContext) }()
 		metricService := metrics.NewService(metrics.NewRegistry(), pool, "api")
 		options.Metrics = metricService
 		metricsDone = make(chan struct{})
@@ -166,6 +185,16 @@ func main() {
 		defer client.Close()
 		options.Events = store
 		if databasePool != nil {
+			logPipeline.SetStream(func(streamContext context.Context, entry logs.Entry) error {
+				var ownerID string
+				if err := databasePool.QueryRow(streamContext, `select id::text from users order by created_at limit 1`).Scan(&ownerID); err != nil {
+					return err
+				}
+				_, err := store.Publish(streamContext, ownerID, "admin.log", logs.StreamPayload(entry))
+				return err
+			})
+		}
+		if databasePool != nil {
 			options.Actions = mail.NewPendingActionService(mail.NewPendingActionRepository(databasePool), store)
 		}
 	}
@@ -207,8 +236,14 @@ func main() {
 	if metricsCancel != nil {
 		metricsCancel()
 	}
+	if logsCancel != nil {
+		logsCancel()
+	}
 	if metricsDone != nil {
 		<-metricsDone
+	}
+	if logsDone != nil {
+		<-logsDone
 	}
 	if listenErr != nil {
 		logger.Error("api stopped", "event", "api.stopped", "error", listenErr)

@@ -174,6 +174,7 @@ export type MailEvent = {
     | "sync.progress"
     | "draft.changed"
     | "admin.alert"
+    | "admin.log"
     | "system.status"
     | "system.resync_required";
   timestamp: string;

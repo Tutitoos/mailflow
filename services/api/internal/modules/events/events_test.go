@@ -63,7 +63,7 @@ func TestLiveEventsAreScopedAndPayloadsAreSanitized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := store.Publish(context.Background(), owner, "admin.alert", json.RawMessage(`{"code":"queue_stalled"}`))
+	published, err := store.Publish(context.Background(), owner, "admin.log", json.RawMessage(`{"event":"queue.handled","level":"info"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

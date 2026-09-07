@@ -9,6 +9,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
@@ -32,6 +33,7 @@ type Options struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         *mail.ThreadRepositoryStore
 	Mailboxes     *mail.MailboxLabelRepositoryStore
+	Logs          *logs.Pipeline
 	Metrics       *metrics.Service
 	Search        *mail.ThreadRepositoryStore
 	Threads       *mail.ThreadRepositoryStore
@@ -70,6 +72,7 @@ func Build(version string, options ...Options) *fiber.App {
 		GoogleOAuth:   runtimeOptions.GoogleOAuth,
 		Inbox:         runtimeOptions.Inbox,
 		Mailboxes:     runtimeOptions.Mailboxes,
+		Logs:          runtimeOptions.Logs,
 		Metrics:       metricService.Registry(),
 		Search:        runtimeOptions.Search,
 		Threads:       runtimeOptions.Threads,

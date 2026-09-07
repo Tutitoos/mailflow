@@ -157,6 +157,12 @@ type Label struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type LogDebugLease struct {
+	Singleton    bool               `json:"singleton"`
+	EnabledUntil pgtype.Timestamptz `json:"enabled_until"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type LogEntry struct {
 	ID         int64              `json:"id"`
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`

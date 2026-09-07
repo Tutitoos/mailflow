@@ -12,6 +12,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
@@ -40,6 +41,7 @@ type Dependencies struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         InboxReader
 	Mailboxes     MailboxLabelReader
+	Logs          *logs.Pipeline
 	Metrics       *metrics.Registry
 	Search        SearchReader
 	Threads       ThreadReader
@@ -199,6 +201,9 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })
 	adminRoutes.Get("/metrics", adminMetrics(deps.Admin))
+	adminRoutes.Get("/logs", adminLogs(deps.Logs))
+	adminRoutes.Get("/logs/debug", logDebugStatus(deps.Logs))
+	adminRoutes.Put("/logs/debug", setLogDebug(deps.Logs))
 
 	return app
 }

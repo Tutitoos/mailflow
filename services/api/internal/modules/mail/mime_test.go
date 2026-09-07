@@ -55,13 +55,16 @@ func TestNormalizerDecodesSanitizesAndDescribesAttachments(t *testing.T) {
 	if len(content.References) != 2 || len(content.InReplyTo) != 1 || len(content.Addresses) != 2 {
 		t.Fatalf("normalized relationships = references %v, replies %v, addresses %+v", content.References, content.InReplyTo, content.Addresses)
 	}
-	for _, forbidden := range []string{"<script", "onclick=", "javascript:", "<img", "tracker.example"} {
+	for _, forbidden := range []string{"<script", "onclick=", "javascript:", `<img src="`} {
 		if strings.Contains(strings.ToLower(content.BodyHTML), forbidden) {
 			t.Fatalf("sanitized HTML contains %q: %s", forbidden, content.BodyHTML)
 		}
 	}
 	if !strings.Contains(content.BodyHTML, `href="https://example.test"`) || !strings.Contains(content.BodyHTML, `rel="noopener noreferrer"`) {
 		t.Fatalf("sanitized safe link missing: %s", content.BodyHTML)
+	}
+	if !strings.Contains(content.BodyHTML, `data-mailflow-src="https://tracker.example/pixel"`) {
+		t.Fatalf("remote image source was not preserved inertly: %s", content.BodyHTML)
 	}
 	if len(content.Attachments) != 1 || content.Attachments[0].Filename != "report.pdf" || content.Attachments[0].MediaType != "application/pdf" || content.Attachments[0].SizeBytes != 3 {
 		t.Fatalf("attachment descriptor = %+v", content.Attachments)
@@ -115,6 +118,20 @@ func TestSanitizeHTMLAcceptsProviderFragments(t *testing.T) {
 	}
 }
 
+func TestSanitizeHTMLKeepsOnlyInertRemoteImages(t *testing.T) {
+	sanitized, err := sanitizeHTML(`<form action="https://example.test"><input></form><img src="https://images.example.test/pixel" srcset="https://tracker.example/x 2x" onerror="private()" style="display:none" alt="" width="1"><img src="javascript:private()"><iframe src="https://example.test"></iframe>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sanitized != `<img data-mailflow-src="https://images.example.test/pixel" alt="" width="1"/>` {
+		t.Fatalf("inert image sanitization = %q", sanitized)
+	}
+	again, err := sanitizeHTML(sanitized)
+	if err != nil || again != sanitized {
+		t.Fatalf("inert image sanitization is not idempotent: %q, %v", again, err)
+	}
+}
+
 func FuzzNormalizerNeverReturnsUnsafePartialContent(f *testing.F) {
 	f.Add([]byte("Subject: seed\r\n\r\nhello"))
 	f.Add([]byte("Content-Type: text/html\r\n\r\n<script>alert(1)</script><p>safe</p>"))
@@ -134,7 +151,7 @@ func FuzzNormalizerNeverReturnsUnsafePartialContent(f *testing.F) {
 			return
 		}
 		lower := strings.ToLower(content.BodyHTML)
-		for _, forbidden := range []string{"<script", "<iframe", "javascript:", " onerror=", " onclick="} {
+		for _, forbidden := range []string{"<script", "<iframe", "javascript:", " onerror=", " onclick=", " src=\"http"} {
 			if strings.Contains(lower, forbidden) {
 				t.Fatalf("successful normalization contains %q", forbidden)
 			}

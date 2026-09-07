@@ -29,6 +29,7 @@ type Options struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         *mail.ThreadRepositoryStore
 	Mailboxes     *mail.MailboxLabelRepositoryStore
+	Threads       *mail.ThreadRepositoryStore
 	Readiness     func(context.Context) error
 	SentryEnabled bool
 	Shutdown      context.Context
@@ -54,6 +55,7 @@ func Build(version string, options ...Options) *fiber.App {
 		GoogleOAuth:   runtimeOptions.GoogleOAuth,
 		Inbox:         runtimeOptions.Inbox,
 		Mailboxes:     runtimeOptions.Mailboxes,
+		Threads:       runtimeOptions.Threads,
 		Readiness:     runtimeOptions.Readiness,
 		Sentry:        sentry.NewService(5 << 20),
 		Translations:  translations.NewCatalog(),

@@ -48,6 +48,48 @@ export type InboxThread = {
 
 export type InboxPage = { items: InboxThread[]; nextCursor: string | null };
 
+export type MessageAddress = {
+  role: "from" | "sender" | "reply_to" | "to" | "cc" | "bcc";
+  position: number;
+  displayName: string | null;
+  address: string;
+};
+
+export type MessageAttachment = {
+  id: string;
+  position: number;
+  filename: string | null;
+  mediaType: string;
+  disposition: "attachment" | "inline";
+  sizeBytes: number;
+};
+
+export type ConversationMessage = {
+  id: string;
+  threadId: string;
+  accountId: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+  sentAt: string;
+  isRead: boolean;
+  isStarred: boolean;
+  isImportant: boolean;
+  addresses: MessageAddress[];
+  attachments: MessageAttachment[];
+};
+
+export type ConversationPage = {
+  thread: {
+    id: string;
+    accountId: string;
+    category: MailCategory;
+    messageCount: number;
+  };
+  messages: ConversationMessage[];
+  nextCursor: string | null;
+};
+
 export type MailEvent = {
   version: 1;
   cursor: string;
@@ -148,6 +190,17 @@ export async function loadInboxPage(
   const query = new URLSearchParams({ accountId, category, limit: "50" });
   if (cursor) query.set("cursor", cursor);
   return request<InboxPage>(`/threads?${query}`, { signal });
+}
+
+export async function loadConversationPage(
+  accountId: string,
+  threadId: string,
+  cursor?: string,
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({ accountId });
+  if (cursor) query.set("cursor", cursor);
+  return request<ConversationPage>(`/threads/${encodeURIComponent(threadId)}?${query}`, { signal });
 }
 
 export async function subscribeMailEvents(

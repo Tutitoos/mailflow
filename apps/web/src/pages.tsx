@@ -38,6 +38,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
+import { ConversationView } from "./conversation";
 import { type Locale, type TranslationKey, translate } from "./i18n";
 import {
   disconnectAccount,
@@ -337,12 +338,16 @@ function MessageRow({
   starred,
   onSelect,
   onStar,
+  onOpen,
+  openLabel,
 }: {
   message: InboxThread;
   selected: boolean;
   starred: boolean;
   onSelect: () => void;
   onStar: () => void;
+  onOpen: () => void;
+  openLabel: string;
 }) {
   return (
     <article
@@ -371,7 +376,7 @@ function MessageRow({
       >
         <ChevronsUpDown size={16} />
       </button>
-      <div className="message-content">
+      <button className="message-content" type="button" onClick={onOpen} aria-label={openLabel}>
         <span className="sender">{message.senderName || message.senderAddress}</span>
         <span className="subject-line">
           <strong>{message.subject}</strong>
@@ -391,7 +396,7 @@ function MessageRow({
             new Date(message.lastMessageAt),
           )}
         </time>
-      </div>
+      </button>
       <div className="quick-actions">
         <Button size="icon" aria-label="Archive">
           <Archive size={16} />
@@ -493,12 +498,16 @@ function VirtualMessageList({
   starred,
   onSelect,
   onStar,
+  onOpen,
+  t,
 }: {
   messages: InboxThread[];
   selected: Set<string>;
   starred: Set<string>;
   onSelect: (id: string) => void;
   onStar: (id: string) => void;
+  onOpen: (id: string) => void;
+  t: Translator;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -527,7 +536,9 @@ function VirtualMessageList({
                 selected={selected.has(message.id)}
                 starred={starred.has(message.id) || message.isStarred}
                 onSelect={() => onSelect(message.id)}
+                onOpen={() => onOpen(message.id)}
                 onStar={() => onStar(message.id)}
+                openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
               />
             </div>
           );
@@ -548,6 +559,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [labels, setLabels] = useState<MailLabel[]>([]);
   const [navigationPartial, setNavigationPartial] = useState(false);
   const [threads, setThreads] = useState<InboxThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [pageCursor, setPageCursor] = useState<string | undefined>();
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
@@ -700,6 +712,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
           onAccountChange={(accountId) => {
             setPageCursor(undefined);
             setCursorHistory([]);
+            setActiveThreadId(null);
             setActiveAccountId(accountId);
           }}
           mailboxes={mailboxes}
@@ -707,112 +720,127 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
           t={t}
         />
         <main className="mail-surface">
-          <MailToolbar
-            allSelected={
-              filtered.length > 0 && filtered.every((message) => selected.has(message.id))
-            }
-            onSelectAll={() =>
-              setSelected(
-                filtered.every((message) => selected.has(message.id))
-                  ? new Set()
-                  : new Set(filtered.map((message) => message.id)),
-              )
-            }
-            onRefresh={() => setRefreshRevision((current) => current + 1)}
-            onPrevious={() => {
-              const previous = cursorHistory.at(-1);
-              setCursorHistory((current) => current.slice(0, -1));
-              setPageCursor(previous || undefined);
-            }}
-            onNext={() => {
-              if (!nextCursor) return;
-              setCursorHistory((current) => [...current, pageCursor ?? ""]);
-              setPageCursor(nextCursor);
-            }}
-            canPrevious={cursorHistory.length > 0}
-            canNext={Boolean(nextCursor)}
-            range={`${cursorHistory.length * 50 + (filtered.length ? 1 : 0)}–${
-              cursorHistory.length * 50 + filtered.length
-            }`}
-            t={t}
-          />
-          <CategoryTabs
-            active={category}
-            onChange={(nextCategory) => {
-              setPageCursor(undefined);
-              setCursorHistory([]);
-              setCategory(nextCategory);
-            }}
-            labels={labels}
-            t={t}
-          />
-          {navigationPartial && (
-            <div className="partial-banner" role="status">
-              {t("navigationPartial")}
-            </div>
-          )}
-          {!online ? (
-            <div className="mail-state" role="status">
-              <Inbox size={30} />
-              <strong>{t("offline")}</strong>
-              <span>{t("offlineDescription")}</span>
-            </div>
-          ) : loadState === "loading" ? (
-            <div className="mail-state" role="status">
-              <span className="loading-spinner" />
-              <strong>{t("loadingInbox")}</strong>
-            </div>
-          ) : loadState === "error" ? (
-            <div className="mail-state" role="alert">
-              <Inbox size={30} />
-              <strong>{t("inboxFailed")}</strong>
-              <Button
-                variant="outline"
-                onClick={() => setRefreshRevision((current) => current + 1)}
-              >
-                {t("tryAgain")}
-              </Button>
-            </div>
-          ) : loadState === "resync" ? (
-            <div className="mail-state" role="alert">
-              <RefreshCw size={30} />
-              <strong>{t("resyncRequired")}</strong>
-              <span>{t("resyncDescription")}</span>
-              <Button
-                variant="outline"
-                onClick={() => setRefreshRevision((current) => current + 1)}
-              >
-                {t("refresh")}
-              </Button>
-            </div>
-          ) : accounts.length === 0 ? (
-            <div className="mail-state" role="status">
-              <Inbox size={30} />
-              <strong>{t("noConnectedAccounts")}</strong>
-              <Button variant="outline" onClick={() => navigate("/settings/accounts")}>
-                {t("connectGoogle")}
-              </Button>
-            </div>
-          ) : filtered.length ? (
-            <VirtualMessageList
-              messages={filtered}
-              selected={selected}
-              starred={starred}
-              onSelect={toggleSelection}
-              onStar={(id) =>
-                setStarred((current) => {
-                  const next = new Set(current);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                })
-              }
+          {activeThreadId && activeAccountId ? (
+            <ConversationView
+              accountId={activeAccountId}
+              threadId={activeThreadId}
+              locale={locale}
+              onBack={() => setActiveThreadId(null)}
+              onCompose={() => setComposeOpen(true)}
             />
           ) : (
-            <div className="empty-state" role="status">
-              <Inbox size={30} />
-              <strong>{t("noMessages")}</strong>
-            </div>
+            <>
+              <MailToolbar
+                allSelected={
+                  filtered.length > 0 && filtered.every((message) => selected.has(message.id))
+                }
+                onSelectAll={() =>
+                  setSelected(
+                    filtered.every((message) => selected.has(message.id))
+                      ? new Set()
+                      : new Set(filtered.map((message) => message.id)),
+                  )
+                }
+                onRefresh={() => setRefreshRevision((current) => current + 1)}
+                onPrevious={() => {
+                  const previous = cursorHistory.at(-1);
+                  setCursorHistory((current) => current.slice(0, -1));
+                  setPageCursor(previous || undefined);
+                }}
+                onNext={() => {
+                  if (!nextCursor) return;
+                  setCursorHistory((current) => [...current, pageCursor ?? ""]);
+                  setPageCursor(nextCursor);
+                }}
+                canPrevious={cursorHistory.length > 0}
+                canNext={Boolean(nextCursor)}
+                range={`${cursorHistory.length * 50 + (filtered.length ? 1 : 0)}–${
+                  cursorHistory.length * 50 + filtered.length
+                }`}
+                t={t}
+              />
+              <CategoryTabs
+                active={category}
+                onChange={(nextCategory) => {
+                  setPageCursor(undefined);
+                  setCursorHistory([]);
+                  setActiveThreadId(null);
+                  setCategory(nextCategory);
+                }}
+                labels={labels}
+                t={t}
+              />
+              {navigationPartial && (
+                <div className="partial-banner" role="status">
+                  {t("navigationPartial")}
+                </div>
+              )}
+              {!online ? (
+                <div className="mail-state" role="status">
+                  <Inbox size={30} />
+                  <strong>{t("offline")}</strong>
+                  <span>{t("offlineDescription")}</span>
+                </div>
+              ) : loadState === "loading" ? (
+                <div className="mail-state" role="status">
+                  <span className="loading-spinner" />
+                  <strong>{t("loadingInbox")}</strong>
+                </div>
+              ) : loadState === "error" ? (
+                <div className="mail-state" role="alert">
+                  <Inbox size={30} />
+                  <strong>{t("inboxFailed")}</strong>
+                  <Button
+                    variant="outline"
+                    onClick={() => setRefreshRevision((current) => current + 1)}
+                  >
+                    {t("tryAgain")}
+                  </Button>
+                </div>
+              ) : loadState === "resync" ? (
+                <div className="mail-state" role="alert">
+                  <RefreshCw size={30} />
+                  <strong>{t("resyncRequired")}</strong>
+                  <span>{t("resyncDescription")}</span>
+                  <Button
+                    variant="outline"
+                    onClick={() => setRefreshRevision((current) => current + 1)}
+                  >
+                    {t("refresh")}
+                  </Button>
+                </div>
+              ) : accounts.length === 0 ? (
+                <div className="mail-state" role="status">
+                  <Inbox size={30} />
+                  <strong>{t("noConnectedAccounts")}</strong>
+                  <Button variant="outline" onClick={() => navigate("/settings/accounts")}>
+                    {t("connectGoogle")}
+                  </Button>
+                </div>
+              ) : filtered.length ? (
+                <VirtualMessageList
+                  messages={filtered}
+                  selected={selected}
+                  starred={starred}
+                  onSelect={toggleSelection}
+                  onOpen={setActiveThreadId}
+                  t={t}
+                  onStar={(id) =>
+                    setStarred((current) => {
+                      const next = new Set(current);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                />
+              ) : (
+                <div className="empty-state" role="status">
+                  <Inbox size={30} />
+                  <strong>{t("noMessages")}</strong>
+                </div>
+              )}
+            </>
           )}
         </main>
         <ContextRail t={t} />

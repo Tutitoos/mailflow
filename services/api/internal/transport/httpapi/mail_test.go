@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,24 @@ func (reader *fakeMailReader) ListLabels(_ context.Context, _, accountID string)
 	return []mail.Label{{ID: "0199ed3b-c950-7000-8000-000000000021", AccountID: accountID, RemoteName: "Primary", Kind: mail.LabelCategory, Category: &category}}, nil
 }
 
+func (reader *fakeMailReader) GetThread(_ context.Context, userID, accountID, threadID string) (mail.Thread, error) {
+	if userID != testUserID || accountID != reader.accountID {
+		return mail.Thread{}, mail.ErrThreadNotFound
+	}
+	return mail.Thread{ID: threadID, AccountID: accountID, Category: mail.CategoryPrimary, LastMessageAt: time.Date(2026, 9, 7, 17, 0, 0, 0, time.UTC)}, nil
+}
+
+func (reader *fakeMailReader) ListMessages(_ context.Context, userID, accountID, threadID string, cursor *mail.MessageCursor, limit int) (mail.MessagePage, error) {
+	if userID != testUserID || accountID != reader.accountID || limit != 100 {
+		return mail.MessagePage{}, mail.ErrInvalidMessage
+	}
+	return mail.MessagePage{Items: []mail.Message{{
+		ID: "0199ed3b-c950-7000-8000-000000000022", ThreadID: threadID,
+		AccountID: accountID, SentAt: time.Date(2026, 9, 7, 17, 0, 0, 0, time.UTC),
+		Addresses: []mail.MessageAddress{}, Attachments: []mail.Attachment{},
+	}}}, nil
+}
+
 func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -57,7 +76,7 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	app := httpapi.New(httpapi.Dependencies{
 		Admin: admin.NewService("test", registry), AuthAudience: testAudience, AuthIssuer: testIssuer,
 		AuthJWKSURL: server.URL, CurrentUsers: fakeUserResolver{user: authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}},
-		Inbox: reader, Mailboxes: reader, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
+		Inbox: reader, Mailboxes: reader, Threads: reader, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})
 	token := signToken(t, privateKey, "mail", jwt.RegisteredClaims{Audience: jwt.ClaimStrings{testAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), Issuer: testIssuer, Subject: testUserID})
 
@@ -90,5 +109,23 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	response, err = app.Test(request)
 	if err != nil || response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("missing account scope: status=%d error=%v", response.StatusCode, err)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/threads/0199ed3b-c950-7000-8000-000000000019?accountId="+reader.accountID, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("get conversation: status=%d error=%v", response.StatusCode, err)
+	}
+	var conversation struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&conversation); err != nil || len(conversation.Messages) != 1 {
+		t.Fatalf("decode conversation: messages=%d error=%v", len(conversation.Messages), err)
+	}
+	for _, forbidden := range []string{"remoteId", "messageId", "references", "contentId"} {
+		if strings.Contains(string(conversation.Messages[0]), forbidden) {
+			t.Fatalf("conversation exposed provider-only field %q: %s", forbidden, conversation.Messages[0])
+		}
 	}
 }

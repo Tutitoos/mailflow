@@ -147,7 +147,10 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 
 ### Google
 
-- OAuth configurado por la propia instalación.
+- OAuth configurado por la propia instalación según [la guía de Google](providers/google.md); el client secret se monta como Docker Secret.
+- PKCE S256 y un `state` aleatorio de un solo uso conservado en Redis durante diez minutos.
+- Scopes mínimos de identidad y `gmail.modify`; los tokens se cifran mediante el vault antes de persistirse.
+- La reautorización reemplaza las credenciales cifradas sin cambiar la identidad local. Desconectar intenta la revocación remota y siempre persiste `disabled_at` para cortar y auditar el acceso local sin registrar direcciones ni tokens.
 - Gmail API.
 - Sincronización inicial e incremental mediante historial.
 - Polling incremental adaptativo y reconciliación diaria.

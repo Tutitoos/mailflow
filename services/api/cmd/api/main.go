@@ -14,6 +14,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
@@ -72,6 +73,7 @@ func main() {
 	options.AuthAudience = runtimeConfig.AuthAudience
 	options.AuthIssuer = runtimeConfig.AuthIssuer
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
+	var accountService *accounts.Service
 	if runtimeConfig.DatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := database.Migrate(ctx, runtimeConfig.DatabaseURL); err != nil {
@@ -105,10 +107,13 @@ func main() {
 		options.Readiness = pool.Ping
 		options.Attachments = cdnService
 		options.CurrentUsers = authbridge.NewRepository(queries)
-		options.Accounts = accounts.NewService(accounts.NewRepository(queries, vault))
+		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
+		options.Accounts = accountService
 	}
+	var redisClient *redis.Client
 	if runtimeConfig.RedisAddress != "" {
 		client := redis.NewClient(&redis.Options{Addr: runtimeConfig.RedisAddress})
+		redisClient = client
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		store, err := events.NewStore(ctx, client, events.DefaultConfig())
 		cancel()
@@ -119,6 +124,10 @@ func main() {
 		}
 		defer client.Close()
 		options.Events = store
+	}
+	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
+	if redisClient != nil && accountService != nil {
+		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleoauth.NewClient(googleConfig, nil), accountService)
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

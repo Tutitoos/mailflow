@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListThreadsData, ListThreadsResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
+import type { CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListThreadsData, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -35,6 +35,36 @@ export const synchronizeAccount = <ThrowOnError extends boolean = false>(options
     url: '/accounts/{accountId}/sync',
     ...options
 });
+
+export const refreshGoogleAccount = <ThrowOnError extends boolean = false>(options: Options<RefreshGoogleAccountData, ThrowOnError>): RequestResult<RefreshGoogleAccountResponses, RefreshGoogleAccountErrors, ThrowOnError> => (options.client ?? client).post<RefreshGoogleAccountResponses, RefreshGoogleAccountErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/accounts/{accountId}/refresh',
+    ...options
+});
+
+export const disconnectAccount = <ThrowOnError extends boolean = false>(options: Options<DisconnectAccountData, ThrowOnError>): RequestResult<DisconnectAccountResponses, DisconnectAccountErrors, ThrowOnError> => (options.client ?? client).delete<DisconnectAccountResponses, DisconnectAccountErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/accounts/{accountId}',
+    ...options
+});
+
+export const getGoogleOAuthStatus = <ThrowOnError extends boolean = false>(options?: Options<GetGoogleOAuthStatusData, ThrowOnError>): RequestResult<GetGoogleOAuthStatusResponses, GetGoogleOAuthStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetGoogleOAuthStatusResponses, GetGoogleOAuthStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/oauth/google/status',
+    ...options
+});
+
+export const startGoogleOAuth = <ThrowOnError extends boolean = false>(options?: Options<StartGoogleOAuthData, ThrowOnError>): RequestResult<StartGoogleOAuthResponses, StartGoogleOAuthErrors, ThrowOnError> => (options?.client ?? client).post<StartGoogleOAuthResponses, StartGoogleOAuthErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/oauth/google/start',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+export const completeGoogleOAuth = <ThrowOnError extends boolean = false>(options: Options<CompleteGoogleOAuthData, ThrowOnError>): RequestResult<unknown, CompleteGoogleOAuthErrors, ThrowOnError> => (options.client ?? client).get<unknown, CompleteGoogleOAuthErrors, ThrowOnError>({ url: '/oauth/google/callback', ...options });
 
 /**
  * Upgrade to an authenticated WebSocket. Reconnect with the last acknowledged cursor to replay missed events.

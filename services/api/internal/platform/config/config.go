@@ -10,25 +10,37 @@ import (
 )
 
 type Config struct {
-	AuthAudience string
-	AuthIssuer   string
-	AuthJWKSURL  string
-	Address      string
-	CDNMaxBytes  int64
-	CDNRoot      string
-	DatabaseURL  string
-	MasterKey    []byte
-	RedisAddress string
+	AuthAudience            string
+	AuthIssuer              string
+	AuthJWKSURL             string
+	Address                 string
+	CDNMaxBytes             int64
+	CDNRoot                 string
+	DatabaseURL             string
+	MasterKey               []byte
+	RedisAddress            string
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+	GoogleOAuthRedirectURL  string
 }
 
 func Load() (Config, error) {
 	config := Config{
-		AuthAudience: valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
-		AuthIssuer:   os.Getenv("MAILFLOW_AUTH_ISSUER"),
-		Address:      valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
-		AuthJWKSURL:  os.Getenv("AUTH_JWKS_URL"),
-		CDNRoot:      valueOrDefault("MAILFLOW_CDN_ROOT", "/data/cdn"),
-		RedisAddress: os.Getenv("REDIS_ADDRESS"),
+		AuthAudience:           valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
+		AuthIssuer:             os.Getenv("MAILFLOW_AUTH_ISSUER"),
+		Address:                valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
+		AuthJWKSURL:            os.Getenv("AUTH_JWKS_URL"),
+		CDNRoot:                valueOrDefault("MAILFLOW_CDN_ROOT", "/data/cdn"),
+		RedisAddress:           os.Getenv("REDIS_ADDRESS"),
+		GoogleOAuthClientID:    os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleOAuthRedirectURL: os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+	}
+	if secretFile := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET_FILE"); secretFile != "" {
+		secret, err := os.ReadFile(secretFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("read Google OAuth client secret: %w", err)
+		}
+		config.GoogleOAuthClientSecret = strings.TrimSpace(string(secret))
 	}
 	maxBytes, err := strconv.ParseInt(valueOrDefault("MAILFLOW_CDN_MAX_BYTES", "26214400"), 10, 64)
 	if err != nil || maxBytes <= 0 {

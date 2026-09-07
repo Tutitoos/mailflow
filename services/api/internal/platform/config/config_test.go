@@ -52,3 +52,21 @@ func TestMasterKeyConfiguration(t *testing.T) {
 		t.Fatal("expected an invalid master key to fail")
 	}
 }
+
+func TestGoogleOAuthSecretLoadsFromFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "google_oauth_client_secret")
+	if err := os.WriteFile(path, []byte("installation-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOOGLE_OAUTH_CLIENT_ID", "installation-client")
+	t.Setenv("GOOGLE_OAUTH_CLIENT_SECRET_FILE", path)
+	t.Setenv("GOOGLE_OAUTH_REDIRECT_URL", "https://mail.example.test/api/v1/oauth/google/callback")
+	t.Setenv("POSTGRES_PASSWORD_FILE", "")
+	configuration, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.GoogleOAuthClientID != "installation-client" || configuration.GoogleOAuthClientSecret != "installation-secret" {
+		t.Fatal("unexpected Google OAuth configuration")
+	}
+}

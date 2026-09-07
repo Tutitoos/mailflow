@@ -701,6 +701,92 @@ select:focus-visible {
   background: #000;
   color: var(--text);
 }
+
+.settings-shell {
+  min-height: 100vh;
+  background: var(--background);
+}
+
+.settings-content {
+  width: min(900px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 64px 0;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-heading span,
+.account-list small {
+  color: var(--muted-foreground);
+}
+
+.settings-heading h1 {
+  margin: 6px 0;
+  font-size: 28px;
+}
+
+.settings-heading p {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.settings-heading button.bg-white {
+  color: #000;
+}
+
+.settings-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings-notice a {
+  margin-left: auto;
+  color: inherit;
+}
+
+.account-list {
+  margin-top: 24px;
+}
+
+.account-list article {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-list article div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (max-width: 700px) {
+  .settings-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .account-list article {
+    grid-template-columns: auto 1fr;
+  }
+  .account-list article button {
+    grid-column: span 2;
+  }
+}
 .admin-header {
   grid-column: 1 / -1;
   display: flex;

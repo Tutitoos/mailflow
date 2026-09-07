@@ -109,6 +109,47 @@ func (repository *RepositoryStore) Credentials(ctx context.Context, user, accoun
 	return json.RawMessage(plaintext), nil
 }
 
+func (repository *RepositoryStore) FindByRemote(ctx context.Context, user string, provider Provider, remote string) (Account, error) {
+	userID, err := parseID(user)
+	if err != nil || !validProvider(provider) || !validText(remote, 512) {
+		return Account{}, ErrAccountNotFound
+	}
+	row, err := repository.queries.GetAccountByProviderRemote(ctx, dbgen.GetAccountByProviderRemoteParams{UserID: userID, Provider: string(provider), RemoteID: strings.TrimSpace(remote)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	if err != nil {
+		return Account{}, fmt.Errorf("find account: %w", err)
+	}
+	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
+}
+
+func (repository *RepositoryStore) ReplaceCredentials(ctx context.Context, user, account, displayName string, capabilities map[string]bool, credentials json.RawMessage) (Account, error) {
+	userID, accountID, err := scopedIDs(user, account)
+	if err != nil || !validText(displayName, 256) || !json.Valid(credentials) || len(credentials) > 64<<10 {
+		return Account{}, ErrInvalidAccount
+	}
+	encoded, err := encodeCapabilities(capabilities)
+	if err != nil {
+		return Account{}, err
+	}
+	ciphertext, nonce, err := repository.vault.Encrypt(credentials, associatedData(user, account))
+	if err != nil {
+		return Account{}, fmt.Errorf("encrypt account credentials: %w", err)
+	}
+	row, err := repository.queries.ReplaceAccountCredentials(ctx, dbgen.ReplaceAccountCredentialsParams{
+		ID: accountID, UserID: userID, DisplayName: strings.TrimSpace(displayName), Capabilities: encoded,
+		EncryptedCredentials: ciphertext, CredentialNonce: nonce,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	if err != nil {
+		return Account{}, fmt.Errorf("replace account credentials: %w", err)
+	}
+	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
+}
+
 func (repository *RepositoryStore) UpdateCapabilities(ctx context.Context, user, account string, capabilities map[string]bool) (Account, error) {
 	userID, accountID, err := scopedIDs(user, account)
 	if err != nil {

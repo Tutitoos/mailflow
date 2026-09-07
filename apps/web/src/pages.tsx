@@ -36,11 +36,17 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
 import { type Category, categories, type MailItem, messages } from "./data";
 import { type Locale, type TranslationKey, translate } from "./i18n";
+import {
+  disconnectAccount,
+  loadGoogleAccounts,
+  type MailAccount,
+  startGoogleConnection,
+} from "./mailflow-api";
 
 type Translator = (key: TranslationKey) => string;
 
@@ -95,7 +101,11 @@ function Header({
       </label>
       <div className="topbar-actions">
         <span className="sync-dot" title={t("syncing")} />
-        <Button size="icon" aria-label={t("admin")} onClick={() => navigate("/admin")}>
+        <Button
+          size="icon"
+          aria-label={t("settings")}
+          onClick={() => navigate("/settings/accounts")}
+        >
           <Settings size={18} />
         </Button>
         <Button size="icon" aria-label="Notifications">
@@ -769,6 +779,119 @@ export function AdminPage() {
             <span>Local repository snapshot verified</span>
             <small>job_01JQ…</small>
           </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export function AccountsPage({ locale }: { locale: Locale }) {
+  const navigate = useNavigate();
+  const t: Translator = (key) => translate(locale, key);
+  const [configured, setConfigured] = useState(false);
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const reload = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError(false);
+    try {
+      const result = await loadGoogleAccounts(signal);
+      setConfigured(result.status.configured);
+      setAccounts(result.accounts);
+    } catch {
+      if (!signal?.aborted) setError(true);
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void reload(controller.signal);
+    return () => controller.abort();
+  }, [reload]);
+
+  const connect = async (reconsent: boolean) => {
+    setError(false);
+    try {
+      await startGoogleConnection(reconsent);
+    } catch {
+      setError(true);
+    }
+  };
+
+  const disconnect = async (accountId: string) => {
+    setError(false);
+    try {
+      await disconnectAccount(accountId);
+      await reload();
+    } catch {
+      setError(true);
+    }
+  };
+
+  return (
+    <div className="settings-shell">
+      <header className="admin-header">
+        <Brand />
+        <Button variant="outline" onClick={() => navigate("/")}>
+          <ArrowLeft size={16} /> {t("viewInbox")}
+        </Button>
+      </header>
+      <main className="settings-content" aria-labelledby="accounts-title">
+        <div className="settings-heading">
+          <div>
+            <span>{t("settings")}</span>
+            <h1 id="accounts-title">{t("connectedAccounts")}</h1>
+            <p>{t("connectedAccountsDescription")}</p>
+          </div>
+          <Button
+            variant="primary"
+            disabled={!configured || loading}
+            onClick={() => void connect(false)}
+          >
+            <Plus size={16} /> {t("connectGoogle")}
+          </Button>
+        </div>
+        {new URLSearchParams(window.location.search).get("google") === "connected" && (
+          <p className="settings-notice" role="status">
+            {t("googleConnected")}
+          </p>
+        )}
+        {!configured && !loading && (
+          <div className="settings-notice warning">
+            <Info size={17} />
+            <span>{t("googleNotConfigured")}</span>
+            <a href="https://github.com/Tutitoos/mailflow/blob/main/docs/providers/google.md">
+              {t("googleSetupGuide")}
+            </a>
+          </div>
+        )}
+        {error && (
+          <p className="auth-error" role="alert">
+            {t("connectionFailed")}
+          </p>
+        )}
+        <section className="account-list" aria-busy={loading}>
+          {loading && <p>{t("loadingAccounts")}</p>}
+          {!loading && configured && accounts.length === 0 && <p>{t("noGoogleAccounts")}</p>}
+          {accounts.map((account) => (
+            <article key={account.id}>
+              <span className="provider-icon">G</span>
+              <div>
+                <strong>{account.displayName}</strong>
+                <small>{account.syncState}</small>
+              </div>
+              <Button variant="outline" disabled={!configured} onClick={() => void connect(true)}>
+                {t("reconnectGoogle")}
+              </Button>
+              <Button variant="outline" onClick={() => void disconnect(account.id)}>
+                <Trash2 size={15} /> {t("disconnect")}
+              </Button>
+            </article>
+          ))}
         </section>
       </main>
     </div>

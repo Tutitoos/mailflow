@@ -8,6 +8,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -23,6 +24,7 @@ type Options struct {
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
 	Events        *events.Store
+	GoogleOAuth   *googleoauth.Service
 	Readiness     func(context.Context) error
 	SentryEnabled bool
 	Shutdown      context.Context
@@ -44,6 +46,7 @@ func Build(version string, options ...Options) *fiber.App {
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
 		CurrentUsers:  runtimeOptions.CurrentUsers,
 		Events:        runtimeOptions.Events,
+		GoogleOAuth:   runtimeOptions.GoogleOAuth,
 		Readiness:     runtimeOptions.Readiness,
 		Sentry:        sentry.NewService(5 << 20),
 		Translations:  translations.NewCatalog(),

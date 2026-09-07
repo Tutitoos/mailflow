@@ -2,6 +2,12 @@
 
 El roadmap prioriza obtener un cliente personal útil antes de ampliar proveedores o plataformas.
 
+## Estado de entrega
+
+La Fase 0 está completada en el alcance de fundación: el monorepo, las convenciones y CI, el validador vacío de `deploy/repos.lock`, Docker Compose con Traefik/PostgreSQL/Redis, el contrato OpenAPI inicial con cliente generado y el shell responsive Gmail × Vercel con datos ficticios EN/ES existen y están verificados en `main`.
+
+Este estado confirma la base técnica, no funcionalidad de correo. Better Auth, la API y el worker presentes son esqueletos parciales; persistencia de identidad, colas duraderas, contexto autenticado, dominio de correo y sincronización pertenecen a las fases siguientes y se gestionan mediante Issues pequeñas vinculadas a sus milestones.
+
 ## Fase 0 — Fundación
 
 - Monorepo y convenciones.

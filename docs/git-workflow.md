@@ -2,12 +2,20 @@
 
 This document is the canonical Git and GitHub standard for Mailflow.
 
+## Issue-driven development
+
+Implementable work follows `roadmap -> milestone -> issue -> branch -> commits -> pull request -> review -> merge`. Create or select the issue before changing files. Each issue must identify its roadmap item or explain why it is operational work, and define its objective, scope, tasks, acceptance criteria, validation, dependencies, risks, and exclusions.
+
+An implementation issue should normally fit in one reviewable PR. Split it before coding when it contains independent deliverables, crosses milestones, or cannot be accepted and rolled back coherently. Check open and closed issues before creating a duplicate. Keep only a small ready backlog for the active milestone rather than expanding the complete roadmap at once.
+
+Milestones represent roadmap phases and do not require branches. Dependabot and equivalent bot-authored dependency PRs do not require synthetic issues. Sensitive vulnerability work starts from a private GitHub Security Advisory rather than a public issue; use the advisory reference in the branch and PR without disclosing it.
+
 ## Branches
 
 `main` is protected by GitHub branch rules. All changes use a short-lived branch created from the current `origin/main`:
 
 ```text
-<category>/<kebab-case-description>
+<category>/<issue-number>-<kebab-case-description>
 ```
 
 The allowed categories are:
@@ -18,9 +26,9 @@ The allowed categories are:
 - `release/` for release preparation, versioning, and release-only fixes.
 - `docs/` for documentation-only changes.
 
-Examples: `docs/git-workflow` and `feature/google-oauth`. This repository-specific rule overrides any global branch-name prefix configured in the client.
+Examples: `docs/55-self-hosting-guide` and `feature/24-google-oauth`. The number identifies the branch's primary open issue. This repository-specific rule overrides any global branch-name prefix configured in the client.
 
-Never reuse a merged branch, mix unrelated work, or rewrite a shared branch. Delete the remote branch after merge.
+Never reuse a merged branch, mix issues or unrelated work, or rewrite a shared branch. Delete the remote branch after merge. A blocked issue does not receive a branch until its dependencies are actionable.
 
 ## Commits
 
@@ -41,6 +49,7 @@ Use Conventional Commits:
 
 - The title follows Conventional Commits and describes the whole PR.
 - The body uses `.github/pull_request_template.md` and records actual validation; never claim checks that were not run.
+- Every non-bot PR identifies one primary issue and includes `Closes #<issue-number>`. The issue number must match the branch name. References to dependencies do not replace the closing link.
 - Open a draft while required work is incomplete. Mark it ready only when the branch is reviewable.
 - Keep the PR scoped. Move unrelated findings to an issue or a later branch.
 - Prefer squash merge so `main` receives one coherent commit.
@@ -78,6 +87,7 @@ A PR can be approved or merged only after verifying the exact current head SHA a
 5. GitHub reports the PR as mergeable with no conflicts.
 6. There are no unresolved review threads or active `CHANGES_REQUESTED` reviews.
 7. No security or dependency finding requires action before merge.
+8. The branch, PR, and primary issue are linked consistently, and the acceptance criteria are satisfied.
 
 Approval and merge are different actions. Approve another contributor's PR only after an independent review. Do not approve your own PR or use a self-review as a substitute for required review.
 
@@ -94,8 +104,8 @@ The public repository is configured so that:
 - Linear history is required; force-push and branch deletion are disabled on `main`.
 - The minimum approval count is zero because this is currently a personal project. Approval is still performed for another contributor when the user requests it and the independent review passes.
 
-No status check is required yet because the documentation-only repository has no CI workflow. Add the real check as required protection as soon as CI exists; never configure a placeholder check that cannot run.
+CI and Security workflows are active. Required checks must refer only to real jobs that run for the protected branch; never configure a placeholder check that cannot run.
 
 ## Evidence in the handoff
 
-Report the branch, commit SHA, PR URL and number, checks reviewed, merge method and resulting merge SHA when each exists. Distinguish clearly between local, pushed, PR-open, auto-merge-enabled, and merged states.
+Report the issue, branch, commit SHA, PR URL and number, checks reviewed, merge method, resulting merge SHA, issue closure, and final `main` workflows when each exists. Distinguish clearly between local, pushed, PR-open, auto-merge-enabled, and merged states.

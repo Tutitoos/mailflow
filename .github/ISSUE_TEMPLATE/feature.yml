@@ -1,0 +1,73 @@
+name: Feature
+description: Plan one reviewable Mailflow capability before implementation.
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: "Use one issue for work that can be implemented and accepted in one pull request."
+  - type: input
+    id: plan-reference
+    attributes:
+      label: Plan reference
+      description: Roadmap phase and exact item.
+      placeholder: "Phase 1 — Identity and core: modular Fiber API"
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: Describe the observable outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List the work included in this issue.
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: Use a Markdown checklist.
+      placeholder: "- [ ] Implement the capability\n- [ ] Add tests\n- [ ] Update documentation"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List measurable conditions required to close the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Commands and manual checks expected for the pull request.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blocking issues or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Compatibility, security, privacy, data, or rollout risks.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Explicitly list adjacent work excluded from this issue.
+    validations:
+      required: true

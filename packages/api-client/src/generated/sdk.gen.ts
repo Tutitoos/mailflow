@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CheckpointDraftData, CheckpointDraftErrors, CheckpointDraftResponses, CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DiscardDraftData, DiscardDraftErrors, DiscardDraftResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogDebugData, GetAdminLogDebugErrors, GetAdminLogDebugResponses, GetAdminLogsData, GetAdminLogsErrors, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsErrors, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetDraftData, GetDraftErrors, GetDraftResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftErrors, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SetAdminLogDebugData, SetAdminLogDebugErrors, SetAdminLogDebugResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses, UpdateDraftData, UpdateDraftErrors, UpdateDraftResponses, UploadDraftAttachmentData, UploadDraftAttachmentErrors, UploadDraftAttachmentResponses } from './types.gen';
+import type { CheckpointDraftData, CheckpointDraftErrors, CheckpointDraftResponses, CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DiscardDraftData, DiscardDraftErrors, DiscardDraftResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogDebugData, GetAdminLogDebugErrors, GetAdminLogDebugResponses, GetAdminLogsData, GetAdminLogsErrors, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsErrors, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetDraftData, GetDraftErrors, GetDraftResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, IngestLegacySentryEventData, IngestLegacySentryEventErrors, IngestLegacySentryEventResponses, IngestSentryEnvelopeData, IngestSentryEnvelopeErrors, IngestSentryEnvelopeResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftErrors, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SetAdminLogDebugData, SetAdminLogDebugErrors, SetAdminLogDebugResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses, UpdateDraftData, UpdateDraftErrors, UpdateDraftResponses, UploadDraftAttachmentData, UploadDraftAttachmentErrors, UploadDraftAttachmentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,25 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+export const ingestSentryEnvelope = <ThrowOnError extends boolean = false>(options: Options<IngestSentryEnvelopeData, ThrowOnError>): RequestResult<IngestSentryEnvelopeResponses, IngestSentryEnvelopeErrors, ThrowOnError> => (options.client ?? client).post<IngestSentryEnvelopeResponses, IngestSentryEnvelopeErrors, ThrowOnError>({
+    bodySerializer: null,
+    url: '/sentry/api/1/envelope/',
+    ...options,
+    headers: {
+        'Content-Type': 'application/x-sentry-envelope',
+        ...options.headers
+    }
+});
+
+export const ingestLegacySentryEvent = <ThrowOnError extends boolean = false>(options: Options<IngestLegacySentryEventData, ThrowOnError>): RequestResult<IngestLegacySentryEventResponses, IngestLegacySentryEventErrors, ThrowOnError> => (options.client ?? client).post<IngestLegacySentryEventResponses, IngestLegacySentryEventErrors, ThrowOnError>({
+    url: '/sentry/api/1/store/',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 export const getCurrentUser = <ThrowOnError extends boolean = false>(options?: Options<GetCurrentUserData, ThrowOnError>): RequestResult<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError> => (options?.client ?? client).get<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

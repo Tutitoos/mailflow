@@ -19,6 +19,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
@@ -91,6 +92,8 @@ func main() {
 	var metricsCancel context.CancelFunc
 	var logsDone chan struct{}
 	var logsCancel context.CancelFunc
+	var sentryDone chan struct{}
+	var sentryCancel context.CancelFunc
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	googleClient := googleoauth.NewClient(googleConfig, nil)
 	var gmailResolver *mailflowsync.GmailAccountResolver
@@ -155,6 +158,26 @@ func main() {
 			logger.Error("CDN storage configuration failed", "event", "cdn.storage_unavailable", "error", err)
 			os.Exit(1)
 		}
+		sentryService, err := mailflowsentry.NewPersistentService(pool, cdnStore, mailflowsentry.DefaultConfig())
+		if err != nil {
+			logger.Error("Sentry ingestion configuration failed", "event", "sentry.ingestion_unavailable")
+			os.Exit(1)
+		}
+		sentryProjects, err := mailflowsentry.DerivedProjects(runtimeConfig.MasterKey)
+		configureContext, cancelConfigure := context.WithTimeout(context.Background(), 5*time.Second)
+		if err == nil {
+			err = sentryService.ConfigureProjects(configureContext, sentryProjects, time.Now().UTC())
+		}
+		cancelConfigure()
+		if err != nil {
+			logger.Error("Sentry project configuration failed", "event", "sentry.projects_unavailable")
+			os.Exit(1)
+		}
+		options.Sentry = sentryService
+		sentryDone = make(chan struct{})
+		sentryContext, cancelSentry := context.WithCancel(shutdown)
+		sentryCancel = cancelSentry
+		go func() { defer close(sentryDone); _ = sentryService.Run(sentryContext) }()
 		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention, gmailAttachmentProviderResolver{gmailResolver})
 		if err != nil {
 			logger.Error("CDN service configuration failed", "event", "cdn.service_unavailable", "error", err)
@@ -239,11 +262,17 @@ func main() {
 	if logsCancel != nil {
 		logsCancel()
 	}
+	if sentryCancel != nil {
+		sentryCancel()
+	}
 	if metricsDone != nil {
 		<-metricsDone
 	}
 	if logsDone != nil {
 		<-logsDone
+	}
+	if sentryDone != nil {
+		<-sentryDone
 	}
 	if listenErr != nil {
 		logger.Error("api stopped", "event", "api.stopped", "error", listenErr)

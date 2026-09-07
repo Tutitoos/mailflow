@@ -314,6 +314,24 @@ type SyncCursor struct {
 	InvalidationReason pgtype.Text        `json:"invalidation_reason"`
 }
 
+type SyncRun struct {
+	ID              pgtype.UUID        `json:"id"`
+	AccountID       pgtype.UUID        `json:"account_id"`
+	Phase           string             `json:"phase"`
+	State           string             `json:"state"`
+	Checkpoint      []byte             `json:"checkpoint"`
+	Version         int64              `json:"version"`
+	WindowStart     pgtype.Timestamptz `json:"window_start"`
+	AppliedCount    int64              `json:"applied_count"`
+	CancelRequested bool               `json:"cancel_requested"`
+	ScheduledFor    pgtype.Timestamptz `json:"scheduled_for"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	LastSuccessAt   pgtype.Timestamptz `json:"last_success_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Thread struct {
 	ID            pgtype.UUID        `json:"id"`
 	AccountID     pgtype.UUID        `json:"account_id"`

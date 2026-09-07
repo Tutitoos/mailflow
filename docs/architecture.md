@@ -191,6 +191,20 @@ El worker consume una cola Redis Streams versionada con entrega **at least once*
 - La profundidad lista, pendiente, diferida y muerta puede consultarse por el sistema de salud. Los eventos de claim, éxito, retry, dead letter y release alimentan métricas propias con dimensiones acotadas.
 - `MAILFLOW_QUEUE_CLAIM_TIMEOUT`, `MAILFLOW_QUEUE_HANDLE_TIMEOUT` y `MAILFLOW_QUEUE_SHUTDOWN_GRACE` permiten ajustar los límites operativos sin cambiar el contrato del envelope. El visibility timeout debe superar siempre al tiempo máximo de handler para impedir que otro consumer reclame trabajo aún activo.
 
+### Orquestación de sincronización
+
+PostgreSQL, mediante `sync_runs`, es la fuente durable del progreso de cada sincronización; Redis solo transporta entregas *at least once*. Cada trabajo referencia un `runId` y una versión esperada. Una entrega repetida u obsoleta no vuelve a aplicar cambios.
+
+- La primera sincronización procesa primero los últimos 90 días y, al terminar, encadena el histórico anterior a esa ventana.
+- El histórico completo encadena el modo incremental. Una ejecución incremental completada programa la siguiente comprobación dos minutos después.
+- La reconciliación completa se programa cada 24 horas y utiliza el mismo modelo reanudable.
+- Un lease Redis por cuenta evita llamadas simultáneas al proveedor. La restricción única de PostgreSQL impide además dos ejecuciones activas de la misma fase.
+- Cada página del proveedor se aplica y avanza su checkpoint en una única transacción PostgreSQL. Si el worker cae antes del commit, la página se repite; si cae después, su versión ya no puede volver a aplicarse.
+- Un error recuperable devuelve la ejecución a `queued` sin perder el checkpoint. La cola aplica el backoff y su límite de intentos; la cancelación se comprueba entre páginas.
+- `sync.progress` publica únicamente identificadores internos, fase, estado y contadores. Las métricas usan dimensiones acotadas de fase y resultado, nunca direcciones, asuntos ni IDs de mensajes.
+
+Los adaptadores Google History, Microsoft Delta e IMAP implementarán el ejecutor paginado sobre este orquestador en sus respectivas fases. Sus cursores específicos seguirán almacenándose en `sync_cursors`.
+
 ## CDN local
 
 El módulo `cdn` sirve los archivos desde el volumen persistente local `/data/cdn`. PostgreSQL conserva metadatos owner-scoped, el hash ETag, la caducidad y la referencia opaca necesaria para volver a descargar el adjunto desde su proveedor.

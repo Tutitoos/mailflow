@@ -450,3 +450,36 @@ func TestCDNMigrationCreatesMetadataAndRollsBackCleanly(t *testing.T) {
 		t.Fatalf("rolled-back CDN table exists = %v, error = %v", tableExists, err)
 	}
 }
+
+func TestSyncRunMigrationCreatesDurableStateAndRollsBackCleanly(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply sync-run migration: %v", err)
+	}
+	var tableExists, activeIndexExists, dueIndexExists bool
+	if err := database.QueryRowContext(ctx, `select to_regclass('sync_runs') is not null`).Scan(&tableExists); err != nil || !tableExists {
+		t.Fatalf("sync-run table exists = %v, error = %v", tableExists, err)
+	}
+	if err := database.QueryRowContext(ctx, `select to_regclass('sync_runs_account_phase_active_unique') is not null`).Scan(&activeIndexExists); err != nil || !activeIndexExists {
+		t.Fatalf("active-run index exists = %v, error = %v", activeIndexExists, err)
+	}
+	if err := database.QueryRowContext(ctx, `select to_regclass('sync_runs_due_idx') is not null`).Scan(&dueIndexExists); err != nil || !dueIndexExists {
+		t.Fatalf("due-run index exists = %v, error = %v", dueIndexExists, err)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 12); err != nil {
+		t.Fatalf("roll back sync-run migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select to_regclass('sync_runs') is not null`).Scan(&tableExists); err != nil || tableExists {
+		t.Fatalf("rolled-back sync-run table exists = %v, error = %v", tableExists, err)
+	}
+}

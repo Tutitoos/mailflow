@@ -83,6 +83,43 @@ type AuthVerification struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Draft struct {
+	ID                 pgtype.UUID        `json:"id"`
+	AccountID          pgtype.UUID        `json:"account_id"`
+	RemoteID           pgtype.Text        `json:"remote_id"`
+	RemoteRevision     pgtype.Text        `json:"remote_revision"`
+	Subject            string             `json:"subject"`
+	BodyText           string             `json:"body_text"`
+	BodyHtmlSanitized  string             `json:"body_html_sanitized"`
+	LocalRevision      int64              `json:"local_revision"`
+	SyncedRevision     int64              `json:"synced_revision"`
+	SyncStatus         string             `json:"sync_status"`
+	RemoteCheckpointAt pgtype.Timestamptz `json:"remote_checkpoint_at"`
+	LastRemoteSyncedAt pgtype.Timestamptz `json:"last_remote_synced_at"`
+	DiscardedAt        pgtype.Timestamptz `json:"discarded_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type DraftAttachment struct {
+	DraftID   pgtype.UUID `json:"draft_id"`
+	AccountID pgtype.UUID `json:"account_id"`
+	Position  int32       `json:"position"`
+	ObjectID  string      `json:"object_id"`
+	Filename  pgtype.Text `json:"filename"`
+	MediaType string      `json:"media_type"`
+	SizeBytes int64       `json:"size_bytes"`
+}
+
+type DraftRecipient struct {
+	DraftID     pgtype.UUID `json:"draft_id"`
+	AccountID   pgtype.UUID `json:"account_id"`
+	Role        string      `json:"role"`
+	Position    int32       `json:"position"`
+	DisplayName pgtype.Text `json:"display_name"`
+	Address     string      `json:"address"`
+}
+
 type Label struct {
 	ID             pgtype.UUID        `json:"id"`
 	AccountID      pgtype.UUID        `json:"account_id"`

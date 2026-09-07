@@ -388,3 +388,35 @@ func TestPendingActionMigrationPreservesAndRollsBackExistingAction(t *testing.T)
 		t.Fatalf("rolled-back action = kind %q, state %q", kind, desired)
 	}
 }
+
+func TestDraftMigrationCreatesRelationsAndRollsBackCleanly(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply draft migration: %v", err)
+	}
+	for _, table := range []string{"drafts", "draft_recipients", "draft_attachments"} {
+		var exists bool
+		if err := database.QueryRowContext(ctx, "select to_regclass($1) is not null", table).Scan(&exists); err != nil || !exists {
+			t.Fatalf("table %s exists = %v, error = %v", table, exists, err)
+		}
+	}
+	if err := goose.DownToContext(ctx, database, ".", 10); err != nil {
+		t.Fatalf("roll back draft migration: %v", err)
+	}
+	for _, table := range []string{"drafts", "draft_recipients", "draft_attachments"} {
+		var exists bool
+		if err := database.QueryRowContext(ctx, "select to_regclass($1) is not null", table).Scan(&exists); err != nil || exists {
+			t.Fatalf("rolled-back table %s exists = %v, error = %v", table, exists, err)
+		}
+	}
+}

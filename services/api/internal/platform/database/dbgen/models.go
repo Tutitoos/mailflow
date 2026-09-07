@@ -201,16 +201,35 @@ type MetricPoint struct {
 }
 
 type PendingAction struct {
-	ID             pgtype.UUID        `json:"id"`
-	AccountID      pgtype.UUID        `json:"account_id"`
-	IdempotencyKey string             `json:"idempotency_key"`
-	Action         string             `json:"action"`
-	Payload        []byte             `json:"payload"`
-	Status         string             `json:"status"`
-	Attempts       int32              `json:"attempts"`
-	AvailableAt    pgtype.Timestamptz `json:"available_at"`
-	LastErrorCode  pgtype.Text        `json:"last_error_code"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	AccountID          pgtype.UUID        `json:"account_id"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Kind               string             `json:"kind"`
+	DesiredState       []byte             `json:"desired_state"`
+	Status             string             `json:"status"`
+	Attempts           int32              `json:"attempts"`
+	AvailableAt        pgtype.Timestamptz `json:"available_at"`
+	LastErrorCode      pgtype.Text        `json:"last_error_code"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	TargetKind         string             `json:"target_kind"`
+	TargetID           pgtype.UUID        `json:"target_id"`
+	AuthoritativeState []byte             `json:"authoritative_state"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	ClaimToken         pgtype.UUID        `json:"claim_token"`
+	ClaimedAt          pgtype.Timestamptz `json:"claimed_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	FailedAt           pgtype.Timestamptz `json:"failed_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type PendingActionAttempt struct {
+	ActionID   pgtype.UUID        `json:"action_id"`
+	Attempt    int32              `json:"attempt"`
+	ClaimToken pgtype.UUID        `json:"claim_token"`
+	Status     string             `json:"status"`
+	ErrorCode  pgtype.Text        `json:"error_code"`
+	StartedAt  pgtype.Timestamptz `json:"started_at"`
+	FinishedAt pgtype.Timestamptz `json:"finished_at"`
 }
 
 type SentryIssue struct {

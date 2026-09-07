@@ -339,3 +339,52 @@ func TestSyncStateMigrationPreservesAndRollsBackExistingCursor(t *testing.T) {
 		t.Fatalf("rolled-back cursor = kind %q, value %q", kind, cursor)
 	}
 }
+
+func TestPendingActionMigrationPreservesAndRollsBackExistingAction(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 9); err != nil {
+		t.Fatalf("apply sync migrations: %v", err)
+	}
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb768")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb769")
+	actionID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb770")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "action-migration@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities) values ($1, $2, 'google', 'action-migration', 'Personal', $3, $4, '{}')`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into pending_actions (id, account_id, idempotency_key, action, payload) values ($1, $2, 'legacy-request-01', 'mark_read', '{"read":true}')`, actionID, accountID); err != nil {
+		t.Fatalf("insert legacy action: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply pending-action migration: %v", err)
+	}
+	var kind, targetKind, desired string
+	var targetID uuid.UUID
+	if err := database.QueryRowContext(ctx, `select kind, target_kind, target_id, desired_state::text from pending_actions where id = $1`, actionID).Scan(&kind, &targetKind, &targetID, &desired); err != nil {
+		t.Fatalf("load migrated action: %v", err)
+	}
+	if kind != "mark_read" || targetKind != "thread" || targetID != actionID || desired != `{"read": true}` {
+		t.Fatalf("migrated action = kind %q, target %q/%s, state %q", kind, targetKind, targetID, desired)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 9); err != nil {
+		t.Fatalf("roll back pending-action migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select action, payload::text from pending_actions where id = $1`, actionID).Scan(&kind, &desired); err != nil {
+		t.Fatalf("load rolled-back action: %v", err)
+	}
+	if kind != "mark_read" || desired != `{"read": true}` {
+		t.Fatalf("rolled-back action = kind %q, state %q", kind, desired)
+	}
+}

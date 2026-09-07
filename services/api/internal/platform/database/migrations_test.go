@@ -243,3 +243,49 @@ func TestMessageContentMigrationPreservesExistingBodies(t *testing.T) {
 		t.Fatalf("rolled-back content = %q, %q, %q", subject, bodyText, bodyHTML)
 	}
 }
+
+func TestMailSearchMigrationRebuildsAndRollsBackExistingIndex(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 7); err != nil {
+		t.Fatalf("apply content migrations: %v", err)
+	}
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb748")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb749")
+	threadID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb750")
+	messageID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb751")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "search-migration@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities) values ($1, $2, 'google', 'search-migration', 'Personal', $3, $4, '{}')`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into threads (id, account_id, remote_id, last_message_at) values ($1, $2, 'search-thread', '2026-09-07T16:00:00Z')`, threadID, accountID); err != nil {
+		t.Fatalf("insert thread: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into messages (id, thread_id, account_id, remote_id, sender, recipients, subject, body_text, sent_at) values ($1, $2, $3, 'search-message', '{}', '[]', 'Weighted subject', 'needle body', '2026-09-07T16:00:00Z')`, messageID, threadID, accountID); err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply search migration: %v", err)
+	}
+	var matches int
+	if err := database.QueryRowContext(ctx, `select count(*) from messages where search_vector @@ websearch_to_tsquery('simple', 'needle')`).Scan(&matches); err != nil || matches != 1 {
+		t.Fatalf("rebuilt search index: matches=%d error=%v", matches, err)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 7); err != nil {
+		t.Fatalf("roll back search migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select count(*) from messages where search_vector @@ websearch_to_tsquery('simple', 'needle')`).Scan(&matches); err != nil || matches != 1 {
+		t.Fatalf("rolled-back search index: matches=%d error=%v", matches, err)
+	}
+}

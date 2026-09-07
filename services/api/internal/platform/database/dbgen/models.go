@@ -139,7 +139,6 @@ type Message struct {
 	BodyText          string             `json:"body_text"`
 	BodyHtmlSanitized string             `json:"body_html_sanitized"`
 	SentAt            pgtype.Timestamptz `json:"sent_at"`
-	SearchVector      interface{}        `json:"search_vector"`
 	AccountID         pgtype.UUID        `json:"account_id"`
 	IsRead            bool               `json:"is_read"`
 	IsStarred         bool               `json:"is_starred"`
@@ -149,6 +148,7 @@ type Message struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	InReplyTo         []string           `json:"in_reply_to"`
 	ContentUpdatedAt  pgtype.Timestamptz `json:"content_updated_at"`
+	SearchVector      interface{}        `json:"search_vector"`
 }
 
 type MessageAddress struct {
@@ -174,6 +174,20 @@ type MessageAttachment struct {
 	SizeBytes   int64              `json:"size_bytes"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MessageLabel struct {
+	MessageID pgtype.UUID        `json:"message_id"`
+	LabelID   pgtype.UUID        `json:"label_id"`
+	AccountID pgtype.UUID        `json:"account_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type MessageMailbox struct {
+	MessageID pgtype.UUID        `json:"message_id"`
+	MailboxID pgtype.UUID        `json:"mailbox_id"`
+	AccountID pgtype.UUID        `json:"account_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type MetricPoint struct {

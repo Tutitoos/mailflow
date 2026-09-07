@@ -53,6 +53,24 @@ func (q *Queries) DeleteMessageAddresses(ctx context.Context, arg DeleteMessageA
 	return err
 }
 
+const deleteMessageAttachmentsFromPosition = `-- name: DeleteMessageAttachmentsFromPosition :exec
+DELETE FROM message_attachments
+WHERE message_id = $1
+  AND account_id = $2
+  AND position >= $3
+`
+
+type DeleteMessageAttachmentsFromPositionParams struct {
+	MessageID    pgtype.UUID `json:"message_id"`
+	AccountID    pgtype.UUID `json:"account_id"`
+	FromPosition int32       `json:"from_position"`
+}
+
+func (q *Queries) DeleteMessageAttachmentsFromPosition(ctx context.Context, arg DeleteMessageAttachmentsFromPositionParams) error {
+	_, err := q.db.Exec(ctx, deleteMessageAttachmentsFromPosition, arg.MessageID, arg.AccountID, arg.FromPosition)
+	return err
+}
+
 const getExistingMessageThread = `-- name: GetExistingMessageThread :one
 SELECT thread_id
 FROM messages
@@ -151,8 +169,57 @@ func (q *Queries) ListAddressesForMessages(ctx context.Context, arg ListAddresse
 	return items, nil
 }
 
+const listAttachmentsForMessages = `-- name: ListAttachmentsForMessages :many
+SELECT message_attachments.id, message_attachments.message_id, message_attachments.account_id, message_attachments.position, message_attachments.remote_id, message_attachments.filename, message_attachments.media_type, message_attachments.disposition, message_attachments.content_id, message_attachments.size_bytes, message_attachments.created_at, message_attachments.updated_at
+FROM message_attachments
+JOIN accounts ON accounts.id = message_attachments.account_id
+WHERE message_attachments.message_id = ANY($1::uuid[])
+  AND message_attachments.account_id = $2
+  AND accounts.user_id = $3
+ORDER BY message_attachments.message_id, message_attachments.position
+`
+
+type ListAttachmentsForMessagesParams struct {
+	MessageIds []pgtype.UUID `json:"message_ids"`
+	AccountID  pgtype.UUID   `json:"account_id"`
+	UserID     pgtype.UUID   `json:"user_id"`
+}
+
+func (q *Queries) ListAttachmentsForMessages(ctx context.Context, arg ListAttachmentsForMessagesParams) ([]MessageAttachment, error) {
+	rows, err := q.db.Query(ctx, listAttachmentsForMessages, arg.MessageIds, arg.AccountID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageAttachment
+	for rows.Next() {
+		var i MessageAttachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.MessageID,
+			&i.AccountID,
+			&i.Position,
+			&i.RemoteID,
+			&i.Filename,
+			&i.MediaType,
+			&i.Disposition,
+			&i.ContentID,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at
+SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
 FROM messages
 JOIN threads ON threads.id = messages.thread_id AND threads.account_id = messages.account_id
 JOIN accounts ON accounts.id = messages.account_id
@@ -215,6 +282,8 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.InReplyTo,
+			&i.ContentUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -227,7 +296,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesFirstPage = `-- name: ListMessagesFirstPage :many
-SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at
+SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
 FROM messages
 JOIN threads ON threads.id = messages.thread_id AND threads.account_id = messages.account_id
 JOIN accounts ON accounts.id = messages.account_id
@@ -279,6 +348,8 @@ func (q *Queries) ListMessagesFirstPage(ctx context.Context, arg ListMessagesFir
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.InReplyTo,
+			&i.ContentUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -487,7 +558,7 @@ WHERE messages.id = $5
   AND messages.account_id = $7
   AND accounts.id = messages.account_id
   AND accounts.user_id = $8
-RETURNING messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at
+RETURNING messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
 `
 
 type UpdateMessageStateParams struct {
@@ -533,6 +604,8 @@ func (q *Queries) UpdateMessageState(ctx context.Context, arg UpdateMessageState
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InReplyTo,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -636,45 +709,56 @@ func (q *Queries) UpdateThreadState(ctx context.Context, arg UpdateThreadStatePa
 const upsertMessage = `-- name: UpsertMessage :one
 INSERT INTO messages (
   id, thread_id, account_id, remote_id, message_id, references_header,
-  sender, recipients, sent_at, is_read, is_starred, is_important, deleted_at
+  in_reply_to, sender, recipients, subject, body_text, body_html_sanitized,
+  sent_at, is_read, is_starred, is_important, deleted_at, content_updated_at
 )
 SELECT
   $1, owned_thread.id, owned_thread.account_id, $2,
-  $3, $4, '{}'::jsonb, '[]'::jsonb,
-  $5, $6, $7,
-  $8, $9
+  $3, $4, $5,
+  '{}'::jsonb, '[]'::jsonb, $6, $7,
+  $8, $9, $10,
+  $11, $12, $13, now()
 FROM threads AS owned_thread
 JOIN accounts ON accounts.id = owned_thread.account_id
-WHERE owned_thread.id = $10
-  AND owned_thread.account_id = $11
-  AND accounts.user_id = $12
+WHERE owned_thread.id = $14
+  AND owned_thread.account_id = $15
+  AND accounts.user_id = $16
   AND accounts.disabled_at IS NULL
 ON CONFLICT (account_id, remote_id) DO UPDATE SET
   thread_id = EXCLUDED.thread_id,
   message_id = EXCLUDED.message_id,
   references_header = EXCLUDED.references_header,
+  in_reply_to = EXCLUDED.in_reply_to,
+  subject = EXCLUDED.subject,
+  body_text = EXCLUDED.body_text,
+  body_html_sanitized = EXCLUDED.body_html_sanitized,
+  content_updated_at = now(),
   sent_at = EXCLUDED.sent_at,
   is_read = EXCLUDED.is_read,
   is_starred = EXCLUDED.is_starred,
   is_important = EXCLUDED.is_important,
   deleted_at = EXCLUDED.deleted_at,
   updated_at = now()
-RETURNING id, thread_id, remote_id, message_id, references_header, sender, recipients, subject, body_text, body_html_sanitized, sent_at, search_vector, account_id, is_read, is_starred, is_important, deleted_at, created_at, updated_at
+RETURNING id, thread_id, remote_id, message_id, references_header, sender, recipients, subject, body_text, body_html_sanitized, sent_at, search_vector, account_id, is_read, is_starred, is_important, deleted_at, created_at, updated_at, in_reply_to, content_updated_at
 `
 
 type UpsertMessageParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	RemoteID         string             `json:"remote_id"`
-	MessageID        pgtype.Text        `json:"message_id"`
-	ReferencesHeader []string           `json:"references_header"`
-	SentAt           pgtype.Timestamptz `json:"sent_at"`
-	IsRead           bool               `json:"is_read"`
-	IsStarred        bool               `json:"is_starred"`
-	IsImportant      bool               `json:"is_important"`
-	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
-	ThreadID         pgtype.UUID        `json:"thread_id"`
-	AccountID        pgtype.UUID        `json:"account_id"`
-	UserID           pgtype.UUID        `json:"user_id"`
+	ID                pgtype.UUID        `json:"id"`
+	RemoteID          string             `json:"remote_id"`
+	MessageID         pgtype.Text        `json:"message_id"`
+	ReferencesHeader  []string           `json:"references_header"`
+	InReplyTo         []string           `json:"in_reply_to"`
+	Subject           string             `json:"subject"`
+	BodyText          string             `json:"body_text"`
+	BodyHtmlSanitized string             `json:"body_html_sanitized"`
+	SentAt            pgtype.Timestamptz `json:"sent_at"`
+	IsRead            bool               `json:"is_read"`
+	IsStarred         bool               `json:"is_starred"`
+	IsImportant       bool               `json:"is_important"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	ThreadID          pgtype.UUID        `json:"thread_id"`
+	AccountID         pgtype.UUID        `json:"account_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
 }
 
 func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) (Message, error) {
@@ -683,6 +767,10 @@ func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) (M
 		arg.RemoteID,
 		arg.MessageID,
 		arg.ReferencesHeader,
+		arg.InReplyTo,
+		arg.Subject,
+		arg.BodyText,
+		arg.BodyHtmlSanitized,
 		arg.SentAt,
 		arg.IsRead,
 		arg.IsStarred,
@@ -711,6 +799,68 @@ func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) (M
 		&i.IsStarred,
 		&i.IsImportant,
 		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.InReplyTo,
+		&i.ContentUpdatedAt,
+	)
+	return i, err
+}
+
+const upsertMessageAttachment = `-- name: UpsertMessageAttachment :one
+INSERT INTO message_attachments (
+  id, message_id, account_id, position, remote_id, filename,
+  media_type, disposition, content_id, size_bytes
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (message_id, position) DO UPDATE SET
+  remote_id = EXCLUDED.remote_id,
+  filename = EXCLUDED.filename,
+  media_type = EXCLUDED.media_type,
+  disposition = EXCLUDED.disposition,
+  content_id = EXCLUDED.content_id,
+  size_bytes = EXCLUDED.size_bytes,
+  updated_at = now()
+RETURNING id, message_id, account_id, position, remote_id, filename, media_type, disposition, content_id, size_bytes, created_at, updated_at
+`
+
+type UpsertMessageAttachmentParams struct {
+	ID          pgtype.UUID `json:"id"`
+	MessageID   pgtype.UUID `json:"message_id"`
+	AccountID   pgtype.UUID `json:"account_id"`
+	Position    int32       `json:"position"`
+	RemoteID    pgtype.Text `json:"remote_id"`
+	Filename    pgtype.Text `json:"filename"`
+	MediaType   string      `json:"media_type"`
+	Disposition string      `json:"disposition"`
+	ContentID   pgtype.Text `json:"content_id"`
+	SizeBytes   int64       `json:"size_bytes"`
+}
+
+func (q *Queries) UpsertMessageAttachment(ctx context.Context, arg UpsertMessageAttachmentParams) (MessageAttachment, error) {
+	row := q.db.QueryRow(ctx, upsertMessageAttachment,
+		arg.ID,
+		arg.MessageID,
+		arg.AccountID,
+		arg.Position,
+		arg.RemoteID,
+		arg.Filename,
+		arg.MediaType,
+		arg.Disposition,
+		arg.ContentID,
+		arg.SizeBytes,
+	)
+	var i MessageAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.MessageID,
+		&i.AccountID,
+		&i.Position,
+		&i.RemoteID,
+		&i.Filename,
+		&i.MediaType,
+		&i.Disposition,
+		&i.ContentID,
+		&i.SizeBytes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

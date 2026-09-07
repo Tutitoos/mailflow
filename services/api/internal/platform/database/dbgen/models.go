@@ -147,6 +147,8 @@ type Message struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	InReplyTo         []string           `json:"in_reply_to"`
+	ContentUpdatedAt  pgtype.Timestamptz `json:"content_updated_at"`
 }
 
 type MessageAddress struct {
@@ -157,6 +159,21 @@ type MessageAddress struct {
 	DisplayName pgtype.Text        `json:"display_name"`
 	Address     string             `json:"address"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type MessageAttachment struct {
+	ID          pgtype.UUID        `json:"id"`
+	MessageID   pgtype.UUID        `json:"message_id"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	Position    int32              `json:"position"`
+	RemoteID    pgtype.Text        `json:"remote_id"`
+	Filename    pgtype.Text        `json:"filename"`
+	MediaType   string             `json:"media_type"`
+	Disposition string             `json:"disposition"`
+	ContentID   pgtype.Text        `json:"content_id"`
+	SizeBytes   int64              `json:"size_bytes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type MetricPoint struct {

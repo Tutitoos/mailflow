@@ -100,16 +100,28 @@ func TestMessageRepositoryRethreadsAddressesAndStateAtomically(t *testing.T) {
 		UserID: userID, AccountID: accountID, ThreadID: firstThread.ID,
 		RemoteID: "message-1", MessageID: "<message-1@example.test>",
 		References: []string{"<parent@example.test>"}, SentAt: stamp,
+		InReplyTo: []string{"parent@example.test"}, Subject: "Stored subject",
+		BodyText: "Safe text", BodyHTML: `<p onclick="private()">Safe text</p><script>private()</script>`,
 		Addresses: []MessageAddressInput{
 			{Role: AddressFrom, DisplayName: "Sender", Address: "sender@example.test"},
 			{Role: AddressTo, DisplayName: "Owner", Address: "owner@example.test"},
 		},
+		Attachments: []AttachmentInput{{RemoteID: "remote-file", Filename: "report.pdf", MediaType: "application/pdf", Disposition: "attachment", SizeBytes: 42}},
 	})
 	if err != nil {
 		t.Fatalf("upsert message: %v", err)
 	}
-	if len(message.Addresses) != 2 || message.Addresses[0].Position != 0 || message.Addresses[1].Position != 0 {
-		t.Fatalf("message addresses = %+v", message.Addresses)
+	if len(message.Addresses) != 2 || message.Addresses[0].Position != 0 || message.Addresses[1].Position != 0 || len(message.Attachments) != 1 || message.Subject != "Stored subject" || message.BodyHTML != "<p>Safe text</p>" {
+		t.Fatalf("message content = %+v", message)
+	}
+	attachmentID := message.Attachments[0].ID
+	repeated, err := repository.UpsertMessage(ctx, UpsertMessageInput{
+		UserID: userID, AccountID: accountID, ThreadID: firstThread.ID,
+		RemoteID: "message-1", MessageID: "<message-1@example.test>", SentAt: stamp,
+		Attachments: []AttachmentInput{{Filename: "renamed.pdf", MediaType: "application/pdf", Disposition: "attachment", SizeBytes: 43}},
+	})
+	if err != nil || len(repeated.Attachments) != 1 || repeated.Attachments[0].ID != attachmentID || repeated.Attachments[0].Filename == nil || *repeated.Attachments[0].Filename != "renamed.pdf" {
+		t.Fatalf("idempotent attachment update = %+v, %v", repeated.Attachments, err)
 	}
 	firstSummary, err := repository.GetThread(ctx, userID, accountID, firstThread.ID)
 	if err != nil || firstSummary.MessageCount != 1 || firstSummary.UnreadCount != 1 {

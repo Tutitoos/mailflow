@@ -20,11 +20,10 @@ type SyncCursor struct {
 }
 
 type RemoteMessage struct {
-	RemoteID   string
-	ThreadID   string
-	MessageID  string
-	References []string
-	SentAt     time.Time
+	RemoteID string
+	ThreadID string
+	SentAt   time.Time
+	Content  NormalizedMessageContent
 }
 
 type ChangePage struct {

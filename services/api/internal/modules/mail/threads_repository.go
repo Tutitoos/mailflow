@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/google/uuid"
@@ -100,6 +101,10 @@ func (repository *ThreadRepositoryStore) UpsertMessage(ctx context.Context, inpu
 	if err != nil || !validMessageInput(input) {
 		return Message{}, ErrInvalidMessage
 	}
+	input.BodyHTML, err = sanitizeHTML(input.BodyHTML)
+	if err != nil || len(input.BodyHTML) > 10<<20 {
+		return Message{}, ErrInvalidMessage
+	}
 	id, err := newDatabaseID()
 	if err != nil {
 		return Message{}, err
@@ -120,7 +125,9 @@ func (repository *ThreadRepositoryStore) UpsertMessage(ctx context.Context, inpu
 	}
 	row, err := queries.UpsertMessage(ctx, dbgen.UpsertMessageParams{
 		ID: id, RemoteID: strings.TrimSpace(input.RemoteID), MessageID: optionalText(input.MessageID),
-		ReferencesHeader: append([]string{}, input.References...), SentAt: requiredTime(input.SentAt),
+		ReferencesHeader: append([]string{}, input.References...), InReplyTo: append([]string{}, input.InReplyTo...),
+		Subject: input.Subject, BodyText: input.BodyText, BodyHtmlSanitized: input.BodyHTML,
+		SentAt: requiredTime(input.SentAt),
 		IsRead: input.IsRead, IsStarred: input.IsStarred, IsImportant: input.IsImportant,
 		DeletedAt: optionalTime(input.DeletedAt), ThreadID: threadID, AccountID: accountID, UserID: userID,
 	})
@@ -142,6 +149,28 @@ func (repository *ThreadRepositoryStore) UpsertMessage(ctx context.Context, inpu
 			return Message{}, fmt.Errorf("create message address: %w", err)
 		}
 	}
+	if err := queries.DeleteMessageAttachmentsFromPosition(ctx, dbgen.DeleteMessageAttachmentsFromPositionParams{
+		MessageID: row.ID, AccountID: accountID, FromPosition: int32(len(input.Attachments)),
+	}); err != nil {
+		return Message{}, fmt.Errorf("trim message attachments: %w", err)
+	}
+	attachments := make([]Attachment, 0, len(input.Attachments))
+	for position, attachment := range input.Attachments {
+		attachmentID, idErr := newDatabaseID()
+		if idErr != nil {
+			return Message{}, idErr
+		}
+		attachmentRow, attachmentErr := queries.UpsertMessageAttachment(ctx, dbgen.UpsertMessageAttachmentParams{
+			ID: attachmentID, MessageID: row.ID, AccountID: accountID, Position: int32(position),
+			RemoteID: optionalText(attachment.RemoteID), Filename: optionalText(attachment.Filename),
+			MediaType: strings.ToLower(strings.TrimSpace(attachment.MediaType)), Disposition: attachment.Disposition,
+			ContentID: optionalText(attachment.ContentID), SizeBytes: attachment.SizeBytes,
+		})
+		if attachmentErr != nil {
+			return Message{}, fmt.Errorf("upsert message attachment: %w", attachmentErr)
+		}
+		attachments = append(attachments, mapAttachment(attachmentRow))
+	}
 	if _, err := queries.RefreshThreadSummary(ctx, dbgen.RefreshThreadSummaryParams{ThreadID: threadID, AccountID: accountID}); err != nil {
 		return Message{}, fmt.Errorf("refresh message thread: %w", err)
 	}
@@ -155,6 +184,7 @@ func (repository *ThreadRepositoryStore) UpsertMessage(ctx context.Context, inpu
 	}
 	message := mapMessage(row)
 	message.Addresses = addresses
+	message.Attachments = attachments
 	return message, nil
 }
 
@@ -186,6 +216,7 @@ func (repository *ThreadRepositoryStore) ListMessages(ctx context.Context, user,
 		messageIDs = append(messageIDs, row.ID)
 	}
 	addressesByMessage := make(map[string][]MessageAddress)
+	attachmentsByMessage := make(map[string][]Attachment)
 	if len(messageIDs) > 0 {
 		addressRows, queryErr := queries.ListAddressesForMessages(ctx, dbgen.ListAddressesForMessagesParams{MessageIds: messageIDs, AccountID: accountID, UserID: userID})
 		if queryErr != nil {
@@ -195,11 +226,20 @@ func (repository *ThreadRepositoryStore) ListMessages(ctx context.Context, user,
 			key := uuid.UUID(row.MessageID.Bytes).String()
 			addressesByMessage[key] = append(addressesByMessage[key], mapMessageAddress(row))
 		}
+		attachmentRows, queryErr := queries.ListAttachmentsForMessages(ctx, dbgen.ListAttachmentsForMessagesParams{MessageIds: messageIDs, AccountID: accountID, UserID: userID})
+		if queryErr != nil {
+			return MessagePage{}, fmt.Errorf("list message attachments: %w", queryErr)
+		}
+		for _, row := range attachmentRows {
+			key := uuid.UUID(row.MessageID.Bytes).String()
+			attachmentsByMessage[key] = append(attachmentsByMessage[key], mapAttachment(row))
+		}
 	}
 	page := MessagePage{Items: make([]Message, 0, len(selected))}
 	for _, row := range selected {
 		message := mapMessage(row)
 		message.Addresses = addressesByMessage[message.ID]
+		message.Attachments = attachmentsByMessage[message.ID]
 		page.Items = append(page.Items, message)
 	}
 	if len(rows) > limit {
@@ -293,16 +333,21 @@ func (repository *ThreadRepositoryStore) ApplyMessageState(ctx context.Context, 
 }
 
 func validMessageInput(input UpsertMessageInput) bool {
-	if !boundedText(input.RemoteID, 512) || input.SentAt.IsZero() || len(strings.TrimSpace(input.MessageID)) > 998 || len(input.References) > 100 || len(input.Addresses) > 512 {
+	if !boundedText(input.RemoteID, 512) || input.SentAt.IsZero() || !utf8.ValidString(input.Subject) || !utf8.ValidString(input.BodyText) || !utf8.ValidString(input.BodyHTML) || len(strings.TrimSpace(input.MessageID)) > 998 || len(input.References) > 100 || len(input.InReplyTo) > 100 || len(input.Subject) > 1<<20 || len(input.BodyText) > 10<<20 || len(input.BodyHTML) > 10<<20 || len(input.Addresses) > 512 || len(input.Attachments) > 1024 {
 		return false
 	}
-	for _, reference := range input.References {
+	for _, reference := range append(append([]string{}, input.References...), input.InReplyTo...) {
 		if !boundedText(reference, 998) {
 			return false
 		}
 	}
 	for _, address := range input.Addresses {
-		if !validAddressRole(address.Role) || !boundedText(address.Address, 1024) || len(strings.TrimSpace(address.DisplayName)) > 256 {
+		if !validAddressRole(address.Role) || !boundedText(address.Address, 1024) || !utf8.ValidString(address.Address) || !utf8.ValidString(address.DisplayName) || len(strings.TrimSpace(address.DisplayName)) > 256 {
+			return false
+		}
+	}
+	for _, attachment := range input.Attachments {
+		if attachment.SizeBytes < 0 || !utf8.ValidString(attachment.RemoteID) || !utf8.ValidString(attachment.Filename) || !utf8.ValidString(attachment.ContentID) || len(strings.TrimSpace(attachment.RemoteID)) > 512 || len(strings.TrimSpace(attachment.Filename)) > 1024 || !boundedText(attachment.MediaType, 255) || (attachment.Disposition != "attachment" && attachment.Disposition != "inline") || len(strings.TrimSpace(attachment.ContentID)) > 998 {
 			return false
 		}
 	}
@@ -375,14 +420,24 @@ func mapMessage(row dbgen.Message) Message {
 		ID: uuid.UUID(row.ID.Bytes).String(), ThreadID: uuid.UUID(row.ThreadID.Bytes).String(),
 		AccountID: uuid.UUID(row.AccountID.Bytes).String(), RemoteID: row.RemoteID,
 		MessageID: textPointer(row.MessageID), References: append([]string(nil), row.ReferencesHeader...),
+		InReplyTo: append([]string(nil), row.InReplyTo...), Subject: row.Subject,
+		BodyText: row.BodyText, BodyHTML: row.BodyHtmlSanitized,
 		SentAt: row.SentAt.Time.UTC(), IsRead: row.IsRead, IsStarred: row.IsStarred,
 		IsImportant: row.IsImportant, DeletedAt: timePointer(row.DeletedAt),
-		Addresses: []MessageAddress{}, CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+		Addresses: []MessageAddress{}, Attachments: []Attachment{}, CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
 }
 
 func mapMessageAddress(row dbgen.MessageAddress) MessageAddress {
 	return MessageAddress{Role: AddressRole(row.Role), Position: row.Position, DisplayName: textPointer(row.DisplayName), Address: row.Address}
+}
+
+func mapAttachment(row dbgen.MessageAttachment) Attachment {
+	return Attachment{
+		ID: uuid.UUID(row.ID.Bytes).String(), Position: row.Position, RemoteID: textPointer(row.RemoteID),
+		Filename: textPointer(row.Filename), MediaType: row.MediaType, Disposition: row.Disposition,
+		ContentID: textPointer(row.ContentID), SizeBytes: row.SizeBytes,
+	}
 }
 
 func pointerValue(value *string) string {

@@ -12,6 +12,7 @@ const (
 )
 
 type DraftSyncStatus string
+type ComposeMode string
 
 const (
 	DraftQueued    DraftSyncStatus = "queued"
@@ -19,6 +20,12 @@ const (
 	DraftSynced    DraftSyncStatus = "synced"
 	DraftConflict  DraftSyncStatus = "conflict"
 	DraftDiscarded DraftSyncStatus = "discarded"
+)
+
+const (
+	ComposeNew     ComposeMode = "new"
+	ComposeReply   ComposeMode = "reply"
+	ComposeForward ComposeMode = "forward"
 )
 
 var (
@@ -50,6 +57,8 @@ type Draft struct {
 	Subject            string            `json:"subject"`
 	BodyText           string            `json:"bodyText"`
 	BodyHTML           string            `json:"bodyHtml"`
+	Mode               ComposeMode       `json:"mode"`
+	SourceMessageID    *string           `json:"sourceMessageId"`
 	Recipients         []DraftRecipient  `json:"recipients"`
 	Attachments        []DraftAttachment `json:"attachments"`
 	LocalRevision      int64             `json:"localRevision"`
@@ -63,11 +72,13 @@ type Draft struct {
 }
 
 type DraftContentInput struct {
-	Subject     string
-	BodyText    string
-	BodyHTML    string
-	Recipients  []MessageAddressInput
-	Attachments []DraftAttachmentInput
+	Subject         string
+	BodyText        string
+	BodyHTML        string
+	Recipients      []MessageAddressInput
+	Attachments     []DraftAttachmentInput
+	Mode            ComposeMode
+	SourceMessageID string
 }
 
 type DraftAttachmentInput struct {

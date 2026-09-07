@@ -32,6 +32,7 @@ type Dependencies struct {
 	AuthIssuer    string
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
+	Delivery      DraftService
 	Events        EventStream
 	GoogleOAuth   *googleoauth.Service
 	Inbox         InboxReader
@@ -71,6 +72,15 @@ type ThreadReader interface {
 
 type SearchReader interface {
 	SearchMessages(context.Context, string, string, mail.SearchQuery, *mail.SearchCursor, int) (mail.SearchPage, error)
+}
+
+type DraftService interface {
+	SaveDraft(context.Context, mail.CreateDraftInput) (mail.Draft, error)
+	GetDraft(context.Context, string, string, string) (mail.Draft, error)
+	UpdateDraft(context.Context, mail.UpdateDraftInput) (mail.Draft, error)
+	CheckpointDraft(context.Context, string, string, string) (mail.Draft, error)
+	DiscardDraft(context.Context, string, string, string) (mail.Draft, error)
+	SendDraft(context.Context, string, string, string, int64, string) (mail.Delivery, error)
 }
 
 func New(deps Dependencies) *fiber.App {
@@ -155,6 +165,12 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/threads/:threadId", getConversation(deps.Threads))
 	v1.Get("/search", searchMail(deps.Search))
 	v1.Post("/actions", createMailActions(deps.Actions, deps.ActionState, deps.Threads))
+	v1.Post("/drafts", createDraft(deps.Delivery))
+	v1.Get("/drafts/:draftId", getDraft(deps.Delivery))
+	v1.Put("/drafts/:draftId", updateDraft(deps.Delivery))
+	v1.Post("/drafts/:draftId/checkpoint", checkpointDraft(deps.Delivery))
+	v1.Delete("/drafts/:draftId", discardDraft(deps.Delivery))
+	v1.Post("/send", sendDraft(deps.Delivery))
 	v1.Get("/oauth/google/status", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
 	})

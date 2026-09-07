@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	stdmail "net/mail"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -33,6 +34,10 @@ func (repository *DraftRepositoryStore) CreateDraft(ctx context.Context, input C
 	if err != nil {
 		return Draft{}, err
 	}
+	sourceMessageID, err := optionalDraftSourceID(content.SourceMessageID)
+	if err != nil {
+		return Draft{}, ErrInvalidDraft
+	}
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return Draft{}, fmt.Errorf("begin draft creation: %w", err)
@@ -41,7 +46,8 @@ func (repository *DraftRepositoryStore) CreateDraft(ctx context.Context, input C
 	queries := dbgen.New(tx)
 	row, err := queries.CreateDraft(ctx, dbgen.CreateDraftParams{
 		ID: id, Subject: content.Subject, BodyText: content.BodyText, BodyHtmlSanitized: content.BodyHTML,
-		RemoteCheckpointAt: requiredTime(input.Now.UTC().Add(DraftRemoteInterval)), AccountID: accountID, UserID: userID,
+		RemoteCheckpointAt: requiredTime(input.Now.UTC().Add(DraftRemoteInterval)), ComposeMode: string(content.Mode),
+		SourceMessageID: sourceMessageID, AccountID: accountID, UserID: userID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Draft{}, ErrDraftNotFound
@@ -79,6 +85,10 @@ func (repository *DraftRepositoryStore) UpdateDraft(ctx context.Context, input U
 	if err != nil || input.ExpectedRevision < 1 || input.Now.IsZero() {
 		return Draft{}, ErrInvalidDraft
 	}
+	sourceMessageID, err := optionalDraftSourceID(content.SourceMessageID)
+	if err != nil {
+		return Draft{}, ErrInvalidDraft
+	}
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return Draft{}, fmt.Errorf("begin draft update: %w", err)
@@ -87,6 +97,7 @@ func (repository *DraftRepositoryStore) UpdateDraft(ctx context.Context, input U
 	queries := dbgen.New(tx)
 	row, err := queries.UpdateDraft(ctx, dbgen.UpdateDraftParams{
 		Subject: content.Subject, BodyText: content.BodyText, BodyHtmlSanitized: content.BodyHTML,
+		ComposeMode: string(content.Mode), SourceMessageID: sourceMessageID,
 		RemoteCheckpointAt: requiredTime(input.Now.UTC().Add(DraftRemoteInterval)), ID: draftID,
 		AccountID: accountID, ExpectedRevision: input.ExpectedRevision, UserID: userID,
 	})
@@ -191,8 +202,21 @@ func prepareDraftContent(input DraftContentInput, prior error) (DraftContentInpu
 	if err != nil || len(sanitized) > 10<<20 {
 		return DraftContentInput{}, ErrInvalidDraft
 	}
+	if input.Mode == "" {
+		input.Mode = ComposeNew
+	}
+	if (input.Mode != ComposeNew && input.Mode != ComposeReply && input.Mode != ComposeForward) ||
+		(input.Mode == ComposeNew && input.SourceMessageID != "") ||
+		(input.Mode != ComposeNew && uuid.Validate(input.SourceMessageID) != nil) ||
+		(sanitized != "" && strings.Join(strings.Fields(input.BodyText), " ") != strings.Join(strings.Fields(htmlText(sanitized)), " ")) {
+		return DraftContentInput{}, ErrInvalidDraft
+	}
 	for _, recipient := range input.Recipients {
 		if (recipient.Role != AddressTo && recipient.Role != AddressCC && recipient.Role != AddressBCC) || !boundedText(recipient.Address, 1024) || !utf8.ValidString(recipient.DisplayName) || len(strings.TrimSpace(recipient.DisplayName)) > 256 {
+			return DraftContentInput{}, ErrInvalidDraft
+		}
+		parsed, parseErr := stdmail.ParseAddress(strings.TrimSpace(recipient.Address))
+		if parseErr != nil || !strings.EqualFold(parsed.Address, strings.TrimSpace(recipient.Address)) {
 			return DraftContentInput{}, ErrInvalidDraft
 		}
 	}
@@ -208,6 +232,13 @@ func prepareDraftContent(input DraftContentInput, prior error) (DraftContentInpu
 	}
 	input.BodyHTML = sanitized
 	return input, nil
+}
+
+func optionalDraftSourceID(value string) (pgtype.UUID, error) {
+	if value == "" {
+		return pgtype.UUID{}, nil
+	}
+	return databaseID(value)
 }
 
 func replaceDraftRelations(ctx context.Context, queries *dbgen.Queries, draftID, accountID pgtype.UUID, content DraftContentInput) error {
@@ -266,8 +297,17 @@ func mapDraft(row dbgen.Draft) Draft {
 		ID: uuid.UUID(row.ID.Bytes).String(), AccountID: uuid.UUID(row.AccountID.Bytes).String(),
 		RemoteID: textPointer(row.RemoteID), RemoteRevision: textPointer(row.RemoteRevision),
 		Subject: row.Subject, BodyText: row.BodyText, BodyHTML: row.BodyHtmlSanitized,
+		Mode: ComposeMode(row.ComposeMode), SourceMessageID: uuidPointer(row.SourceMessageID),
 		LocalRevision: row.LocalRevision, SyncedRevision: row.SyncedRevision, SyncStatus: DraftSyncStatus(row.SyncStatus),
 		RemoteCheckpointAt: row.RemoteCheckpointAt.Time.UTC(), LastRemoteSyncedAt: timePointer(row.LastRemoteSyncedAt),
 		DiscardedAt: timePointer(row.DiscardedAt), CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
+}
+
+func uuidPointer(value pgtype.UUID) *string {
+	if !value.Valid {
+		return nil
+	}
+	text := uuid.UUID(value.Bytes).String()
+	return &text
 }

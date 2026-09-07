@@ -261,15 +261,112 @@ paths:
   /drafts:
     post:
       operationId: saveDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftWrite" }
       responses:
-        "200": { description: Draft saved }
+        "201":
+          description: Local draft saved and scheduled for a remote checkpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        default: { $ref: "#/components/responses/Problem" }
+  /drafts/{draftId}:
+    parameters:
+      - name: draftId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDraft
+      parameters:
+        - name: accountId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Owner-scoped draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        default: { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: updateDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftWrite" }
+      responses:
+        "200":
+          description: Draft updated at the expected local revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: discardDraft
+      parameters:
+        - name: accountId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Draft explicitly discarded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        default: { $ref: "#/components/responses/Problem" }
+  /drafts/{draftId}/checkpoint:
+    post:
+      operationId: checkpointDraft
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId]
+              properties:
+                accountId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Draft checkpointed with its provider or already current
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+        default: { $ref: "#/components/responses/Problem" }
   /send:
     post:
       operationId: sendMessage
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, draftId, expectedRevision]
+              properties:
+                accountId: { type: string, format: uuid }
+                draftId: { type: string, format: uuid }
+                expectedRevision: { type: integer, minimum: 1 }
       responses:
-        "202": { description: Message queued for delivery }
+        "202":
+          description: Delivery recorded; ambiguous results are never retried with the same key
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Delivery" }
         default: { $ref: "#/components/responses/Problem" }
   /attachments/{attachmentId}:
     get:
@@ -546,6 +643,59 @@ components:
               status: { type: string, enum: [pending, processing, retry_wait, completed, conflict] }
               created: { type: boolean }
               error: { type: string }
+    DraftWrite:
+      type: object
+      required: [accountId, subject, bodyText, bodyHtml, recipients, mode]
+      properties:
+        accountId: { type: string, format: uuid }
+        expectedRevision: { type: integer, minimum: 1 }
+        subject: { type: string, maxLength: 1048576 }
+        bodyText: { type: string, maxLength: 10485760 }
+        bodyHtml: { type: string, maxLength: 10485760 }
+        recipients:
+          type: array
+          maxItems: 512
+          items:
+            type: object
+            required: [role, address]
+            properties:
+              role: { type: string, enum: [to, cc, bcc] }
+              displayName: { type: string, maxLength: 256 }
+              address: { type: string, format: email, maxLength: 1024 }
+        mode: { type: string, enum: [new, reply, forward] }
+        sourceMessageId: { type: string, format: uuid }
+    Draft:
+      type: object
+      required: [id, accountId, subject, bodyText, bodyHtml, recipients, attachments, mode, localRevision, syncedRevision, syncStatus, remoteCheckpointAt, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        subject: { type: string }
+        bodyText: { type: string }
+        bodyHtml: { type: string }
+        recipients:
+          type: array
+          items: { $ref: "#/components/schemas/MessageAddress" }
+        attachments:
+          type: array
+          items: { type: object, additionalProperties: true }
+        mode: { type: string, enum: [new, reply, forward] }
+        sourceMessageId: { type: [string, "null"], format: uuid }
+        localRevision: { type: integer, minimum: 1 }
+        syncedRevision: { type: integer, minimum: 0 }
+        syncStatus: { type: string, enum: [queued, syncing, synced, conflict, discarded] }
+        remoteCheckpointAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Delivery:
+      type: object
+      required: [id, accountId, draftId, status]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        draftId: { type: string, format: uuid }
+        status: { type: string, enum: [prepared, sending, sent, ambiguous] }
+        remoteId: { type: [string, "null"] }
     MessageAttachment:
       type: object
       required: [id, position, filename, mediaType, disposition, sizeBytes]

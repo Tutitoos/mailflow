@@ -85,6 +85,32 @@ func (fakeActionState) ThreadHasLabel(context.Context, string, string, string, s
 	return false, nil
 }
 
+type fakeDraftService struct {
+	created mail.CreateDraftInput
+	sendKey string
+}
+
+func (service *fakeDraftService) SaveDraft(_ context.Context, input mail.CreateDraftInput) (mail.Draft, error) {
+	service.created = input
+	return mail.Draft{ID: "0199ed3b-c950-7000-8000-000000000030", AccountID: input.AccountID, LocalRevision: 1, Mode: input.Content.Mode}, nil
+}
+func (*fakeDraftService) GetDraft(context.Context, string, string, string) (mail.Draft, error) {
+	return mail.Draft{}, nil
+}
+func (*fakeDraftService) UpdateDraft(context.Context, mail.UpdateDraftInput) (mail.Draft, error) {
+	return mail.Draft{}, nil
+}
+func (*fakeDraftService) CheckpointDraft(context.Context, string, string, string) (mail.Draft, error) {
+	return mail.Draft{}, nil
+}
+func (*fakeDraftService) DiscardDraft(context.Context, string, string, string) (mail.Draft, error) {
+	return mail.Draft{}, nil
+}
+func (service *fakeDraftService) SendDraft(_ context.Context, _, account, draft string, revision int64, key string) (mail.Delivery, error) {
+	service.sendKey = key
+	return mail.Delivery{ID: "0199ed3b-c950-7000-8000-000000000031", AccountID: account, DraftID: draft, Status: mail.DeliverySent}, nil
+}
+
 func (reader *fakeMailReader) ListMessages(_ context.Context, userID, accountID, threadID string, cursor *mail.MessageCursor, limit int) (mail.MessagePage, error) {
 	if userID != testUserID || accountID != reader.accountID || limit != 100 {
 		return mail.MessagePage{}, mail.ErrInvalidMessage
@@ -121,13 +147,15 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	defer server.Close()
 	reader := &fakeMailReader{}
 	actionStore := &fakeActionStore{}
+	draftService := &fakeDraftService{}
 	registry := metrics.NewRegistry()
 	app := httpapi.New(httpapi.Dependencies{
 		Admin: admin.NewService("test", registry), AuthAudience: testAudience, AuthIssuer: testIssuer,
 		AuthJWKSURL: server.URL, CurrentUsers: fakeUserResolver{user: authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}},
 		Inbox: reader, Mailboxes: reader, Search: reader, Threads: reader,
 		Actions: mail.NewPendingActionService(actionStore, nil), ActionState: fakeActionState{},
-		Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
+		Delivery: draftService,
+		Sentry:   mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})
 	token := signToken(t, privateKey, "mail", jwt.RegisteredClaims{Audience: jwt.ClaimStrings{testAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), Issuer: testIssuer, Subject: testUserID})
 
@@ -243,5 +271,24 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	}
 	if actionStore.inputs[0].IdempotencyKey == "ui-action-0000000001" || string(actionStore.inputs[0].DesiredState) != `{"archived":true}` {
 		t.Fatalf("action input = %+v", actionStore.inputs[0])
+	}
+
+	draftBody := `{"accountId":"` + reader.accountID + `","subject":"Fixture","bodyText":"Hello","bodyHtml":"<p>Hello</p>","recipients":[{"role":"to","address":"recipient@example.test"}],"mode":"new"}`
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/drafts", strings.NewReader(draftBody))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusCreated || draftService.created.UserID != testUserID || draftService.created.Content.BodyText != "Hello" {
+		t.Fatalf("create draft: status=%d input=%+v error=%v", response.StatusCode, draftService.created, err)
+	}
+
+	sendBody := `{"accountId":"` + reader.accountID + `","draftId":"0199ed3b-c950-7000-8000-000000000030","expectedRevision":1}`
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/send", strings.NewReader(sendBody))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "send-fixture-0000001")
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusAccepted || draftService.sendKey != "send-fixture-0000001" {
+		t.Fatalf("send draft: status=%d key=%q error=%v", response.StatusCode, draftService.sendKey, err)
 	}
 }

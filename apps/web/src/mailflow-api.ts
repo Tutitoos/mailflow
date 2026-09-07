@@ -122,6 +122,42 @@ export type ConversationPage = {
   nextCursor: string | null;
 };
 
+export type DraftRecipient = {
+  role: "to" | "cc" | "bcc";
+  position?: number;
+  displayName?: string | null;
+  address: string;
+};
+
+export type DraftContent = {
+  accountId: string;
+  expectedRevision?: number;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+  recipients: DraftRecipient[];
+  mode: "new" | "reply" | "forward";
+  sourceMessageId?: string;
+};
+
+export type MailDraft = DraftContent & {
+  id: string;
+  localRevision: number;
+  syncedRevision: number;
+  syncStatus: "queued" | "syncing" | "synced" | "conflict" | "discarded";
+  remoteCheckpointAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MailDelivery = {
+  id: string;
+  accountId: string;
+  draftId: string;
+  status: "prepared" | "sending" | "sent" | "ambiguous";
+  remoteId: string | null;
+};
+
 export type MailEvent = {
   version: 1;
   cursor: string;
@@ -260,6 +296,49 @@ export async function createMailActions(
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ accountId, kind, targetIds, ...(labelId ? { labelId } : {}) }),
+  });
+}
+
+export async function createDraft(content: DraftContent) {
+  return request<MailDraft>("/drafts", { method: "POST", body: JSON.stringify(content) });
+}
+
+export async function loadDraft(accountId: string, draftId: string) {
+  const query = new URLSearchParams({ accountId });
+  return request<MailDraft>(`/drafts/${encodeURIComponent(draftId)}?${query}`);
+}
+
+export async function updateDraft(draftId: string, content: DraftContent) {
+  return request<MailDraft>(`/drafts/${encodeURIComponent(draftId)}`, {
+    method: "PUT",
+    body: JSON.stringify(content),
+  });
+}
+
+export async function checkpointDraft(accountId: string, draftId: string) {
+  return request<MailDraft>(`/drafts/${encodeURIComponent(draftId)}/checkpoint`, {
+    method: "POST",
+    body: JSON.stringify({ accountId }),
+  });
+}
+
+export async function discardDraft(accountId: string, draftId: string) {
+  const query = new URLSearchParams({ accountId });
+  return request<MailDraft>(`/drafts/${encodeURIComponent(draftId)}?${query}`, {
+    method: "DELETE",
+  });
+}
+
+export async function sendDraft(
+  accountId: string,
+  draftId: string,
+  expectedRevision: number,
+  idempotencyKey: string,
+) {
+  return request<MailDelivery>("/send", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ accountId, draftId, expectedRevision }),
   });
 }
 

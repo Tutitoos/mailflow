@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkpointDraft,
+  createDraft,
   createGoogleAuthorization,
   createMailActions,
   disconnectAccount,
@@ -7,7 +9,9 @@ import {
   loadGoogleAccounts,
   loadInboxPage,
   loadMailNavigation,
+  type MailDraft,
   searchMail,
+  sendDraft,
 } from "./mailflow-api";
 
 const json = (value: unknown, status = 200) =>
@@ -156,6 +160,61 @@ describe("Mailflow API client", () => {
       accountId: "account-1",
       kind: "archive",
       targetIds: ["thread-1"],
+    });
+  });
+
+  it("saves, checkpoints, and sends a revisioned draft with one delivery key", async () => {
+    const draft: MailDraft = {
+      id: "draft-1",
+      accountId: "account-1",
+      subject: "Fixture",
+      bodyText: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      recipients: [{ role: "to", address: "recipient@example.test" }],
+      mode: "new",
+      localRevision: 1,
+      syncedRevision: 0,
+      syncStatus: "queued",
+      remoteCheckpointAt: "2026-09-07T18:00:15Z",
+      createdAt: "2026-09-07T18:00:00Z",
+      updatedAt: "2026-09-07T18:00:00Z",
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json(draft, 201))
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ ...draft, syncedRevision: 1, syncStatus: "synced" }))
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(
+        json(
+          {
+            id: "delivery-1",
+            accountId: "account-1",
+            draftId: "draft-1",
+            status: "sent",
+            remoteId: "remote-1",
+          },
+          202,
+        ),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    const saved = await createDraft(draft);
+    await checkpointDraft("account-1", saved.id);
+    const delivery = await sendDraft(
+      "account-1",
+      saved.id,
+      saved.localRevision,
+      "mailflow-send-key-0001",
+    );
+
+    expect(delivery.status).toBe("sent");
+    expect(fetch.mock.calls[1]?.[0]).toBe("/api/v1/drafts");
+    expect(fetch.mock.calls[3]?.[0]).toBe("/api/v1/drafts/draft-1/checkpoint");
+    expect(fetch.mock.calls[5]?.[1]?.headers).toMatchObject({
+      authorization: "Bearer mail-jwt",
+      "Idempotency-Key": "mailflow-send-key-0001",
     });
   });
 });

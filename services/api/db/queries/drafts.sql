@@ -1,13 +1,22 @@
 -- name: CreateDraft :one
 INSERT INTO drafts (
-  id, account_id, subject, body_text, body_html_sanitized, remote_checkpoint_at
+  id, account_id, subject, body_text, body_html_sanitized, remote_checkpoint_at,
+  compose_mode, source_message_id
 )
 SELECT sqlc.arg(id), accounts.id, sqlc.arg(subject), sqlc.arg(body_text),
-       sqlc.arg(body_html_sanitized), sqlc.arg(remote_checkpoint_at)
+       sqlc.arg(body_html_sanitized), sqlc.arg(remote_checkpoint_at),
+       sqlc.arg(compose_mode), sqlc.narg(source_message_id)
 FROM accounts
 WHERE accounts.id = sqlc.arg(account_id)
   AND accounts.user_id = sqlc.arg(user_id)
   AND accounts.disabled_at IS NULL
+  AND (
+    sqlc.narg(source_message_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM messages
+      WHERE messages.id = sqlc.narg(source_message_id)
+        AND messages.account_id = accounts.id
+    )
+  )
 RETURNING drafts.*;
 
 -- name: GetDraftByOwner :one
@@ -22,6 +31,7 @@ WHERE drafts.id = sqlc.arg(id)
 UPDATE drafts
 SET subject = sqlc.arg(subject), body_text = sqlc.arg(body_text),
     body_html_sanitized = sqlc.arg(body_html_sanitized),
+    compose_mode = sqlc.arg(compose_mode), source_message_id = sqlc.narg(source_message_id),
     local_revision = local_revision + 1, sync_status = 'queued',
     remote_checkpoint_at = sqlc.arg(remote_checkpoint_at), updated_at = now()
 FROM accounts
@@ -31,6 +41,13 @@ WHERE drafts.id = sqlc.arg(id)
   AND drafts.sync_status <> 'discarded'
   AND accounts.id = drafts.account_id
   AND accounts.user_id = sqlc.arg(user_id)
+  AND (
+    sqlc.narg(source_message_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM messages
+      WHERE messages.id = sqlc.narg(source_message_id)
+        AND messages.account_id = drafts.account_id
+    )
+  )
 RETURNING drafts.*;
 
 -- name: DeleteDraftRecipients :exec

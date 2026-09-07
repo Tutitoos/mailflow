@@ -33,6 +33,26 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   let remoteImageRequests = 0;
   let searchRequests = 0;
   const actionRequests: Array<{ key: string | null; body: unknown }> = [];
+  const draftRequests: Array<{ method: string; url: string; body: unknown }> = [];
+  const sendRequests: Array<{ key: string | null; body: unknown }> = [];
+  let draftRevision = 1;
+  const draftResponse = () => ({
+    id: "50000000-0000-7000-8000-000000000001",
+    accountId: account.id,
+    subject: "Browser draft",
+    bodyText: "Safe browser body",
+    bodyHtml: "<p>Safe browser body</p>",
+    recipients: [{ role: "to", position: 0, displayName: null, address: "recipient@example.test" }],
+    attachments: [],
+    mode: "new",
+    sourceMessageId: null,
+    localRevision: draftRevision,
+    syncedRevision: 0,
+    syncStatus: "queued",
+    remoteCheckpointAt: "2026-09-07T18:00:15Z",
+    createdAt: "2026-09-07T18:00:00Z",
+    updatedAt: "2026-09-07T18:00:00Z",
+  });
   await page.route("**/api/auth/setup/status", (route) =>
     route.fulfill({ json: { configured: true } }),
   );
@@ -165,6 +185,37 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
       },
     });
   });
+  await page.route("**/api/v1/drafts**", async (route) => {
+    const request = route.request();
+    const body = request.postData() ? request.postDataJSON() : null;
+    draftRequests.push({ method: request.method(), url: request.url(), body });
+    if (request.method() === "PUT") draftRevision += 1;
+    if (request.url().endsWith("/checkpoint")) {
+      return route.fulfill({
+        json: { ...draftResponse(), syncedRevision: draftRevision, syncStatus: "synced" },
+      });
+    }
+    return route.fulfill({
+      status: request.method() === "POST" ? 201 : 200,
+      json: draftResponse(),
+    });
+  });
+  await page.route("**/api/v1/send", async (route) => {
+    sendRequests.push({
+      key: route.request().headers()["idempotency-key"] ?? null,
+      body: route.request().postDataJSON(),
+    });
+    return route.fulfill({
+      status: 202,
+      json: {
+        id: "60000000-0000-7000-8000-000000000001",
+        accountId: account.id,
+        draftId: "50000000-0000-7000-8000-000000000001",
+        status: "sent",
+        remoteId: "remote-message",
+      },
+    });
+  });
   await page.route("https://images.example.test/**", (route) => {
     remoteImageRequests += 1;
     return route.abort();
@@ -193,6 +244,16 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   expect(remoteImageRequests).toBe(0);
   await page.getByRole("button", { name: "Display remote images" }).click();
   await expect.poll(() => remoteImageRequests).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Reply", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Recipients" })).toHaveValue(
+    "sender-0@example.test",
+  );
+  await expect(page.getByRole("textbox", { name: "Subject" })).toHaveValue("Re: ");
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await page.getByRole("button", { name: "Forward", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Recipients" })).toHaveValue("");
+  await expect(page.getByRole("textbox", { name: "Subject" })).toHaveValue("Fwd: ");
+  await page.getByRole("button", { name: "Discard draft" }).click();
   await page.getByRole("button", { name: "Back to inbox" }).click();
 
   const search = page.getByRole("combobox", { name: "Search mail" });
@@ -218,6 +279,46 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
 
   await page.getByRole("tab", { name: "Promotions" }).click();
   await expect(page.getByText("No messages here")).toBeVisible();
+
+  const composeButton = page.getByRole("button", { name: "Compose" });
+  if (!(await composeButton.isVisible())) {
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+  }
+  await composeButton.click();
+  await page.getByRole("button", { name: "Minimize" }).click();
+  await expect(page.getByRole("textbox", { name: "Subject" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Minimize" }).click();
+  await page.getByRole("button", { name: "Maximize" }).click();
+  await expect(page.getByRole("region", { name: "New message" })).toHaveClass(/maximized/u);
+  await page.getByRole("button", { name: "Maximize" }).click();
+  await page.getByRole("textbox", { name: "Recipients" }).fill("recipient@example.test");
+  await page.getByRole("textbox", { name: "Subject" }).fill("Browser draft");
+  await page.getByRole("textbox", { name: "Write a message" }).fill("Safe browser body");
+  const composerAccessibility = await new AxeBuilder({ page }).include(".compose-panel").analyze();
+  expect(
+    composerAccessibility.violations.filter(
+      (violation) => violation.impact === "critical" || violation.impact === "serious",
+    ),
+  ).toEqual([]);
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 5_000 });
+  expect(draftRequests.some((request) => request.method === "POST")).toBe(true);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("region", { name: "New message" })).toHaveCount(0);
+  expect(draftRequests.some((request) => request.url.endsWith("/checkpoint"))).toBe(true);
+
+  if (!(await composeButton.isVisible())) {
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+  }
+  await composeButton.click();
+  await expect(page.getByRole("textbox", { name: "Subject" })).toHaveValue("Browser draft");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("region", { name: "New message" })).toHaveCount(0);
+  expect(sendRequests).toHaveLength(1);
+  expect(sendRequests[0]?.key).toMatch(/^mailflow-send-/u);
+  expect(sendRequests[0]?.body).toMatchObject({
+    accountId: account.id,
+    expectedRevision: draftRevision,
+  });
 
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
   await expect(page.getByText("Showing is paused until the connection returns.")).toBeVisible();

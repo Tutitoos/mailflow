@@ -879,12 +879,17 @@ select:focus-visible {
   width: min(560px, calc(100vw - 32px));
   height: 520px;
   display: grid;
-  grid-template-rows: 44px 42px 42px 1fr 54px;
+  grid-template-rows: 44px auto auto minmax(0, 1fr) 54px;
   overflow: hidden;
   border: 1px solid #3f3f46;
   border-radius: 9px;
   background: #0a0a0a;
   box-shadow: 0 24px 80px rgb(0 0 0 / 70%);
+}
+.compose-panel.minimized {
+  width: min(360px, calc(100vw - 32px));
+  height: 44px;
+  grid-template-rows: 44px;
 }
 .compose-panel.maximized {
   inset: 7vh 8vw;
@@ -903,8 +908,21 @@ select:focus-visible {
 .compose-panel > footer > div {
   display: flex;
 }
+.compose-panel > footer .bg-white {
+  color: #000;
+}
 .compose-panel > header strong {
   font-size: 13px;
+}
+.draft-status {
+  min-width: 0;
+  margin-left: auto;
+  color: #a1a1aa;
+  font-size: 11px;
+}
+.draft-status.conflict,
+.draft-status.ambiguous {
+  color: #fbbf24;
 }
 .compose-field {
   display: flex;
@@ -929,15 +947,38 @@ select:focus-visible {
   background: transparent;
   color: #a1a1aa;
 }
-.compose-panel textarea {
-  resize: none;
+.compose-copies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.compose-editor-shell {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+}
+.compose-editor {
+  min-height: 100%;
   padding: 18px 14px;
-  border: 0;
   outline: 0;
   background: #0a0a0a;
   color: #ededed;
   font-size: 14px;
   line-height: 1.6;
+}
+.compose-editor p {
+  margin: 0 0 0.75em;
+}
+.compose-placeholder {
+  position: absolute;
+  top: 18px;
+  left: 14px;
+  color: #71717a;
+  pointer-events: none;
+  font-size: 14px;
+}
+.compose-format {
+  display: flex;
+  margin-left: 6px;
 }
 .admin-shell {
   min-height: 100vh;

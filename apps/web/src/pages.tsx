@@ -15,7 +15,6 @@ import {
   Mail,
   MailOpen,
   Menu,
-  Minus,
   MoreHorizontal,
   PanelRightClose,
   Paperclip,
@@ -27,16 +26,15 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
-  Square,
   Star,
   Tag,
   Trash2,
   Users,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
+import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
 import { type Locale, type TranslationKey, translate } from "./i18n";
 import {
@@ -249,7 +247,12 @@ function Sidebar({
   const mailboxByRole = new Map(mailboxes.map((mailbox) => [mailbox.role, mailbox]));
   return (
     <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
-      <Button className="compose-button" variant="primary" onClick={onCompose}>
+      <Button
+        className="compose-button"
+        variant="primary"
+        aria-label={t("compose")}
+        onClick={onCompose}
+      >
         <Pencil size={18} />
         <span>{t("compose")}</span>
       </Button>
@@ -520,63 +523,6 @@ function MessageRow({
   );
 }
 
-function ComposePanel({
-  maximized,
-  onMaximize,
-  onClose,
-  t,
-}: {
-  maximized: boolean;
-  onMaximize: () => void;
-  onClose: () => void;
-  t: Translator;
-}) {
-  return (
-    <section
-      className={maximized ? "compose-panel maximized" : "compose-panel"}
-      aria-label={t("newMessage")}
-    >
-      <header>
-        <strong>{t("newMessage")}</strong>
-        <div>
-          <Button size="icon" aria-label={t("minimize")}>
-            <Minus size={15} />
-          </Button>
-          <Button size="icon" aria-label={t("maximize")} onClick={onMaximize}>
-            <Square size={13} />
-          </Button>
-          <Button size="icon" aria-label={t("close")} onClick={onClose}>
-            <X size={16} />
-          </Button>
-        </div>
-      </header>
-      <label className="compose-field">
-        <span>To</span>
-        <input aria-label={t("recipients")} />
-        <button type="button">Cc Bcc</button>
-      </label>
-      <label className="compose-field">
-        <input aria-label={t("subject")} placeholder={t("subject")} />
-      </label>
-      <textarea aria-label={t("message")} placeholder={t("message")} />
-      <footer>
-        <Button variant="primary">
-          <Send size={16} />
-          {t("send")}
-        </Button>
-        <div>
-          <Button size="icon" aria-label="Attach file">
-            <Paperclip size={17} />
-          </Button>
-          <Button size="icon" aria-label="Discard draft">
-            <Trash2 size={17} />
-          </Button>
-        </div>
-      </footer>
-    </section>
-  );
-}
-
 function ContextRail({ t }: { t: Translator }) {
   return (
     <aside className="context-rail">
@@ -703,6 +649,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   );
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMaximized, setComposeMaximized] = useState(false);
+  const [composeContext, setComposeContext] = useState<ComposeContext>({ mode: "new" });
   const t: Translator = (key) => translate(locale, key);
 
   useEffect(() => {
@@ -1005,7 +952,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       <div className="app-body">
         <Sidebar
           collapsed={sidebarCollapsed}
-          onCompose={() => setComposeOpen(true)}
+          onCompose={() => {
+            setComposeContext({ mode: "new" });
+            setComposeOpen(true);
+            setSidebarCollapsed(true);
+          }}
           accounts={accounts}
           activeAccountId={activeAccountId}
           onAccountChange={(accountId) => {
@@ -1025,7 +976,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
               threadId={activeThreadId}
               locale={locale}
               onBack={() => setActiveThreadId(null)}
-              onCompose={() => setComposeOpen(true)}
+              onCompose={(context) => {
+                setComposeContext(context);
+                setComposeOpen(true);
+                setSidebarCollapsed(true);
+              }}
               onAction={(kind) => {
                 void runAction(kind, [activeThreadId]);
                 if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
@@ -1184,15 +1139,17 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         </main>
         <ContextRail t={t} />
       </div>
-      {composeOpen && (
+      {composeOpen && activeAccountId && (
         <ComposePanel
+          accountId={activeAccountId}
+          context={composeContext}
+          locale={locale}
           maximized={composeMaximized}
           onMaximize={() => setComposeMaximized((value) => !value)}
           onClose={() => {
             setComposeOpen(false);
             setComposeMaximized(false);
           }}
-          t={t}
         />
       )}
     </div>

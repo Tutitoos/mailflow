@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses } from './types.gen';
+import type { CheckpointDraftData, CheckpointDraftErrors, CheckpointDraftResponses, CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, DiscardDraftData, DiscardDraftErrors, DiscardDraftResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogsData, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetDraftData, GetDraftErrors, GetDraftResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftErrors, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses, UpdateDraftData, UpdateDraftErrors, UpdateDraftResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -115,16 +115,56 @@ export const createMailAction = <ThrowOnError extends boolean = false>(options: 
     }
 });
 
-export const saveDraft = <ThrowOnError extends boolean = false>(options?: Options<SaveDraftData, ThrowOnError>): RequestResult<SaveDraftResponses, unknown, ThrowOnError> => (options?.client ?? client).post<SaveDraftResponses, unknown, ThrowOnError>({
+export const saveDraft = <ThrowOnError extends boolean = false>(options: Options<SaveDraftData, ThrowOnError>): RequestResult<SaveDraftResponses, SaveDraftErrors, ThrowOnError> => (options.client ?? client).post<SaveDraftResponses, SaveDraftErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/drafts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const discardDraft = <ThrowOnError extends boolean = false>(options: Options<DiscardDraftData, ThrowOnError>): RequestResult<DiscardDraftResponses, DiscardDraftErrors, ThrowOnError> => (options.client ?? client).delete<DiscardDraftResponses, DiscardDraftErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/drafts/{draftId}',
     ...options
+});
+
+export const getDraft = <ThrowOnError extends boolean = false>(options: Options<GetDraftData, ThrowOnError>): RequestResult<GetDraftResponses, GetDraftErrors, ThrowOnError> => (options.client ?? client).get<GetDraftResponses, GetDraftErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/drafts/{draftId}',
+    ...options
+});
+
+export const updateDraft = <ThrowOnError extends boolean = false>(options: Options<UpdateDraftData, ThrowOnError>): RequestResult<UpdateDraftResponses, UpdateDraftErrors, ThrowOnError> => (options.client ?? client).put<UpdateDraftResponses, UpdateDraftErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/drafts/{draftId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const checkpointDraft = <ThrowOnError extends boolean = false>(options: Options<CheckpointDraftData, ThrowOnError>): RequestResult<CheckpointDraftResponses, CheckpointDraftErrors, ThrowOnError> => (options.client ?? client).post<CheckpointDraftResponses, CheckpointDraftErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/drafts/{draftId}/checkpoint',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const sendMessage = <ThrowOnError extends boolean = false>(options: Options<SendMessageData, ThrowOnError>): RequestResult<SendMessageResponses, SendMessageErrors, ThrowOnError> => (options.client ?? client).post<SendMessageResponses, SendMessageErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/send',
-    ...options
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

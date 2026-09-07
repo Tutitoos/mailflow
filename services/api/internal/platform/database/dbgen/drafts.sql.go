@@ -20,7 +20,7 @@ WHERE id = $4
   AND account_id = $5
   AND local_revision = $3
   AND sync_status <> 'discarded'
-RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 `
 
 type CheckpointDraftRemoteParams struct {
@@ -56,21 +56,32 @@ func (q *Queries) CheckpointDraftRemote(ctx context.Context, arg CheckpointDraft
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
 
 const createDraft = `-- name: CreateDraft :one
 INSERT INTO drafts (
-  id, account_id, subject, body_text, body_html_sanitized, remote_checkpoint_at
+  id, account_id, subject, body_text, body_html_sanitized, remote_checkpoint_at,
+  compose_mode, source_message_id
 )
 SELECT $1, accounts.id, $2, $3,
-       $4, $5
+       $4, $5,
+       $6, $7
 FROM accounts
-WHERE accounts.id = $6
-  AND accounts.user_id = $7
+WHERE accounts.id = $8
+  AND accounts.user_id = $9
   AND accounts.disabled_at IS NULL
-RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+  AND (
+    $7::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM messages
+      WHERE messages.id = $7
+        AND messages.account_id = accounts.id
+    )
+  )
+RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 `
 
 type CreateDraftParams struct {
@@ -79,6 +90,8 @@ type CreateDraftParams struct {
 	BodyText           string             `json:"body_text"`
 	BodyHtmlSanitized  string             `json:"body_html_sanitized"`
 	RemoteCheckpointAt pgtype.Timestamptz `json:"remote_checkpoint_at"`
+	ComposeMode        string             `json:"compose_mode"`
+	SourceMessageID    pgtype.UUID        `json:"source_message_id"`
 	AccountID          pgtype.UUID        `json:"account_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 }
@@ -90,6 +103,8 @@ func (q *Queries) CreateDraft(ctx context.Context, arg CreateDraftParams) (Draft
 		arg.BodyText,
 		arg.BodyHtmlSanitized,
 		arg.RemoteCheckpointAt,
+		arg.ComposeMode,
+		arg.SourceMessageID,
 		arg.AccountID,
 		arg.UserID,
 	)
@@ -110,6 +125,8 @@ func (q *Queries) CreateDraft(ctx context.Context, arg CreateDraftParams) (Draft
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
@@ -205,7 +222,7 @@ WHERE drafts.id = $1
   AND drafts.sync_status <> 'discarded'
   AND accounts.id = drafts.account_id
   AND accounts.user_id = $3
-RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 `
 
 type DiscardDraftParams struct {
@@ -233,12 +250,14 @@ func (q *Queries) DiscardDraft(ctx context.Context, arg DiscardDraftParams) (Dra
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
 
 const getDraftByOwner = `-- name: GetDraftByOwner :one
-SELECT drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+SELECT drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 FROM drafts
 JOIN accounts ON accounts.id = drafts.account_id
 WHERE drafts.id = $1
@@ -271,6 +290,8 @@ func (q *Queries) GetDraftByOwner(ctx context.Context, arg GetDraftByOwnerParams
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
@@ -353,7 +374,7 @@ func (q *Queries) ListDraftRecipients(ctx context.Context, arg ListDraftRecipien
 }
 
 const lockDraftByOwner = `-- name: LockDraftByOwner :one
-SELECT drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+SELECT drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 FROM drafts
 JOIN accounts ON accounts.id = drafts.account_id
 WHERE drafts.id = $1
@@ -387,6 +408,8 @@ func (q *Queries) LockDraftByOwner(ctx context.Context, arg LockDraftByOwnerPara
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
@@ -402,7 +425,7 @@ WHERE drafts.id = $3
   AND drafts.sync_status <> 'discarded'
   AND accounts.id = drafts.account_id
   AND accounts.user_id = $5
-RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 `
 
 type MarkDraftConflictParams struct {
@@ -438,6 +461,8 @@ func (q *Queries) MarkDraftConflict(ctx context.Context, arg MarkDraftConflictPa
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }
@@ -446,22 +471,32 @@ const updateDraft = `-- name: UpdateDraft :one
 UPDATE drafts
 SET subject = $1, body_text = $2,
     body_html_sanitized = $3,
+    compose_mode = $4, source_message_id = $5,
     local_revision = local_revision + 1, sync_status = 'queued',
-    remote_checkpoint_at = $4, updated_at = now()
+    remote_checkpoint_at = $6, updated_at = now()
 FROM accounts
-WHERE drafts.id = $5
-  AND drafts.account_id = $6
-  AND drafts.local_revision = $7
+WHERE drafts.id = $7
+  AND drafts.account_id = $8
+  AND drafts.local_revision = $9
   AND drafts.sync_status <> 'discarded'
   AND accounts.id = drafts.account_id
-  AND accounts.user_id = $8
-RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at
+  AND accounts.user_id = $10
+  AND (
+    $5::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM messages
+      WHERE messages.id = $5
+        AND messages.account_id = drafts.account_id
+    )
+  )
+RETURNING drafts.id, drafts.account_id, drafts.remote_id, drafts.remote_revision, drafts.subject, drafts.body_text, drafts.body_html_sanitized, drafts.local_revision, drafts.synced_revision, drafts.sync_status, drafts.remote_checkpoint_at, drafts.last_remote_synced_at, drafts.discarded_at, drafts.created_at, drafts.updated_at, drafts.compose_mode, drafts.source_message_id
 `
 
 type UpdateDraftParams struct {
 	Subject            string             `json:"subject"`
 	BodyText           string             `json:"body_text"`
 	BodyHtmlSanitized  string             `json:"body_html_sanitized"`
+	ComposeMode        string             `json:"compose_mode"`
+	SourceMessageID    pgtype.UUID        `json:"source_message_id"`
 	RemoteCheckpointAt pgtype.Timestamptz `json:"remote_checkpoint_at"`
 	ID                 pgtype.UUID        `json:"id"`
 	AccountID          pgtype.UUID        `json:"account_id"`
@@ -474,6 +509,8 @@ func (q *Queries) UpdateDraft(ctx context.Context, arg UpdateDraftParams) (Draft
 		arg.Subject,
 		arg.BodyText,
 		arg.BodyHtmlSanitized,
+		arg.ComposeMode,
+		arg.SourceMessageID,
 		arg.RemoteCheckpointAt,
 		arg.ID,
 		arg.AccountID,
@@ -497,6 +534,8 @@ func (q *Queries) UpdateDraft(ctx context.Context, arg UpdateDraftParams) (Draft
 		&i.DiscardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ComposeMode,
+		&i.SourceMessageID,
 	)
 	return i, err
 }

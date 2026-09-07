@@ -27,6 +27,7 @@ type Options struct {
 	AuthIssuer    string
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
+	Delivery      *mail.DeliveryService
 	Events        *events.Store
 	GoogleOAuth   *googleoauth.Service
 	Inbox         *mail.ThreadRepositoryStore
@@ -56,6 +57,7 @@ func Build(version string, options ...Options) *fiber.App {
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
 		CurrentUsers:  runtimeOptions.CurrentUsers,
+		Delivery:      runtimeOptions.Delivery,
 		Events:        runtimeOptions.Events,
 		GoogleOAuth:   runtimeOptions.GoogleOAuth,
 		Inbox:         runtimeOptions.Inbox,

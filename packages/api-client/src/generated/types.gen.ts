@@ -145,6 +145,49 @@ export type MailActionBatch = {
     }>;
 };
 
+export type DraftWrite = {
+    accountId: string;
+    expectedRevision?: number;
+    subject: string;
+    bodyText: string;
+    bodyHtml: string;
+    recipients: Array<{
+        role: 'to' | 'cc' | 'bcc';
+        displayName?: string;
+        address: string;
+    }>;
+    mode: 'new' | 'reply' | 'forward';
+    sourceMessageId?: string;
+};
+
+export type Draft = {
+    id: string;
+    accountId: string;
+    subject: string;
+    bodyText: string;
+    bodyHtml: string;
+    recipients: Array<MessageAddress>;
+    attachments: Array<{
+        [key: string]: unknown;
+    }>;
+    mode: 'new' | 'reply' | 'forward';
+    sourceMessageId?: string | null;
+    localRevision: number;
+    syncedRevision: number;
+    syncStatus: 'queued' | 'syncing' | 'synced' | 'conflict' | 'discarded';
+    remoteCheckpointAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type Delivery = {
+    id: string;
+    accountId: string;
+    draftId: string;
+    status: 'prepared' | 'sending' | 'sent' | 'ambiguous';
+    remoteId?: string | null;
+};
+
 export type MessageAttachment = {
     id: string;
     position: number;
@@ -643,21 +686,150 @@ export type CreateMailActionResponses = {
 export type CreateMailActionResponse = CreateMailActionResponses[keyof CreateMailActionResponses];
 
 export type SaveDraftData = {
-    body?: never;
+    body: DraftWrite;
     path?: never;
     query?: never;
     url: '/drafts';
 };
 
-export type SaveDraftResponses = {
+export type SaveDraftErrors = {
     /**
-     * Draft saved
+     * RFC 9457 problem details
      */
-    200: unknown;
+    default: Problem;
 };
 
-export type SendMessageData = {
+export type SaveDraftError = SaveDraftErrors[keyof SaveDraftErrors];
+
+export type SaveDraftResponses = {
+    /**
+     * Local draft saved and scheduled for a remote checkpoint
+     */
+    201: Draft;
+};
+
+export type SaveDraftResponse = SaveDraftResponses[keyof SaveDraftResponses];
+
+export type DiscardDraftData = {
     body?: never;
+    path: {
+        draftId: string;
+    };
+    query: {
+        accountId: string;
+    };
+    url: '/drafts/{draftId}';
+};
+
+export type DiscardDraftErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type DiscardDraftError = DiscardDraftErrors[keyof DiscardDraftErrors];
+
+export type DiscardDraftResponses = {
+    /**
+     * Draft explicitly discarded
+     */
+    200: Draft;
+};
+
+export type DiscardDraftResponse = DiscardDraftResponses[keyof DiscardDraftResponses];
+
+export type GetDraftData = {
+    body?: never;
+    path: {
+        draftId: string;
+    };
+    query: {
+        accountId: string;
+    };
+    url: '/drafts/{draftId}';
+};
+
+export type GetDraftErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type GetDraftError = GetDraftErrors[keyof GetDraftErrors];
+
+export type GetDraftResponses = {
+    /**
+     * Owner-scoped draft
+     */
+    200: Draft;
+};
+
+export type GetDraftResponse = GetDraftResponses[keyof GetDraftResponses];
+
+export type UpdateDraftData = {
+    body: DraftWrite;
+    path: {
+        draftId: string;
+    };
+    query?: never;
+    url: '/drafts/{draftId}';
+};
+
+export type UpdateDraftErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type UpdateDraftError = UpdateDraftErrors[keyof UpdateDraftErrors];
+
+export type UpdateDraftResponses = {
+    /**
+     * Draft updated at the expected local revision
+     */
+    200: Draft;
+};
+
+export type UpdateDraftResponse = UpdateDraftResponses[keyof UpdateDraftResponses];
+
+export type CheckpointDraftData = {
+    body: {
+        accountId: string;
+    };
+    path: {
+        draftId: string;
+    };
+    query?: never;
+    url: '/drafts/{draftId}/checkpoint';
+};
+
+export type CheckpointDraftErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type CheckpointDraftError = CheckpointDraftErrors[keyof CheckpointDraftErrors];
+
+export type CheckpointDraftResponses = {
+    /**
+     * Draft checkpointed with its provider or already current
+     */
+    200: Draft;
+};
+
+export type CheckpointDraftResponse = CheckpointDraftResponses[keyof CheckpointDraftResponses];
+
+export type SendMessageData = {
+    body: {
+        accountId: string;
+        draftId: string;
+        expectedRevision: number;
+    };
     headers: {
         'Idempotency-Key': string;
     };
@@ -677,10 +849,12 @@ export type SendMessageError = SendMessageErrors[keyof SendMessageErrors];
 
 export type SendMessageResponses = {
     /**
-     * Message queued for delivery
+     * Delivery recorded; ambiguous results are never retried with the same key
      */
-    202: unknown;
+    202: Delivery;
 };
+
+export type SendMessageResponse = SendMessageResponses[keyof SendMessageResponses];
 
 export type DownloadAttachmentData = {
     body?: never;

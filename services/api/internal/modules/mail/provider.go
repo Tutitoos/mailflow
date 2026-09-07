@@ -79,8 +79,9 @@ type RemoteAction struct {
 }
 
 type OutgoingMessage struct {
-	DraftID string
-	Raw     io.Reader
+	DraftID  string
+	ThreadID string
+	Raw      io.Reader
 }
 
 type Provider interface {

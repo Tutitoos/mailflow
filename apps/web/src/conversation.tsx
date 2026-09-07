@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./components/ui/button";
+import type { ComposeContext } from "./composer";
 import { type Locale, translate } from "./i18n";
 import {
   type ConversationMessage,
@@ -52,6 +53,7 @@ function MessageCard({
   allowRemoteImages,
   onToggle,
   onReply,
+  onForward,
   locale,
 }: {
   message: ConversationMessage;
@@ -59,6 +61,7 @@ function MessageCard({
   allowRemoteImages: boolean;
   onToggle: () => void;
   onReply: () => void;
+  onForward: () => void;
   locale: Locale;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
@@ -127,7 +130,7 @@ function MessageCard({
             <Button variant="outline" onClick={onReply}>
               <Reply size={16} /> {t("reply")}
             </Button>
-            <Button variant="outline" onClick={onReply}>
+            <Button variant="outline" onClick={onForward}>
               <Forward size={16} /> {t("forward")}
             </Button>
           </div>
@@ -149,7 +152,7 @@ export function ConversationView({
   threadId: string;
   locale: Locale;
   onBack: () => void;
-  onCompose: () => void;
+  onCompose: (context: ComposeContext) => void;
   onAction: (kind: MailActionKind) => void;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
@@ -256,7 +259,35 @@ export function ConversationView({
                 return next;
               })
             }
-            onReply={onCompose}
+            onReply={() => {
+              const from = sender(message);
+              const subject = /^re:/iu.test(message.subject)
+                ? message.subject
+                : `Re: ${message.subject}`;
+              const quoted = message.bodyText
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n");
+              onCompose({
+                mode: "reply",
+                sourceMessageId: message.id,
+                to: from.address,
+                subject,
+                bodyText: `\n\nOn ${new Intl.DateTimeFormat(locale).format(new Date(message.sentAt))}, ${from.name} wrote:\n${quoted}`,
+              });
+            }}
+            onForward={() => {
+              const from = sender(message);
+              const subject = /^fwd:/iu.test(message.subject)
+                ? message.subject
+                : `Fwd: ${message.subject}`;
+              onCompose({
+                mode: "forward",
+                sourceMessageId: message.id,
+                subject,
+                bodyText: `\n\n---------- Forwarded message ----------\nFrom: ${from.name} <${from.address}>\nDate: ${new Intl.DateTimeFormat(locale).format(new Date(message.sentAt))}\nSubject: ${message.subject}\n\n${message.bodyText}`,
+              });
+            }}
             locale={locale}
           />
         ))}

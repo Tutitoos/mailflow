@@ -116,6 +116,8 @@ type Draft struct {
 	DiscardedAt        pgtype.Timestamptz `json:"discarded_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ComposeMode        string             `json:"compose_mode"`
+	SourceMessageID    pgtype.UUID        `json:"source_message_id"`
 }
 
 type DraftAttachment struct {
@@ -254,6 +256,18 @@ type MetricPoint struct {
 	Dimensions []byte             `json:"dimensions"`
 	Value      float64            `json:"value"`
 	Count      int64              `json:"count"`
+}
+
+type OutboundDelivery struct {
+	ID             pgtype.UUID        `json:"id"`
+	AccountID      pgtype.UUID        `json:"account_id"`
+	DraftID        pgtype.UUID        `json:"draft_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	PayloadHash    []byte             `json:"payload_hash"`
+	Status         string             `json:"status"`
+	RemoteID       pgtype.Text        `json:"remote_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type PendingAction struct {

@@ -144,6 +144,23 @@ func TestDraftSchedulingAndAttachmentValidation(t *testing.T) {
 	if !errors.Is(err, ErrInvalidDraft) {
 		t.Fatalf("invalid attachment error = %v", err)
 	}
+	_, err = repository.CreateDraft(context.Background(), CreateDraftInput{
+		UserID: userID, AccountID: accountID, Now: now,
+		Content: DraftContentInput{BodyText: "Different", BodyHTML: "<p>Visible text</p>", Mode: ComposeNew},
+	})
+	if !errors.Is(err, ErrInvalidDraft) {
+		t.Fatalf("mismatched alternative bodies error = %v", err)
+	}
+	_, err = repository.CreateDraft(context.Background(), CreateDraftInput{
+		UserID: userID, AccountID: accountID, Now: now,
+		Content: DraftContentInput{
+			Mode: ComposeNew,
+			Recipients: []MessageAddressInput{{Role: AddressTo, Address: "not-an-email"}},
+		},
+	})
+	if !errors.Is(err, ErrInvalidDraft) {
+		t.Fatalf("invalid recipient address error = %v", err)
+	}
 }
 
 func createDraftFixture(t *testing.T, repository *DraftRepositoryStore, userID, accountID string) Draft {

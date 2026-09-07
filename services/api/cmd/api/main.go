@@ -141,7 +141,23 @@ func main() {
 	}
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	if redisClient != nil && accountService != nil {
-		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleoauth.NewClient(googleConfig, nil), accountService)
+		googleClient := googleoauth.NewClient(googleConfig, nil)
+		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleClient, accountService)
+		normalizer, normalizerErr := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+		if normalizerErr != nil {
+			logger.Error("mail composer configuration failed", "event", "mail.composer_unavailable")
+			os.Exit(1)
+		}
+		resolver, resolverErr := mailflowsync.NewGmailAccountResolver(accountService, googleClient, nil, normalizer)
+		if resolverErr != nil {
+			logger.Error("Gmail delivery configuration failed", "event", "mail.delivery_unavailable")
+			os.Exit(1)
+		}
+		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), gmailOutgoingProviderResolver{resolver}, options.Events)
+		if resolverErr != nil {
+			logger.Error("mail delivery configuration failed", "event", "mail.delivery_unavailable")
+			os.Exit(1)
+		}
 		queueConfig := queue.DefaultConfig()
 		if prefix := os.Getenv("MAILFLOW_QUEUE_PREFIX"); prefix != "" {
 			queueConfig.Prefix = prefix
@@ -172,4 +188,12 @@ func main() {
 		logger.Error("api stopped", "event", "api.stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+type gmailOutgoingProviderResolver struct {
+	resolver *mailflowsync.GmailAccountResolver
+}
+
+func (resolver gmailOutgoingProviderResolver) ResolveOutgoingProvider(ctx context.Context, userID, accountID string) (mail.OutgoingProvider, error) {
+	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
 }

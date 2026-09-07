@@ -268,7 +268,11 @@ func (provider *Provider) SaveDraft(ctx context.Context, draft mail.OutgoingMess
 	if err != nil {
 		return "", err
 	}
-	body, _ := json.Marshal(map[string]any{"message": map[string]string{"raw": encoded}})
+	message := map[string]string{"raw": encoded}
+	if draft.ThreadID != "" {
+		message["threadId"] = draft.ThreadID
+	}
+	body, _ := json.Marshal(map[string]any{"message": message})
 	method, path := http.MethodPost, "/drafts"
 	if draft.DraftID != "" {
 		method, path = http.MethodPut, "/drafts/"+url.PathEscape(draft.DraftID)
@@ -290,7 +294,11 @@ func (provider *Provider) Send(ctx context.Context, message mail.OutgoingMessage
 	if err != nil {
 		return "", err
 	}
-	body, _ := json.Marshal(map[string]string{"raw": encoded})
+	payload := map[string]string{"raw": encoded}
+	if message.ThreadID != "" {
+		payload["threadId"] = message.ThreadID
+	}
+	body, _ := json.Marshal(payload)
 	var response struct {
 		ID string `json:"id"`
 	}

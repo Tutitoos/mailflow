@@ -155,7 +155,15 @@ paths:
     get:
       operationId: listThreads
       parameters:
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: category
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/MailCategory" }
         - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
           description: A page of conversations
@@ -163,6 +171,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ThreadPage"
+        default: { $ref: "#/components/responses/Problem" }
+  /mailboxes:
+    get:
+      operationId: listMailboxes
+      parameters:
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: Mailboxes for one owned account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Mailbox" } }
+        default: { $ref: "#/components/responses/Problem" }
+  /labels:
+    get:
+      operationId: listLabels
+      parameters:
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: Labels and category counters for one owned account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Label" } }
+        default: { $ref: "#/components/responses/Problem" }
   /threads/{threadId}:
     get:
       operationId: getThread
@@ -287,6 +328,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    AccountIdQuery:
+      name: accountId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
     Cursor:
       name: cursor
       in: query
@@ -344,10 +390,60 @@ components:
         payload: { type: object, additionalProperties: true }
     ThreadPage:
       type: object
-      required: [items]
+      required: [items, nextCursor]
       properties:
-        items: { type: array, items: { type: object } }
+        items: { type: array, items: { $ref: "#/components/schemas/InboxThread" } }
         nextCursor: { type: [string, "null"] }
+    MailCategory:
+      type: string
+      enum: [primary, promotions, social, notifications, forums]
+    InboxThread:
+      type: object
+      required: [id, accountId, senderName, senderAddress, subject, preview, lastMessageAt, isRead, isStarred, isImportant, category, messageCount, attachmentCount]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        senderName: { type: string }
+        senderAddress: { type: string }
+        subject: { type: string }
+        preview: { type: string, maxLength: 240 }
+        lastMessageAt: { type: string, format: date-time }
+        isRead: { type: boolean }
+        isStarred: { type: boolean }
+        isImportant: { type: boolean }
+        category: { $ref: "#/components/schemas/MailCategory" }
+        messageCount: { type: integer, minimum: 0 }
+        attachmentCount: { type: integer, minimum: 0 }
+    Mailbox:
+      type: object
+      required: [id, accountId, remoteId, remoteName, localName, role, selectable, totalCount, unreadCount]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        remoteId: { type: string }
+        remoteName: { type: string }
+        localName: { type: [string, "null"] }
+        role: { type: string, enum: [inbox, sent, drafts, trash, junk, archive, all] }
+        selectable: { type: boolean }
+        totalCount: { type: integer, minimum: 0 }
+        unreadCount: { type: integer, minimum: 0 }
+    Label:
+      type: object
+      required: [id, accountId, remoteId, remoteName, localName, kind, category, color, totalCount, unreadCount]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        remoteId: { type: [string, "null"] }
+        remoteName: { type: string }
+        localName: { type: [string, "null"] }
+        kind: { type: string, enum: [system, user, category] }
+        category:
+          anyOf:
+            - { $ref: "#/components/schemas/MailCategory" }
+            - { type: "null" }
+        color: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        unreadCount: { type: integer, minimum: 0 }
     Problem:
       type: object
       required: [type, title, status, code, detail, requestId]

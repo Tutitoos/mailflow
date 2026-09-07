@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive,
   ArrowLeft,
@@ -9,7 +10,6 @@ import {
   CircleUserRound,
   Clock3,
   FileText,
-  Forward,
   Inbox,
   Info,
   Languages,
@@ -23,7 +23,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Reply,
   Search,
   Send,
   Settings,
@@ -36,19 +35,38 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
-import { type Category, categories, type MailItem, messages } from "./data";
 import { type Locale, type TranslationKey, translate } from "./i18n";
 import {
   disconnectAccount,
+  type InboxThread,
   loadGoogleAccounts,
+  loadInboxPage,
+  loadMailAccounts,
+  loadMailNavigation,
   type MailAccount,
+  type Mailbox,
+  type MailCategory,
+  type MailLabel,
   startGoogleConnection,
+  subscribeMailEvents,
 } from "./mailflow-api";
 
 type Translator = (key: TranslationKey) => string;
+
+const inboxCategories: Array<{
+  id: MailCategory;
+  labelKey: TranslationKey;
+  icon: typeof Inbox;
+}> = [
+  { id: "primary", labelKey: "category.primary", icon: Inbox },
+  { id: "promotions", labelKey: "category.promotions", icon: Tag },
+  { id: "social", labelKey: "category.social", icon: Users },
+  { id: "notifications", labelKey: "category.updates", icon: Info },
+  { id: "forums", labelKey: "category.forums", icon: Mail },
+];
 
 export function Brand() {
   return (
@@ -68,6 +86,8 @@ function Header({
   query,
   onQueryChange,
   onMenu,
+  syncLabel,
+  connected,
   t,
 }: {
   locale: Locale;
@@ -75,6 +95,8 @@ function Header({
   query: string;
   onQueryChange: (value: string) => void;
   onMenu: () => void;
+  syncLabel: string;
+  connected: boolean;
   t: Translator;
 }) {
   const navigate = useNavigate();
@@ -100,7 +122,7 @@ function Header({
         </Button>
       </label>
       <div className="topbar-actions">
-        <span className="sync-dot" title={t("syncing")} />
+        <span className={connected ? "sync-dot" : "offline-dot"} title={syncLabel} />
         <Button
           size="icon"
           aria-label={t("settings")}
@@ -134,12 +156,23 @@ const mailboxItems = [
 function Sidebar({
   collapsed,
   onCompose,
+  accounts,
+  activeAccountId,
+  onAccountChange,
+  mailboxes,
+  labels,
   t,
 }: {
   collapsed: boolean;
   onCompose: () => void;
+  accounts: MailAccount[];
+  activeAccountId: string | null;
+  onAccountChange: (accountId: string) => void;
+  mailboxes: Mailbox[];
+  labels: MailLabel[];
   t: Translator;
 }) {
+  const mailboxByRole = new Map(mailboxes.map((mailbox) => [mailbox.role, mailbox]));
   return (
     <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
       <Button className="compose-button" variant="primary" onClick={onCompose}>
@@ -147,13 +180,22 @@ function Sidebar({
         <span>{t("compose")}</span>
       </Button>
       <nav aria-label="Mailboxes" className="nav-list">
-        {mailboxItems.map(([key, Icon, count], index) => (
-          <button className={index === 0 ? "nav-item active" : "nav-item"} type="button" key={key}>
-            <Icon size={17} />
-            <span>{t(key)}</span>
-            {count && <strong>{count}</strong>}
-          </button>
-        ))}
+        {mailboxItems.map(([key, Icon], index) => {
+          const role = key === "allMail" ? "all" : key;
+          const mailbox = mailboxByRole.get(role as Mailbox["role"]);
+          const count = mailbox?.unreadCount ?? 0;
+          return (
+            <button
+              className={index === 0 ? "nav-item active" : "nav-item"}
+              type="button"
+              key={key}
+            >
+              <Icon size={17} />
+              <span>{mailbox?.localName || mailbox?.remoteName || t(key)}</span>
+              {count > 0 && <strong>{count}</strong>}
+            </button>
+          );
+        })}
         <button className="nav-item" type="button">
           <ChevronDown size={17} />
           <span>{t("more")}</span>
@@ -164,40 +206,33 @@ function Sidebar({
         <Plus size={16} />
       </div>
       <nav className="nav-list labels" aria-label={t("labels")}>
-        <button className="nav-item" type="button">
-          <span className="label-dot violet" />
-          <span>Development</span>
-          <strong>46</strong>
-        </button>
-        <button className="nav-item" type="button">
-          <span className="label-dot amber" />
-          <span>Receipts</span>
-          <strong>8</strong>
-        </button>
-        <button className="nav-item" type="button">
-          <span className="label-dot blue" />
-          <span>Travel</span>
-        </button>
+        {labels
+          .filter((label) => label.kind === "user")
+          .slice(0, 12)
+          .map((label) => (
+            <button className="nav-item" type="button" key={label.id}>
+              <span className="label-dot" style={{ background: label.color || undefined }} />
+              <span>{label.localName || label.remoteName}</span>
+              {label.unreadCount > 0 && <strong>{label.unreadCount}</strong>}
+            </button>
+          ))}
       </nav>
       <div className="sidebar-section-title account-title">
         <span>{t("accounts")}</span>
       </div>
       <nav className="nav-list accounts" aria-label={t("accounts")}>
-        <button className="nav-item" type="button">
-          <span className="provider-icon">G</span>
-          <span>Personal</span>
-          <span className="online-dot" />
-        </button>
-        <button className="nav-item" type="button">
-          <span className="provider-icon">M</span>
-          <span>Work</span>
-          <span className="online-dot" />
-        </button>
-        <button className="nav-item" type="button">
-          <span className="provider-icon">i</span>
-          <span>iCloud</span>
-          <span className="online-dot" />
-        </button>
+        {accounts.map((account) => (
+          <button
+            className={account.id === activeAccountId ? "nav-item active" : "nav-item"}
+            type="button"
+            key={account.id}
+            onClick={() => onAccountChange(account.id)}
+          >
+            <span className="provider-icon">{account.provider.slice(0, 1).toUpperCase()}</span>
+            <span>{account.displayName}</span>
+            <span className={account.syncState === "error" ? "offline-dot" : "online-dot"} />
+          </button>
+        ))}
       </nav>
     </aside>
   );
@@ -206,11 +241,21 @@ function Sidebar({
 function MailToolbar({
   allSelected,
   onSelectAll,
+  onRefresh,
+  onPrevious,
+  onNext,
+  canPrevious,
+  canNext,
   range,
   t,
 }: {
   allSelected: boolean;
   onSelectAll: () => void;
+  onRefresh: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  canPrevious: boolean;
+  canNext: boolean;
   range: string;
   t: Translator;
 }) {
@@ -226,7 +271,7 @@ function MailToolbar({
           {allSelected ? "✓" : ""}
         </button>
         <ChevronDown size={14} />
-        <Button size="icon" aria-label={t("refresh")}>
+        <Button size="icon" aria-label={t("refresh")} onClick={onRefresh}>
           <RefreshCw size={17} />
         </Button>
         <Button size="icon" aria-label="More actions">
@@ -235,10 +280,15 @@ function MailToolbar({
       </div>
       <div className="toolbar-group range-controls">
         <span>{range}</span>
-        <Button size="icon" aria-label="Previous page">
+        <Button
+          size="icon"
+          aria-label={t("previousPage")}
+          onClick={onPrevious}
+          disabled={!canPrevious}
+        >
           <ChevronLeft size={17} />
         </Button>
-        <Button size="icon" aria-label="Next page">
+        <Button size="icon" aria-label={t("nextPage")} onClick={onNext} disabled={!canNext}>
           <ChevronRight size={17} />
         </Button>
       </div>
@@ -249,20 +299,19 @@ function MailToolbar({
 function CategoryTabs({
   active,
   onChange,
+  labels,
   t,
 }: {
-  active: Category;
-  onChange: (category: Category) => void;
+  active: MailCategory;
+  onChange: (category: MailCategory) => void;
+  labels: MailLabel[];
   t: Translator;
 }) {
-  const icons = { primary: Inbox, promotions: Tag, social: Users, updates: Info, forums: Mail };
   return (
-    <div className="category-tabs" role="tablist" aria-label="Inbox categories">
-      {categories.map((category) => {
-        const Icon = icons[category.id];
-        const count = messages.filter(
-          (message) => message.category === category.id && message.unread,
-        ).length;
+    <div className="category-tabs" role="tablist" aria-label={t("inboxCategories")}>
+      {inboxCategories.map((category) => {
+        const Icon = category.icon;
+        const count = labels.find((label) => label.category === category.id)?.unreadCount ?? 0;
         return (
           <button
             type="button"
@@ -287,25 +336,23 @@ function MessageRow({
   selected,
   starred,
   onSelect,
-  onOpen,
   onStar,
 }: {
-  message: MailItem;
+  message: InboxThread;
   selected: boolean;
   starred: boolean;
   onSelect: () => void;
-  onOpen: () => void;
   onStar: () => void;
 }) {
   return (
     <article
-      className={`message-row${message.unread ? " unread" : ""}${selected ? " selected" : ""}`}
+      className={`message-row${!message.isRead ? " unread" : ""}${selected ? " selected" : ""}`}
     >
       <button
         className={selected ? "select-box checked" : "select-box"}
         type="button"
         onClick={onSelect}
-        aria-label={`Select ${message.subject}`}
+        aria-label={`Select ${message.subject || message.senderName}`}
       >
         {selected ? "✓" : ""}
       </button>
@@ -313,34 +360,38 @@ function MessageRow({
         className={starred ? "row-icon starred" : "row-icon"}
         type="button"
         onClick={onStar}
-        aria-label={`Star ${message.subject}`}
+        aria-label={`Star ${message.subject || message.senderName}`}
       >
         <Star size={16} fill={starred ? "currentColor" : "none"} />
       </button>
       <button
         className="row-icon important"
         type="button"
-        aria-label={`Mark ${message.subject} important`}
+        aria-label={`Mark ${message.subject || message.senderName} important`}
       >
         <ChevronsUpDown size={16} />
       </button>
-      <button className="message-content" type="button" onClick={onOpen}>
-        <span className="sender">{message.sender}</span>
+      <div className="message-content">
+        <span className="sender">{message.senderName || message.senderAddress}</span>
         <span className="subject-line">
           <strong>{message.subject}</strong>
           <span> — {message.preview}</span>
         </span>
-        {message.attachment && (
+        {message.attachmentCount > 0 && (
           <span className="attachment-chip">
             <Paperclip size={13} />
-            {message.attachment}
+            {message.attachmentCount}
           </span>
         )}
-        <span className="provider-badge" title={message.provider}>
-          {message.provider.slice(0, 1)}
+        <span className="provider-badge" title={message.senderAddress}>
+          {message.messageCount}
         </span>
-        <time>{message.date}</time>
-      </button>
+        <time dateTime={message.lastMessageAt}>
+          {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+            new Date(message.lastMessageAt),
+          )}
+        </time>
+      </div>
       <div className="quick-actions">
         <Button size="icon" aria-label="Archive">
           <Archive size={16} />
@@ -356,98 +407,6 @@ function MessageRow({
         </Button>
       </div>
     </article>
-  );
-}
-
-function Conversation({
-  message,
-  onBack,
-  t,
-}: {
-  message: MailItem;
-  onBack: () => void;
-  t: Translator;
-}) {
-  return (
-    <section className="conversation">
-      <div className="conversation-toolbar">
-        <Button size="icon" aria-label={t("back")} onClick={onBack}>
-          <ArrowLeft size={18} />
-        </Button>
-        <Button size="icon" aria-label={t("archive")}>
-          <Archive size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("delete")}>
-          <Trash2 size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("markUnread")}>
-          <Mail size={17} />
-        </Button>
-        <Button size="icon" aria-label="Label">
-          <Tag size={17} />
-        </Button>
-        <Button size="icon" aria-label="More">
-          <MoreHorizontal size={18} />
-        </Button>
-      </div>
-      <div className="conversation-heading">
-        <div>
-          <h1>{message.subject}</h1>
-          <span className="thread-label">Inbox</span>
-        </div>
-        <span className="provider-pill">{message.provider}</span>
-      </div>
-      <article className="mail-body-card">
-        <div className="sender-avatar">{message.sender.slice(0, 1)}</div>
-        <div className="mail-body-main">
-          <header>
-            <div>
-              <strong>{message.sender}</strong>
-              <span>&lt;{message.senderEmail}&gt;</span>
-            </div>
-            <div>
-              <time>{message.date}</time>
-              <Button size="icon" aria-label={t("reply")}>
-                <Reply size={16} />
-              </Button>
-              <Button size="icon" aria-label="More">
-                <MoreHorizontal size={17} />
-              </Button>
-            </div>
-          </header>
-          <p>
-            to me <ChevronDown size={13} />
-          </p>
-          <div className="message-body">
-            <p>{message.body}</p>
-            <p>
-              Best,
-              <br />
-              {message.sender}
-            </p>
-          </div>
-          {message.attachment && (
-            <button className="attachment-card" type="button">
-              <FileText size={24} />
-              <span>
-                <strong>{message.attachment}</strong>
-                <small>128 KB · PDF</small>
-              </span>
-            </button>
-          )}
-          <div className="reply-actions">
-            <Button variant="outline">
-              <Reply size={16} />
-              {t("reply")}
-            </Button>
-            <Button variant="outline">
-              <Forward size={16} />
-              {t("forward")}
-            </Button>
-          </div>
-        </div>
-      </article>
-    </section>
   );
 }
 
@@ -528,30 +487,188 @@ function ContextRail({ t }: { t: Translator }) {
   );
 }
 
+function VirtualMessageList({
+  messages,
+  selected,
+  starred,
+  onSelect,
+  onStar,
+}: {
+  messages: InboxThread[];
+  selected: Set<string>;
+  starred: Set<string>;
+  onSelect: (id: string) => void;
+  onStar: (id: string) => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 48,
+    overscan: 12,
+  });
+
+  return (
+    <section className="message-list" aria-live="polite" ref={parentRef}>
+      <div className="virtual-message-list" style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const message = messages[virtualRow.index];
+          if (!message) return null;
+          return (
+            <div
+              className="virtual-message-row"
+              key={message.id}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <MessageRow
+                message={message}
+                selected={selected.has(message.id)}
+                starred={starred.has(message.id) || message.isStarred}
+                onSelect={() => onSelect(message.id)}
+                onStar={() => onStar(message.id)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
+  const navigate = useNavigate();
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<Category>("primary");
+  const [category, setCategory] = useState<MailCategory>("primary");
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [labels, setLabels] = useState<MailLabel[]>([]);
+  const [navigationPartial, setNavigationPartial] = useState(false);
+  const [threads, setThreads] = useState<InboxThread[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageCursor, setPageCursor] = useState<string | undefined>();
+  const [cursorHistory, setCursorHistory] = useState<string[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error" | "resync">("loading");
+  const [refreshRevision, setRefreshRevision] = useState(0);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [eventsConnected, setEventsConnected] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [starred, setStarred] = useState<Set<string>>(
-    new Set(messages.filter((item) => item.starred).map((item) => item.id)),
+  const [starred, setStarred] = useState<Set<string>>(new Set());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.matchMedia("(max-width: 900px)").matches,
   );
-  const [activeMessage, setActiveMessage] = useState<MailItem | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMaximized, setComposeMaximized] = useState(false);
   const t: Translator = (key) => translate(locale, key);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoadState("loading");
+    void loadMailAccounts(controller.signal)
+      .then(({ items }) => {
+        const active = items.filter((account) => !account.disabledAt);
+        setAccounts(active);
+        setActiveAccountId((current) =>
+          current && active.some((account) => account.id === current)
+            ? current
+            : (active[0]?.id ?? null),
+        );
+        if (active.length === 0) setLoadState("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadState("error");
+      });
+    return () => controller.abort();
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRevision intentionally retries navigation.
+  useEffect(() => {
+    if (!activeAccountId) {
+      setMailboxes([]);
+      setLabels([]);
+      setThreads([]);
+      return;
+    }
+    const controller = new AbortController();
+    setNavigationPartial(false);
+    void loadMailNavigation(activeAccountId, controller.signal)
+      .then((navigation) => {
+        setMailboxes(navigation.mailboxes);
+        setLabels(navigation.labels);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setNavigationPartial(true);
+      });
+    return () => controller.abort();
+  }, [activeAccountId, refreshRevision]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRevision intentionally reloads the current cursor.
+  useEffect(() => {
+    if (!activeAccountId || !online) return;
+    const controller = new AbortController();
+    setLoadState("loading");
+    void loadInboxPage(activeAccountId, category, pageCursor, controller.signal)
+      .then((page) => {
+        setThreads(page.items);
+        setNextCursor(page.nextCursor);
+        setStarred((current) => {
+          const next = new Set(current);
+          for (const item of page.items) if (item.isStarred) next.add(item.id);
+          return next;
+        });
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadState("error");
+      });
+    return () => controller.abort();
+  }, [activeAccountId, category, online, pageCursor, refreshRevision]);
+
+  useEffect(() => {
+    const becameOnline = () => {
+      setOnline(true);
+      setRefreshRevision((current) => current + 1);
+    };
+    const becameOffline = () => setOnline(false);
+    window.addEventListener("online", becameOnline);
+    window.addEventListener("offline", becameOffline);
+    return () => {
+      window.removeEventListener("online", becameOnline);
+      window.removeEventListener("offline", becameOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeAccountId || !online) return;
+    const controller = new AbortController();
+    void subscribeMailEvents(
+      (event) => {
+        const eventAccount = event.payload.accountId;
+        if (typeof eventAccount === "string" && eventAccount !== activeAccountId) return;
+        if (event.type === "system.resync_required") setLoadState("resync");
+        if (event.type === "mail.changed" || event.type === "sync.progress") {
+          setRefreshRevision((current) => current + 1);
+        }
+      },
+      setEventsConnected,
+      controller.signal,
+    ).catch(() => setEventsConnected(false));
+    return () => controller.abort();
+  }, [activeAccountId, online]);
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return messages.filter((message) => {
-      if (message.category !== category) return false;
-      return (
+    return threads.filter(
+      (message) =>
         !normalized ||
-        `${message.sender} ${message.subject} ${message.preview}`.toLowerCase().includes(normalized)
-      );
-    });
-  }, [category, query]);
+        `${message.senderName} ${message.senderAddress} ${message.subject} ${message.preview}`
+          .toLowerCase()
+          .includes(normalized),
+    );
+  }, [query, threads]);
 
   const toggleSelection = (id: string) => {
     setSelected((current) => {
@@ -570,58 +687,132 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         query={query}
         onQueryChange={setQuery}
         onMenu={() => setSidebarCollapsed((value) => !value)}
+        syncLabel={!online ? t("offline") : eventsConnected ? t("liveUpdates") : t("syncing")}
+        connected={online && eventsConnected}
         t={t}
       />
       <div className="app-body">
-        <Sidebar collapsed={sidebarCollapsed} onCompose={() => setComposeOpen(true)} t={t} />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onCompose={() => setComposeOpen(true)}
+          accounts={accounts}
+          activeAccountId={activeAccountId}
+          onAccountChange={(accountId) => {
+            setPageCursor(undefined);
+            setCursorHistory([]);
+            setActiveAccountId(accountId);
+          }}
+          mailboxes={mailboxes}
+          labels={labels}
+          t={t}
+        />
         <main className="mail-surface">
-          {activeMessage ? (
-            <Conversation message={activeMessage} onBack={() => setActiveMessage(null)} t={t} />
+          <MailToolbar
+            allSelected={
+              filtered.length > 0 && filtered.every((message) => selected.has(message.id))
+            }
+            onSelectAll={() =>
+              setSelected(
+                filtered.every((message) => selected.has(message.id))
+                  ? new Set()
+                  : new Set(filtered.map((message) => message.id)),
+              )
+            }
+            onRefresh={() => setRefreshRevision((current) => current + 1)}
+            onPrevious={() => {
+              const previous = cursorHistory.at(-1);
+              setCursorHistory((current) => current.slice(0, -1));
+              setPageCursor(previous || undefined);
+            }}
+            onNext={() => {
+              if (!nextCursor) return;
+              setCursorHistory((current) => [...current, pageCursor ?? ""]);
+              setPageCursor(nextCursor);
+            }}
+            canPrevious={cursorHistory.length > 0}
+            canNext={Boolean(nextCursor)}
+            range={`${cursorHistory.length * 50 + (filtered.length ? 1 : 0)}–${
+              cursorHistory.length * 50 + filtered.length
+            }`}
+            t={t}
+          />
+          <CategoryTabs
+            active={category}
+            onChange={(nextCategory) => {
+              setPageCursor(undefined);
+              setCursorHistory([]);
+              setCategory(nextCategory);
+            }}
+            labels={labels}
+            t={t}
+          />
+          {navigationPartial && (
+            <div className="partial-banner" role="status">
+              {t("navigationPartial")}
+            </div>
+          )}
+          {!online ? (
+            <div className="mail-state" role="status">
+              <Inbox size={30} />
+              <strong>{t("offline")}</strong>
+              <span>{t("offlineDescription")}</span>
+            </div>
+          ) : loadState === "loading" ? (
+            <div className="mail-state" role="status">
+              <span className="loading-spinner" />
+              <strong>{t("loadingInbox")}</strong>
+            </div>
+          ) : loadState === "error" ? (
+            <div className="mail-state" role="alert">
+              <Inbox size={30} />
+              <strong>{t("inboxFailed")}</strong>
+              <Button
+                variant="outline"
+                onClick={() => setRefreshRevision((current) => current + 1)}
+              >
+                {t("tryAgain")}
+              </Button>
+            </div>
+          ) : loadState === "resync" ? (
+            <div className="mail-state" role="alert">
+              <RefreshCw size={30} />
+              <strong>{t("resyncRequired")}</strong>
+              <span>{t("resyncDescription")}</span>
+              <Button
+                variant="outline"
+                onClick={() => setRefreshRevision((current) => current + 1)}
+              >
+                {t("refresh")}
+              </Button>
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="mail-state" role="status">
+              <Inbox size={30} />
+              <strong>{t("noConnectedAccounts")}</strong>
+              <Button variant="outline" onClick={() => navigate("/settings/accounts")}>
+                {t("connectGoogle")}
+              </Button>
+            </div>
+          ) : filtered.length ? (
+            <VirtualMessageList
+              messages={filtered}
+              selected={selected}
+              starred={starred}
+              onSelect={toggleSelection}
+              onStar={(id) =>
+                setStarred((current) => {
+                  const next = new Set(current);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                })
+              }
+            />
           ) : (
-            <>
-              <MailToolbar
-                allSelected={
-                  filtered.length > 0 && filtered.every((message) => selected.has(message.id))
-                }
-                onSelectAll={() =>
-                  setSelected(
-                    filtered.every((message) => selected.has(message.id))
-                      ? new Set()
-                      : new Set(filtered.map((message) => message.id)),
-                  )
-                }
-                range={`1–${filtered.length} of ${messages.length}`}
-                t={t}
-              />
-              <CategoryTabs active={category} onChange={setCategory} t={t} />
-              <section className="message-list" aria-live="polite">
-                {filtered.length ? (
-                  filtered.map((message) => (
-                    <MessageRow
-                      key={message.id}
-                      message={message}
-                      selected={selected.has(message.id)}
-                      starred={starred.has(message.id)}
-                      onSelect={() => toggleSelection(message.id)}
-                      onOpen={() => setActiveMessage(message)}
-                      onStar={() =>
-                        setStarred((current) => {
-                          const next = new Set(current);
-                          if (next.has(message.id)) next.delete(message.id);
-                          else next.add(message.id);
-                          return next;
-                        })
-                      }
-                    />
-                  ))
-                ) : (
-                  <div className="empty-state">
-                    <Inbox size={30} />
-                    <strong>{t("noMessages")}</strong>
-                  </div>
-                )}
-              </section>
-            </>
+            <div className="empty-state" role="status">
+              <Inbox size={30} />
+              <strong>{t("noMessages")}</strong>
+            </div>
           )}
         </main>
         <ContextRail t={t} />

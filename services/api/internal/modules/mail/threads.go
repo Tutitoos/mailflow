@@ -144,6 +144,30 @@ type ThreadPage struct {
 	Next  *ThreadCursor `json:"next"`
 }
 
+// InboxThread is the compact, privacy-aware projection needed by dense inbox
+// rows. Message bodies and recipient lists intentionally never leave this
+// query boundary.
+type InboxThread struct {
+	ID              string    `json:"id"`
+	AccountID       string    `json:"accountId"`
+	SenderName      string    `json:"senderName"`
+	SenderAddress   string    `json:"senderAddress"`
+	Subject         string    `json:"subject"`
+	Preview         string    `json:"preview"`
+	LastMessageAt   time.Time `json:"lastMessageAt"`
+	IsRead          bool      `json:"isRead"`
+	IsStarred       bool      `json:"isStarred"`
+	IsImportant     bool      `json:"isImportant"`
+	Category        Category  `json:"category"`
+	MessageCount    int32     `json:"messageCount"`
+	AttachmentCount int32     `json:"attachmentCount"`
+}
+
+type InboxPage struct {
+	Items []InboxThread
+	Next  *ThreadCursor
+}
+
 type MessageCursor struct {
 	SentAt time.Time `json:"sentAt"`
 	ID     string    `json:"id"`

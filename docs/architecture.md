@@ -22,7 +22,7 @@ Traefik ───────────► SPA React
                 └──── Worker Go ────┘
 ```
 
-Docker Compose ejecutará ocho servicios:
+Docker Compose ejecutará ocho servicios principales y dos jobs efímeros de inicialización:
 
 | Servicio | Responsabilidad |
 | --- | --- |
@@ -34,6 +34,8 @@ Docker Compose ejecutará ocho servicios:
 | `postgres` | Correo normalizado, configuración, traducciones y observabilidad |
 | `redis` | Colas, locks por cuenta y coordinación entre API y worker |
 | `backup` | Restic sobre volcados consistentes preparados por el worker; nunca lee el directorio de datos PostgreSQL en uso |
+| `postgres-preflight` | Rechazo preventivo de volúmenes con el layout anterior a PostgreSQL 18 |
+| `migrate` | Aplicación única de migraciones Goose antes de arrancar los procesos de aplicación |
 
 La configuración de producción expondrá únicamente Traefik en los puertos 80 y 443.
 
@@ -120,6 +122,10 @@ Cada módulo será propietario de su lógica y sus tablas. La comunicación sín
 ## Autenticación
 
 Better Auth vivirá en un servicio Bun separado y compartirá PostgreSQL con la aplicación.
+
+Goose es la única autoridad de migraciones. El job efímero `migrate` termina antes de que arranquen Better Auth, la API y el worker; Better Auth nunca modifica el esquema durante el arranque.
+
+La tabla `users` es la identidad canónica y usa UUID de extremo a extremo. Better Auth escribe directamente en ella y conserva sus sesiones, credenciales, verificaciones, passkeys y claves JWT en tablas `auth_*`. La API resuelve el `sub` del JWT contra el mismo `users.id`; no existe un segundo perfil ni una conversión entre identificadores. Las cuentas de correo de `accounts` son entidades independientes y siempre pertenecen a ese perfil.
 
 - El asistente inicial creará el único usuario mediante un token temporal.
 - Acceso con email y contraseña.

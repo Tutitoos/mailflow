@@ -21,6 +21,66 @@ type Account struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AuthAccount struct {
+	ID                    pgtype.UUID        `json:"id"`
+	AccountID             string             `json:"account_id"`
+	ProviderID            string             `json:"provider_id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	AccessToken           pgtype.Text        `json:"access_token"`
+	RefreshToken          pgtype.Text        `json:"refresh_token"`
+	IDToken               pgtype.Text        `json:"id_token"`
+	AccessTokenExpiresAt  pgtype.Timestamptz `json:"access_token_expires_at"`
+	RefreshTokenExpiresAt pgtype.Timestamptz `json:"refresh_token_expires_at"`
+	Scope                 pgtype.Text        `json:"scope"`
+	Password              pgtype.Text        `json:"password"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AuthJwk struct {
+	ID         pgtype.UUID        `json:"id"`
+	PublicKey  string             `json:"public_key"`
+	PrivateKey string             `json:"private_key"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	Alg        pgtype.Text        `json:"alg"`
+	Crv        pgtype.Text        `json:"crv"`
+}
+
+type AuthPasskey struct {
+	ID           pgtype.UUID        `json:"id"`
+	Name         pgtype.Text        `json:"name"`
+	PublicKey    string             `json:"public_key"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	CredentialID string             `json:"credential_id"`
+	Counter      int32              `json:"counter"`
+	DeviceType   string             `json:"device_type"`
+	BackedUp     bool               `json:"backed_up"`
+	Transports   pgtype.Text        `json:"transports"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Aaguid       pgtype.Text        `json:"aaguid"`
+}
+
+type AuthSession struct {
+	ID        pgtype.UUID        `json:"id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Token     string             `json:"token"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	IpAddress pgtype.Text        `json:"ip_address"`
+	UserAgent pgtype.Text        `json:"user_agent"`
+	UserID    pgtype.UUID        `json:"user_id"`
+}
+
+type AuthVerification struct {
+	ID         pgtype.UUID        `json:"id"`
+	Identifier string             `json:"identifier"`
+	Value      string             `json:"value"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type LogEntry struct {
 	ID         int64              `json:"id"`
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
@@ -109,9 +169,12 @@ type Thread struct {
 }
 
 type User struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Locale    string             `json:"locale"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID            pgtype.UUID        `json:"id"`
+	Email         string             `json:"email"`
+	Locale        string             `json:"locale"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Name          string             `json:"name"`
+	EmailVerified bool               `json:"email_verified"`
+	Image         pgtype.Text        `json:"image"`
 }

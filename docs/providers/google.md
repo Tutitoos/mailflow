@@ -12,3 +12,11 @@ Mailflow uses a Google OAuth client owned by each self-hosted installation. It n
 Mailflow requests OpenID identity, email identity, and `gmail.modify`. Authorization uses PKCE S256 and a random state stored in Redis for ten minutes. State is consumed atomically, so callback replay fails. Google tokens are encrypted through the account vault before PostgreSQL receives them and are never returned by the API.
 
 Disconnecting always disables local access. Mailflow also asks Google to revoke the refresh token and reports only whether that remote request succeeded. Use **Request consent again** if Google did not return a new refresh token or the installation scopes changed.
+
+## Gmail mapping
+
+The Gmail adapter keeps every `message.id` and `threadId` inside its Mailflow account boundary. `INBOX`, `SENT`, `DRAFT`, `TRASH`, and `SPAM` map to mailbox roles. `CATEGORY_PERSONAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_SOCIAL`, `CATEGORY_UPDATES`, and `CATEGORY_FORUMS` map to the five local categories; all remaining Google system labels and user labels retain their remote identity without being reinterpreted.
+
+Initial pages use Gmail message-list page tokens and incremental pages use History IDs plus page tokens. Message payloads pass through Mailflow's bounded MIME normalizer and HTML sanitizer before reaching the domain. Attachment IDs are resolved from the full Gmail payload and their bytes remain on-demand.
+
+Provider responses are reduced to four stable error kinds: `authorization`, `quota`, `transient`, and `permanent`. Retry hints are retained as a duration, while response bodies and Google error messages are discarded so they cannot enter logs, events, or API errors.

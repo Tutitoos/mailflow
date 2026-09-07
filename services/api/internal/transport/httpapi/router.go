@@ -210,6 +210,7 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Get("/logs/debug", logDebugStatus(deps.Logs))
 	adminRoutes.Put("/logs/debug", setLogDebug(deps.Logs))
 	adminRoutes.Get("/sentry", adminSentryIssues(deps.Sentry))
+	adminRoutes.Get("/sentry/telemetry", adminSentryTelemetry(deps.Sentry))
 	adminRoutes.Put("/sentry/:issueId", setAdminSentryIssueStatus(deps.Sentry))
 
 	return app

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { AuthGate } from "./auth-gate";
 import { AccountsPage, AdminPage, MailPage } from "./pages";
+import { initializeTelemetry } from "./telemetry";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -11,6 +12,8 @@ const queryClient = new QueryClient({
     queries: { staleTime: 30_000, retry: 1 },
   },
 });
+
+initializeTelemetry();
 
 const router = createBrowserRouter([
   { path: "/", element: <AuthGate renderApp={(locale) => <MailPage initialLocale={locale} />} /> },

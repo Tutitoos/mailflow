@@ -291,7 +291,7 @@ export function ConversationView({
           <MoreHorizontal size={18} />
         </Button>
       </div>
-      <div className="conversation-heading">
+      <div className="conversation-heading" data-sentry-block>
         <h1 id="conversation-title">{subject || t("noSubject")}</h1>
         {hasRemoteImages && !allowRemoteImages && (
           <Button variant="outline" onClick={() => setAllowRemoteImages(true)}>
@@ -299,7 +299,7 @@ export function ConversationView({
           </Button>
         )}
       </div>
-      <div className="conversation-messages">
+      <div className="conversation-messages" data-sentry-block>
         {loading && !page && (
           <div className="mail-state" role="status">
             {t("loadingConversation")}

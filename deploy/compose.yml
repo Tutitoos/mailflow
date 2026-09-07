@@ -23,6 +23,9 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_REPLAY_ENABLED: ${MAILFLOW_SENTRY_REPLAY_ENABLED:-false}
     labels:
       - traefik.enable=true
       - traefik.http.routers.web.rule=Host(`${MAILFLOW_DOMAIN}`)
@@ -100,6 +103,7 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET_FILE: /run/secrets/google_oauth_client_secret
       GOOGLE_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/google/callback
+      MAILFLOW_SENTRY_REPLAY_ENABLED: ${MAILFLOW_SENTRY_REPLAY_ENABLED:-false}
     secrets: [google_oauth_client_secret, master_key, postgres_password]
     labels:
       - traefik.enable=true

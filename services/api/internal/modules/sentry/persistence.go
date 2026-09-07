@@ -85,6 +85,10 @@ func (service *Service) persist(ctx context.Context, component string, envelope 
 	}); err != nil {
 		return fmt.Errorf("attach sentry issue: %w", err)
 	}
+	if err := service.persistTraceAndProfile(ctx, queries, eventID, component, envelope, now); err != nil {
+		return err
+	}
+	storeReplay := service.config.ReplayEnabled && envelope.replayID != "" && sampled(envelope.eventID, "replay", service.config.ReplaySampleRate)
 	createdObjects := make([]string, 0, len(envelope.items))
 	committed := false
 	defer func() {
@@ -96,12 +100,29 @@ func (service *Service) persist(ctx context.Context, component string, envelope 
 	}()
 	for _, item := range envelope.items {
 		objectID := ""
-		if len(item.payload) >= largePayloadThreshold && !item.discarded {
+		if item.typeName == "replay_recording" && !storeReplay {
+			item.discarded = true
+			item.forceStore = false
+		}
+		if item.forceStore {
+			replayBytes, quotaErr := queries.SentryReplayStoredBytes(ctx)
+			if quotaErr != nil {
+				return fmt.Errorf("read Sentry Replay quota: %w", quotaErr)
+			}
+			if int64(len(item.payload)) > service.config.ReplayQuota || replayBytes > service.config.ReplayQuota-int64(len(item.payload)) {
+				return ErrStorageQuota
+			}
+		}
+		if (item.forceStore || len(item.payload) >= largePayloadThreshold) && !item.discarded {
 			objectID, err = newEventID()
 			if err != nil {
 				return fmt.Errorf("create sentry object ID: %w", err)
 			}
-			info, putErr := service.cdn.PutValidated("sentry", objectID, "application/octet-stream", bytes.NewReader(item.summary))
+			storedPayload := item.summary
+			if item.forceStore {
+				storedPayload = item.payload
+			}
+			info, putErr := service.cdn.PutValidated("sentry", objectID, "application/octet-stream", bytes.NewReader(storedPayload))
 			if putErr != nil {
 				return fmt.Errorf("store sentry summary: %w", putErr)
 			}
@@ -110,12 +131,36 @@ func (service *Service) persist(ctx context.Context, component string, envelope 
 				return fmt.Errorf("persist sentry object: %w", err)
 			}
 		}
+		itemObjectID := objectID
+		if item.typeName == "replay_recording" {
+			itemObjectID = ""
+		}
 		if err := queries.InsertSentryEventItem(ctx, dbgen.InsertSentryEventItemParams{
 			EventID: eventID, ItemType: item.typeName, ContentType: optionalText(item.contentType),
 			ReceivedBytes: int64(len(item.payload)), PayloadSha256: digest(item.payload), Summary: item.summary,
-			PayloadObjectID: optionalText(objectID), Discarded: item.discarded,
+			PayloadObjectID: optionalText(itemObjectID), Discarded: item.discarded,
 		}); err != nil {
 			return fmt.Errorf("persist sentry item: %w", err)
+		}
+		if item.typeName == "replay_recording" && objectID != "" {
+			replay, replayErr := queries.UpsertSentryReplay(ctx, dbgen.UpsertSentryReplayParams{
+				Component: component, ReplayID: envelope.replayID, Environment: replayEnvironment(envelope.environment), SeenAt: timestamp(now),
+			})
+			if replayErr != nil {
+				return fmt.Errorf("persist Sentry Replay: %w", replayErr)
+			}
+			inserted, replayErr := queries.InsertSentryReplaySegment(ctx, dbgen.InsertSentryReplaySegmentParams{
+				ReplayRowID: replay, EventID: eventID, Sequence: int32(envelope.replaySequence), ObjectID: objectID,
+				SizeBytes: int64(len(item.payload)), ChecksumSha256: digest(item.payload), ReceivedAt: timestamp(now),
+			})
+			if replayErr != nil {
+				return fmt.Errorf("persist Sentry Replay segment: %w", replayErr)
+			}
+			if inserted == 1 {
+				if replayErr := queries.IncrementSentryReplaySegments(ctx, replay); replayErr != nil {
+					return fmt.Errorf("count Sentry Replay segment: %w", replayErr)
+				}
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

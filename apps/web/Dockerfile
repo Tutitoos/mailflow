@@ -1,5 +1,9 @@
 FROM oven/bun:1.4.0 AS build
 WORKDIR /workspace
+ARG VITE_SENTRY_DSN
+ARG VITE_SENTRY_REPLAY_ENABLED=false
+ENV VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
+ENV VITE_SENTRY_REPLAY_ENABLED=${VITE_SENTRY_REPLAY_ENABLED}
 COPY package.json bun.lock biome.json tsconfig.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY services/auth/package.json services/auth/package.json

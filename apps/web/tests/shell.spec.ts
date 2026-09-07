@@ -13,6 +13,18 @@ test("mail shell and admin remain operable", async ({ page }) => {
     route.fulfill({ json: { configured: true, setup: "docs/providers/google.md" } }),
   );
   await page.route("**/api/v1/accounts", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/v1/admin/sentry/telemetry", (route) =>
+    route.fulfill({
+      json: {
+        traces: 12,
+        spans: 38,
+        profiles: 4,
+        replays: 0,
+        replaySegments: 0,
+        replayEnabled: false,
+      },
+    }),
+  );
   await page.goto("/");
   await expect(page.getByRole("banner")).toBeVisible();
   await expect(
@@ -39,6 +51,8 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await page.goto("/admin");
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("heading", { name: "Operational status" })).toBeVisible();
+  await expect(page.getByText("12 traces · 4 profiles · 24h")).toBeVisible();
+  await expect(page.getByText("Replay disabled")).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).color))
     .toBe("rgb(237, 237, 237)");

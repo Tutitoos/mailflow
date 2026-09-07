@@ -356,6 +356,16 @@ type SentryIssue struct {
 	EventCount  int64              `json:"event_count"`
 }
 
+type SentryProfile struct {
+	ID          int64              `json:"id"`
+	EventID     int64              `json:"event_id"`
+	Component   string             `json:"component"`
+	Platform    pgtype.Text        `json:"platform"`
+	SampleCount int32              `json:"sample_count"`
+	FrameCount  int32              `json:"frame_count"`
+	ReceivedAt  pgtype.Timestamptz `json:"received_at"`
+}
+
 type SentryProject struct {
 	Component         string             `json:"component"`
 	PublicKey         string             `json:"public_key"`
@@ -388,6 +398,55 @@ type SentryReleaseArtifact struct {
 	ErrorCode       pgtype.Text        `json:"error_code"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	ProcessedAt     pgtype.Timestamptz `json:"processed_at"`
+}
+
+type SentryReplay struct {
+	ID           int64              `json:"id"`
+	Component    string             `json:"component"`
+	ReplayID     string             `json:"replay_id"`
+	Environment  string             `json:"environment"`
+	FirstSeenAt  pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt   pgtype.Timestamptz `json:"last_seen_at"`
+	SegmentCount int32              `json:"segment_count"`
+}
+
+type SentryReplaySegment struct {
+	ID              int64              `json:"id"`
+	ReplayRowID     int64              `json:"replay_row_id"`
+	EventID         int64              `json:"event_id"`
+	Sequence        int32              `json:"sequence"`
+	ObjectID        string             `json:"object_id"`
+	ObjectNamespace pgtype.Text        `json:"object_namespace"`
+	SizeBytes       int64              `json:"size_bytes"`
+	ChecksumSha256  string             `json:"checksum_sha256"`
+	ReceivedAt      pgtype.Timestamptz `json:"received_at"`
+}
+
+type SentrySpan struct {
+	ID           int64              `json:"id"`
+	TraceRowID   int64              `json:"trace_row_id"`
+	TraceID      string             `json:"trace_id"`
+	SpanID       string             `json:"span_id"`
+	ParentSpanID pgtype.Text        `json:"parent_span_id"`
+	Operation    pgtype.Text        `json:"operation"`
+	Status       pgtype.Text        `json:"status"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	DurationMs   pgtype.Float8      `json:"duration_ms"`
+}
+
+type SentryTrace struct {
+	ID           int64              `json:"id"`
+	EventID      int64              `json:"event_id"`
+	Component    string             `json:"component"`
+	TraceID      string             `json:"trace_id"`
+	SpanID       string             `json:"span_id"`
+	ParentSpanID pgtype.Text        `json:"parent_span_id"`
+	Operation    pgtype.Text        `json:"operation"`
+	Status       pgtype.Text        `json:"status"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	DurationMs   pgtype.Float8      `json:"duration_ms"`
+	SpanCount    int32              `json:"span_count"`
+	ReceivedAt   pgtype.Timestamptz `json:"received_at"`
 }
 
 type SyncCursor struct {

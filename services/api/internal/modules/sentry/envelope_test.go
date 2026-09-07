@@ -1,6 +1,8 @@
 package sentry
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,7 +23,7 @@ func TestEnvelopeSupportsFoundationItemTypes(t *testing.T) {
 			t.Fatalf("%s parsed=%+v err=%v", itemType, parsed, err)
 		}
 	}
-	unsupported := []byte("{}\n{\"type\":\"replay_event\",\"length\":2}\n{}")
+	unsupported := []byte("{}\n{\"type\":\"unknown_item\",\"length\":2}\n{}")
 	if _, err := parseEnvelope(unsupported); !errors.Is(err, ErrInvalidEnvelope) {
 		t.Fatalf("unsupported err=%v", err)
 	}
@@ -55,6 +57,41 @@ func TestDerivedProjectsSeparatePublicAndArtifactCredentials(t *testing.T) {
 		}
 		seen[project.PublicKey] = true
 		seen[project.ArtifactToken] = true
+	}
+}
+
+func TestTelemetryNormalizationMasksReplayAndToleratesBrokenChunks(t *testing.T) {
+	transaction := []byte(`{"event_id":"11111111111111111111111111111111","type":"transaction","platform":"javascript","start_timestamp":1700000000,"timestamp":1700000000.25,"contexts":{"trace":{"trace_id":"22222222222222222222222222222222","span_id":"3333333333333333","op":"ui.load","status":"ok"}},"spans":[{"trace_id":"22222222222222222222222222222222","span_id":"4444444444444444","parent_span_id":"3333333333333333","op":"http.client","status":"ok","start_timestamp":1700000000,"timestamp":1700000000.1}],"profile":{"samples":[{}],"frames":[{},{}]}}`)
+	parsed, err := parseEnvelope([]byte(fmt.Sprintf("{}\n{\"type\":\"transaction\",\"length\":%d}\n%s", len(transaction), transaction)))
+	if err != nil || parsed.trace == nil || len(parsed.trace.Spans) != 1 || parsed.profile == nil || parsed.profile.FrameCount != 2 {
+		t.Fatalf("parsed=%+v err=%v", parsed, err)
+	}
+
+	recording := []byte(`[{"type":2,"data":{"text":"private subject","email":"owner@example.test","image":"data:image/png;base64,private"}}]`)
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, _ = writer.Write(recording)
+	_ = writer.Close()
+	item := parseReplayRecording("application/octet-stream", compressed.Bytes())
+	if item.discarded || !item.forceStore || bytes.Contains(item.payload, []byte("private subject")) || bytes.Contains(item.payload, []byte("owner@example.test")) || bytes.Count(item.payload, []byte("[Masked]")) < 3 {
+		t.Fatalf("unsafe replay item: %+v payload=%s", item, item.payload)
+	}
+	broken := parseReplayRecording("application/octet-stream", []byte{0x1f, 0x8b, 0x00})
+	if !broken.discarded || broken.forceStore {
+		t.Fatalf("broken Replay chunk was not isolated: %+v", broken)
+	}
+}
+
+func TestTelemetrySamplingIsDeterministicAndBounded(t *testing.T) {
+	const eventID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	first := sampled(eventID, "trace", 0.25)
+	for range 100 {
+		if sampled(eventID, "trace", 0.25) != first {
+			t.Fatal("sampling decision changed for the same event and domain")
+		}
+	}
+	if sampled(eventID, "trace", 0) || !sampled(eventID, "trace", 1) {
+		t.Fatal("sampling boundaries were not honored")
 	}
 }
 

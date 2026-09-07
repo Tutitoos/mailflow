@@ -676,6 +676,16 @@ paths:
                     items: { $ref: "#/components/schemas/SentryIssue" }
         "400": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+  /admin/sentry/telemetry:
+    get:
+      operationId: getSentryTelemetry
+      responses:
+        "200":
+          description: Privacy-safe Sentry telemetry totals from the last 24 hours
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SentryTelemetrySummary" }
+        "503": { $ref: "#/components/responses/Problem" }
   /admin/sentry/{issueId}:
     put:
       operationId: setSentryIssueStatus
@@ -774,6 +784,16 @@ components:
         firstSeenAt: { type: string, format: date-time }
         lastSeenAt: { type: string, format: date-time }
         eventCount: { type: integer, format: int64, minimum: 1 }
+    SentryTelemetrySummary:
+      type: object
+      required: [traces, spans, profiles, replays, replaySegments, replayEnabled]
+      properties:
+        traces: { type: integer, format: int64, minimum: 0 }
+        spans: { type: integer, format: int64, minimum: 0 }
+        profiles: { type: integer, format: int64, minimum: 0 }
+        replays: { type: integer, format: int64, minimum: 0 }
+        replaySegments: { type: integer, format: int64, minimum: 0 }
+        replayEnabled: { type: boolean }
     CurrentUser:
       type: object
       required: [id, email, locale]

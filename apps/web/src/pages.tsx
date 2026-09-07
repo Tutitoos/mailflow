@@ -45,12 +45,14 @@ import {
   loadInboxPage,
   loadMailAccounts,
   loadMailNavigation,
+  loadSentryTelemetry,
   type MailAccount,
   type MailActionKind,
   type Mailbox,
   type MailCategory,
   type MailLabel,
   type SearchResult,
+  type SentryTelemetrySummary,
   searchMail,
   startGoogleConnection,
   subscribeMailEvents,
@@ -1166,6 +1168,14 @@ const serviceRows = [
 
 export function AdminPage() {
   const navigate = useNavigate();
+  const [telemetry, setTelemetry] = useState<SentryTelemetrySummary | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSentryTelemetry(controller.signal)
+      .then(setTelemetry)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
   return (
     <div className="admin-shell">
       <header className="admin-header">
@@ -1218,9 +1228,13 @@ export function AdminPage() {
             <small>p95 · last 24 hours</small>
           </article>
           <article>
-            <span>Error rate</span>
-            <strong>0.03%</strong>
-            <small>6 events · last 24 hours</small>
+            <span>Sentry telemetry</span>
+            <strong>{telemetry ? telemetry.traces + telemetry.profiles : "—"}</strong>
+            <small>
+              {telemetry
+                ? `${telemetry.traces} traces · ${telemetry.profiles} profiles · 24h`
+                : "Unavailable · last 24 hours"}
+            </small>
           </article>
           <article>
             <span>Sync queue</span>
@@ -1267,6 +1281,24 @@ export function AdminPage() {
               ))}
             </div>
           </article>
+        </section>
+        <section className="admin-panel recent-events" aria-label="Sentry telemetry">
+          <header>
+            <strong>Privacy-safe telemetry</strong>
+            <span className="status-badge">
+              Replay {telemetry?.replayEnabled ? "enabled" : "disabled"}
+            </span>
+          </header>
+          <div className="event-row">
+            <span>Traces</span>
+            <strong>{telemetry?.traces ?? "—"}</strong>
+            <span>Spans</span>
+            <strong>{telemetry?.spans ?? "—"}</strong>
+            <span>Profiles</span>
+            <strong>{telemetry?.profiles ?? "—"}</strong>
+            <span>Replay segments</span>
+            <strong>{telemetry?.replaySegments ?? "—"}</strong>
+          </div>
         </section>
         <section className="admin-panel recent-events">
           <header>

@@ -16,16 +16,20 @@ import (
 )
 
 type parsedEnvelope struct {
-	eventID      string
-	eventType    string
-	environment  string
-	release      string
-	level        string
-	sdkName      string
-	groupingSeed string
-	issueTitle   string
-	stack        []normalizedFrame
-	items        []parsedItem
+	eventID        string
+	eventType      string
+	environment    string
+	release        string
+	level          string
+	sdkName        string
+	groupingSeed   string
+	issueTitle     string
+	stack          []normalizedFrame
+	trace          *normalizedTrace
+	profile        *normalizedProfile
+	replayID       string
+	replaySequence int
+	items          []parsedItem
 }
 
 type parsedItem struct {
@@ -34,6 +38,7 @@ type parsedItem struct {
 	payload     []byte
 	summary     []byte
 	discarded   bool
+	forceStore  bool
 }
 
 type envelopeHeader struct {
@@ -65,7 +70,20 @@ type eventMetadata struct {
 	Breadcrumbs struct {
 		Values []json.RawMessage `json:"values"`
 	} `json:"breadcrumbs"`
-	Spans []json.RawMessage `json:"spans"`
+	Contexts struct {
+		Trace rawTrace `json:"trace"`
+	} `json:"contexts"`
+	Spans          []rawSpan `json:"spans"`
+	StartTimestamp float64   `json:"start_timestamp"`
+	Timestamp      float64   `json:"timestamp"`
+	ReplayID       string    `json:"replay_id"`
+	SegmentID      int       `json:"segment_id"`
+	Profile        struct {
+		Samples []json.RawMessage `json:"samples"`
+		Frames  []json.RawMessage `json:"frames"`
+	} `json:"profile"`
+	Samples []json.RawMessage `json:"samples"`
+	Frames  []json.RawMessage `json:"frames"`
 }
 
 type exceptionValue struct {
@@ -215,6 +233,9 @@ func parseItem(header itemHeader, payload []byte) (parsedItem, eventMetadata, er
 		summary := map[string]any{"type": "attachment", "bytes": len(payload), "sha256": digest(payload), "discarded": true}
 		return parsedItem{typeName: header.Type, contentType: safeContentType(header.ContentType), payload: payload, summary: mustJSON(summary), discarded: true}, eventMetadata{}, nil
 	}
+	if header.Type == "replay_recording" {
+		return parseReplayRecording(header.ContentType, payload), eventMetadata{}, nil
+	}
 	return parseJSONItem(header.Type, header.ContentType, payload)
 }
 
@@ -256,6 +277,7 @@ func applyMetadata(parsed *parsedEnvelope, metadata eventMetadata) {
 		parsed.sdkName = safeSDKName(metadata.SDK.Name)
 	}
 	applyGrouping(parsed, metadata)
+	applyTelemetry(parsed, metadata)
 }
 
 func applyGrouping(parsed *parsedEnvelope, metadata eventMetadata) {

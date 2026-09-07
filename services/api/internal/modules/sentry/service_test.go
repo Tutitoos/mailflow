@@ -266,6 +266,103 @@ func TestReleaseArtifactsAreAuthorizedQueuedAndSymbolicateEvents(t *testing.T) {
 	}
 }
 
+func TestTracingProfilesAndOptInReplayHaveShortPrivateRetention(t *testing.T) {
+	ctx := context.Background()
+	config := sentry.DefaultConfig()
+	config.TraceSampleRate = 1
+	config.ProfileSampleRate = 1
+	config.ReplaySampleRate = 1
+	config.ReplayEnabled = true
+	service, pool, store, projects := persistentService(t, config)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	started := float64(now.UnixNano()) / float64(time.Second)
+	transactionID := "12121212121212121212121212121212"
+	transaction := []byte(fmt.Sprintf(`{"event_id":%q,"type":"transaction","platform":"javascript","start_timestamp":%f,"timestamp":%f,"contexts":{"trace":{"trace_id":"34343434343434343434343434343434","span_id":"5656565656565656","op":"ui.load","status":"ok"}},"spans":[{"trace_id":"34343434343434343434343434343434","span_id":"7878787878787878","parent_span_id":"5656565656565656","op":"http.client","status":"ok","start_timestamp":%f,"timestamp":%f}],"profile":{"samples":[{}],"frames":[{},{}]}}`, transactionID, started, started+0.25, started, started+0.1))
+	if _, err := service.Ingest(ctx, sentry.Request{QueryKey: projects[1].PublicKey, Body: envelope(transactionID, "transaction", transaction), Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	replayID := "90909090909090909090909090909090"
+	replayEvent := []byte(`{"event_id":"91919191919191919191919191919191","replay_id":"` + replayID + `","segment_id":2,"environment":"production","sdk":{"name":"sentry.javascript.browser"}}`)
+	recording := []byte(`[{"type":2,"data":{"text":"private subject","address":"owner@example.test","input":"secret"}}]`)
+	replayBody := []byte(fmt.Sprintf("{\"event_id\":\"91919191919191919191919191919191\"}\n{\"type\":\"replay_event\",\"length\":%d}\n%s\n{\"type\":\"replay_recording\",\"length\":%d,\"content_type\":\"application/json\"}\n%s", len(replayEvent), replayEvent, len(recording), recording))
+	if _, err := service.Ingest(ctx, sentry.Request{QueryKey: projects[1].PublicKey, Body: replayBody, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := service.TelemetrySummary(ctx, now.Add(-time.Hour))
+	if err != nil || summary.Traces != 1 || summary.Spans != 1 || summary.Profiles != 1 || summary.Replays != 1 || summary.ReplaySegments != 1 || !summary.ReplayEnabled {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	var objectID string
+	if err := pool.QueryRow(ctx, `select object_id from sentry_replay_segments`).Scan(&objectID); err != nil {
+		t.Fatal(err)
+	}
+	file, err := store.Open("sentry", objectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	masked, _ := io.ReadAll(file)
+	_ = file.Close()
+	if strings.Contains(string(masked), "private subject") || strings.Contains(string(masked), "owner@example.test") || strings.Contains(string(masked), "secret") || !strings.Contains(string(masked), "[Masked]") {
+		t.Fatalf("Replay was not masked: %s", masked)
+	}
+	if _, err := service.Cleanup(ctx, now.Add(4*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = service.TelemetrySummary(ctx, now.Add(-time.Hour))
+	if err != nil || summary.Replays != 0 || summary.ReplaySegments != 0 || summary.Traces != 1 || summary.Profiles != 1 {
+		t.Fatalf("four-day summary=%+v err=%v", summary, err)
+	}
+	if _, err := service.Cleanup(ctx, now.Add(8*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = service.TelemetrySummary(ctx, now.Add(-time.Hour))
+	if err != nil || summary.Traces != 0 || summary.Profiles != 0 {
+		t.Fatalf("eight-day summary=%+v err=%v", summary, err)
+	}
+}
+
+func TestReplayRequiresOptInAndHonorsItsOwnQuota(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	replayID := "abababababababababababababababab"
+	recording := []byte(`[{"type":2,"data":{"text":"private subject"}}]`)
+	body := replayEnvelope("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", replayID, 0, recording)
+
+	disabled, disabledPool, _, disabledProjects := persistentService(t, sentry.DefaultConfig())
+	if _, err := disabled.Ingest(ctx, sentry.Request{QueryKey: disabledProjects[1].PublicKey, Body: body, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	var disabledSegments int
+	if err := disabledPool.QueryRow(ctx, `select count(*) from sentry_replay_segments`).Scan(&disabledSegments); err != nil {
+		t.Fatal(err)
+	}
+	if disabledSegments != 0 {
+		t.Fatalf("Replay persisted without opt-in: %d segments", disabledSegments)
+	}
+
+	quotaConfig := sentry.DefaultConfig()
+	quotaConfig.ReplayEnabled = true
+	quotaConfig.ReplaySampleRate = 1
+	quotaConfig.ReplayQuota = 8
+	limited, limitedPool, _, limitedProjects := persistentService(t, quotaConfig)
+	if _, err := limited.Ingest(ctx, sentry.Request{QueryKey: limitedProjects[1].PublicKey, Body: body, Now: now}); !errors.Is(err, sentry.ErrStorageQuota) {
+		t.Fatalf("Replay quota err=%v", err)
+	}
+	var events, segments, objects int
+	if err := limitedPool.QueryRow(ctx, `select count(*) from sentry_events`).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := limitedPool.QueryRow(ctx, `select count(*) from sentry_replay_segments`).Scan(&segments); err != nil {
+		t.Fatal(err)
+	}
+	if err := limitedPool.QueryRow(ctx, `select count(*) from cdn_objects where namespace='sentry'`).Scan(&objects); err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 || segments != 0 || objects != 0 {
+		t.Fatalf("quota rollback events=%d segments=%d objects=%d", events, segments, objects)
+	}
+}
+
 func persistentService(t *testing.T, config sentry.Config) (*sentry.Service, *pgxpool.Pool, *cdn.Store, []sentry.Project) {
 	t.Helper()
 	ctx := context.Background()
@@ -298,4 +395,9 @@ func persistentService(t *testing.T, config sentry.Config) (*sentry.Service, *pg
 
 func envelope(eventID, itemType string, payload []byte) []byte {
 	return []byte(fmt.Sprintf("{\"event_id\":%q}\n{\"type\":%q,\"length\":%d,\"content_type\":\"application/json\"}\n%s", eventID, itemType, len(payload), payload))
+}
+
+func replayEnvelope(eventID, replayID string, sequence int, recording []byte) []byte {
+	event := []byte(fmt.Sprintf(`{"event_id":%q,"replay_id":%q,"segment_id":%d,"environment":"production"}`, eventID, replayID, sequence))
+	return []byte(fmt.Sprintf("{\"event_id\":%q}\n{\"type\":\"replay_event\",\"length\":%d}\n%s\n{\"type\":\"replay_recording\",\"length\":%d,\"content_type\":\"application/json\"}\n%s", eventID, len(event), event, len(recording), recording))
 }

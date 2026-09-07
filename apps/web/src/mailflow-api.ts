@@ -181,6 +181,15 @@ export type MailEvent = {
   payload: Record<string, unknown>;
 };
 
+export type SentryTelemetrySummary = {
+  traces: number;
+  spans: number;
+  profiles: number;
+  replays: number;
+  replaySegments: number;
+  replayEnabled: boolean;
+};
+
 export class APIError extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -247,6 +256,10 @@ export async function disconnectAccount(accountId: string) {
 
 export async function loadMailAccounts(signal?: AbortSignal) {
   return request<{ items: MailAccount[] }>("/accounts", { signal });
+}
+
+export async function loadSentryTelemetry(signal?: AbortSignal) {
+  return request<SentryTelemetrySummary>("/admin/sentry/telemetry", { signal });
 }
 
 export async function loadMailNavigation(accountId: string, signal?: AbortSignal) {

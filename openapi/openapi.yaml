@@ -34,6 +34,9 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/sync:
     post:
       operationId: synchronizeAccount
@@ -178,12 +181,19 @@ components:
         locale: { type: string, enum: [en, es] }
     Account:
       type: object
-      required: [id, provider, displayName, syncState]
+      required: [id, provider, remoteId, displayName, capabilities, syncState, disabledAt, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         provider: { type: string, enum: [google, microsoft, imap] }
+        remoteId: { type: string }
         displayName: { type: string }
-        syncState: { type: string, enum: [pending, syncing, idle, error] }
+        capabilities:
+          type: object
+          additionalProperties: { type: boolean }
+        syncState: { type: string, enum: [pending, syncing, idle, error, disabled] }
+        disabledAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ThreadPage:
       type: object
       required: [items]

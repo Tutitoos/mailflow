@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ type Config struct {
 	AuthJWKSURL  string
 	Address      string
 	DatabaseURL  string
+	MasterKey    []byte
 }
 
 func Load() (Config, error) {
@@ -24,6 +26,16 @@ func Load() (Config, error) {
 	}
 	if config.AuthJWKSURL != "" && config.AuthIssuer == "" {
 		return Config{}, fmt.Errorf("MAILFLOW_AUTH_ISSUER is required when AUTH_JWKS_URL is configured")
+	}
+	if masterKeyFile := os.Getenv("MAILFLOW_MASTER_KEY_FILE"); masterKeyFile != "" {
+		encoded, err := os.ReadFile(masterKeyFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("read master key: %w", err)
+		}
+		config.MasterKey, err = base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+		if err != nil || len(config.MasterKey) != 32 {
+			return Config{}, fmt.Errorf("MAILFLOW_MASTER_KEY_FILE must contain a base64-encoded 32-byte key")
+		}
 	}
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
 		config.DatabaseURL = databaseURL

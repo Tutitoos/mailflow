@@ -8,9 +8,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
+	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
@@ -75,8 +77,15 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
+		vault, err := platformcrypto.NewVault(runtimeConfig.MasterKey)
+		if err != nil {
+			logger.Error("account vault configuration failed", "event", "config.invalid", "error", err)
+			os.Exit(1)
+		}
+		queries := dbgen.New(pool)
 		options.Readiness = pool.Ping
-		options.CurrentUsers = authbridge.NewRepository(dbgen.New(pool))
+		options.CurrentUsers = authbridge.NewRepository(queries)
+		options.Accounts = accounts.NewService(accounts.NewRepository(queries, vault))
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

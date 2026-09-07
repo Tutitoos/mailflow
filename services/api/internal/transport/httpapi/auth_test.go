@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
@@ -34,6 +35,18 @@ const (
 type fakeUserResolver struct {
 	err  error
 	user authbridge.User
+}
+
+type fakeAccountLister struct {
+	items []accounts.Account
+	err   error
+}
+
+func (lister fakeAccountLister) List(_ context.Context, userID string) ([]accounts.Account, error) {
+	if userID != testUserID {
+		return nil, accounts.ErrAccountNotFound
+	}
+	return lister.items, lister.err
 }
 
 func (resolver fakeUserResolver) FindBySubject(_ context.Context, subject string) (authbridge.User, error) {
@@ -165,10 +178,52 @@ func TestAuthenticationFailuresAreStableAndRedacted(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedAccountListUsesPublicRepresentation(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := &rotatingJWKS{kid: "current", key: publicKey}
+	server := httptest.NewServer(keys)
+	defer server.Close()
+	user := authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}
+	app := authenticatedAppWithAccounts(server.URL, fakeUserResolver{user: user}, fakeAccountLister{items: []accounts.Account{{
+		ID: "0199ed3b-c950-7000-8000-000000000016", Provider: accounts.ProviderGoogle,
+		RemoteID: "remote-owner", DisplayName: "Personal", Capabilities: map[string]bool{"drafts": true},
+		SyncState: accounts.SyncIdle, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}})
+	token := signToken(t, privateKey, "current", jwt.RegisteredClaims{
+		Audience: jwt.ClaimStrings{testAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		Issuer: testIssuer, Subject: testUserID,
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/accounts", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"credential", "nonce", "secret", "token"} {
+		if strings.Contains(strings.ToLower(string(body["items"])), forbidden) {
+			t.Fatalf("account response exposed %q: %s", forbidden, body["items"])
+		}
+	}
+}
+
 func authenticatedApp(jwksURL string, users authbridge.UserResolver) *fiber.App {
+	return authenticatedAppWithAccounts(jwksURL, users, nil)
+}
+
+func authenticatedAppWithAccounts(jwksURL string, users authbridge.UserResolver, accountLister httpapi.AccountLister) *fiber.App {
 	registry := metrics.NewRegistry()
 	return httpapi.New(httpapi.Dependencies{
-		Admin: admin.NewService("test", registry), AuthAudience: testAudience,
+		Accounts: accountLister, Admin: admin.NewService("test", registry), AuthAudience: testAudience,
 		AuthIssuer: testIssuer, AuthJWKSURL: jwksURL, CurrentUsers: users,
 		Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})

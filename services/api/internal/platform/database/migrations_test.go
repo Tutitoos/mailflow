@@ -23,6 +23,17 @@ func TestAuthIdentityMigrationPreservesFoundationUser(t *testing.T) {
 		t.Fatalf("open test database: %v", err)
 	}
 	defer database.Close()
+	lockConnection, err := database.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open migration test lock connection: %v", err)
+	}
+	defer lockConnection.Close()
+	if _, err := lockConnection.ExecContext(ctx, "select pg_advisory_lock(73412916)"); err != nil {
+		t.Fatalf("acquire migration test lock: %v", err)
+	}
+	defer func() {
+		_, _ = lockConnection.ExecContext(context.Background(), "select pg_advisory_unlock(73412916)")
+	}()
 	var databaseName string
 	if err := database.QueryRowContext(ctx, "select current_database()").Scan(&databaseName); err != nil {
 		t.Fatalf("read test database name: %v", err)

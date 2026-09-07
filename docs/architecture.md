@@ -174,6 +174,7 @@ Los proveedores se implementarán en orden: Google, Microsoft e IMAP.
 - Mensajes antiguos recuperados bajo demanda y cacheados temporalmente.
 - Adjuntos entrantes cacheados durante 30 días.
 - Tokens y secretos cifrados a nivel de aplicación.
+- Las credenciales de cada cuenta usan AES-256-GCM con un nonce aleatorio y AAD ligado al usuario y al ID de cuenta. La clave maestra se monta como Docker Secret en base64 y nunca se almacena en PostgreSQL.
 - Base de datos, backups y conexiones cifrados por la infraestructura.
 
 ### Cola durable

@@ -13,8 +13,15 @@ export type CurrentUser = {
 export type Account = {
     id: string;
     provider: 'google' | 'microsoft' | 'imap';
+    remoteId: string;
     displayName: string;
-    syncState: 'pending' | 'syncing' | 'idle' | 'error';
+    capabilities: {
+        [key: string]: boolean;
+    };
+    syncState: 'pending' | 'syncing' | 'idle' | 'error' | 'disabled';
+    disabledAt: string | null;
+    createdAt: string;
+    updatedAt: string;
 };
 
 export type ThreadPage = {
@@ -78,6 +85,23 @@ export type ListAccountsData = {
     query?: never;
     url: '/accounts';
 };
+
+export type ListAccountsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    500: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type ListAccountsError = ListAccountsErrors[keyof ListAccountsErrors];
 
 export type ListAccountsResponses = {
     /**

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
@@ -19,6 +20,7 @@ import (
 )
 
 type Dependencies struct {
+	Accounts      AccountLister
 	Admin         *admin.Service
 	AuthAudience  string
 	AuthIssuer    string
@@ -28,6 +30,10 @@ type Dependencies struct {
 	Sentry        *mailflowsentry.Service
 	Translations  *translations.Catalog
 	CaptureSentry bool
+}
+
+type AccountLister interface {
+	List(context.Context, string) ([]accounts.Account, error)
 }
 
 func New(deps Dependencies) *fiber.App {
@@ -89,6 +95,20 @@ func New(deps Dependencies) *fiber.App {
 			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
 		}
 		return c.JSON(user)
+	})
+	v1.Get("/accounts", func(c fiber.Ctx) error {
+		user, ok := authbridge.UserFromContext(c.Context())
+		if !ok {
+			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
+		}
+		if deps.Accounts == nil {
+			return newProblem(fiber.StatusServiceUnavailable, "accounts_unavailable", "Accounts unavailable", "Account data is temporarily unavailable.")
+		}
+		items, err := deps.Accounts.List(c.Context(), user.ID)
+		if err != nil {
+			return newProblem(fiber.StatusInternalServerError, "accounts_failed", "Accounts unavailable", "Accounts could not be loaded.")
+		}
+		return c.JSON(fiber.Map{"items": items})
 	})
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })

@@ -21,6 +21,25 @@ SELECT encrypted_credentials, credential_nonce
 FROM accounts
 WHERE id = $1 AND user_id = $2;
 
+-- name: GetAccountByProviderRemote :one
+SELECT id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
+FROM accounts
+WHERE user_id = sqlc.arg(user_id)
+  AND provider = sqlc.arg(provider)
+  AND remote_id = sqlc.arg(remote_id);
+
+-- name: ReplaceAccountCredentials :one
+UPDATE accounts
+SET encrypted_credentials = sqlc.arg(encrypted_credentials),
+    credential_nonce = sqlc.arg(credential_nonce),
+    display_name = sqlc.arg(display_name),
+    capabilities = sqlc.arg(capabilities),
+    sync_state = 'pending',
+    disabled_at = NULL,
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id)
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at;
+
 -- name: UpdateAccountCapabilities :one
 UPDATE accounts
 SET capabilities = $3, updated_at = now()

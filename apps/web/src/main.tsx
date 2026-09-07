@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { AuthGate } from "./auth-gate";
-import { AdminPage, MailPage } from "./pages";
+import { AccountsPage, AdminPage, MailPage } from "./pages";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -15,6 +15,10 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([
   { path: "/", element: <AuthGate renderApp={(locale) => <MailPage initialLocale={locale} />} /> },
   { path: "/admin", element: <AuthGate renderApp={() => <AdminPage />} /> },
+  {
+    path: "/settings/accounts",
+    element: <AuthGate renderApp={(locale) => <AccountsPage locale={locale} />} />,
+  },
 ]);
 
 const root = document.getElementById("root");

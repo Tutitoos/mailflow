@@ -113,4 +113,15 @@ func TestRepositoryEncryptsAndScopesAccounts(t *testing.T) {
 	if _, err := repository.UpdateCapabilities(ctx, userID.String(), first.ID, map[string]bool{"send": true}); !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("disabled account update error = %v", err)
 	}
+	reconnected, err := NewService(repository).Connect(ctx, CreateInput{
+		UserID: userID.String(), Provider: ProviderGoogle, RemoteID: "google-owner", DisplayName: "Reconnected",
+		Capabilities: map[string]bool{"send": true}, Credentials: json.RawMessage(`{"refreshToken":"replacement-secret"}`),
+	})
+	if err != nil || reconnected.ID != first.ID || reconnected.DisabledAt != nil || reconnected.SyncState != SyncPending {
+		t.Fatalf("reconnect account: account=%+v error=%v", reconnected, err)
+	}
+	replacement, err := repository.Credentials(ctx, userID.String(), first.ID)
+	if err != nil || !bytes.Contains(replacement, []byte("replacement-secret")) || bytes.Contains(replacement, []byte("provider-secret")) {
+		t.Fatalf("replacement credentials were not stored safely: %v", err)
+	}
 }

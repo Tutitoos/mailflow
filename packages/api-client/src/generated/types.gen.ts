@@ -152,6 +152,152 @@ export type SynchronizeAccountResponses = {
     202: unknown;
 };
 
+export type RefreshGoogleAccountData = {
+    body?: never;
+    path: {
+        accountId: string;
+    };
+    query?: never;
+    url: '/accounts/{accountId}/refresh';
+};
+
+export type RefreshGoogleAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type RefreshGoogleAccountError = RefreshGoogleAccountErrors[keyof RefreshGoogleAccountErrors];
+
+export type RefreshGoogleAccountResponses = {
+    /**
+     * Account credentials refreshed without exposing provider tokens
+     */
+    200: Account;
+};
+
+export type RefreshGoogleAccountResponse = RefreshGoogleAccountResponses[keyof RefreshGoogleAccountResponses];
+
+export type DisconnectAccountData = {
+    body?: never;
+    path: {
+        accountId: string;
+    };
+    query?: never;
+    url: '/accounts/{accountId}';
+};
+
+export type DisconnectAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type DisconnectAccountError = DisconnectAccountErrors[keyof DisconnectAccountErrors];
+
+export type DisconnectAccountResponses = {
+    /**
+     * Local access disabled and remote revocation attempted
+     */
+    200: {
+        account: Account;
+        remoteRevoked: boolean;
+    };
+};
+
+export type DisconnectAccountResponse = DisconnectAccountResponses[keyof DisconnectAccountResponses];
+
+export type GetGoogleOAuthStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/oauth/google/status';
+};
+
+export type GetGoogleOAuthStatusErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+};
+
+export type GetGoogleOAuthStatusError = GetGoogleOAuthStatusErrors[keyof GetGoogleOAuthStatusErrors];
+
+export type GetGoogleOAuthStatusResponses = {
+    /**
+     * Per-installation Google OAuth capability
+     */
+    200: {
+        configured: boolean;
+        setup: string;
+    };
+};
+
+export type GetGoogleOAuthStatusResponse = GetGoogleOAuthStatusResponses[keyof GetGoogleOAuthStatusResponses];
+
+export type StartGoogleOAuthData = {
+    body?: {
+        reconsent?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/oauth/google/start';
+};
+
+export type StartGoogleOAuthErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type StartGoogleOAuthError = StartGoogleOAuthErrors[keyof StartGoogleOAuthErrors];
+
+export type StartGoogleOAuthResponses = {
+    /**
+     * Short-lived single-use authorization transaction
+     */
+    200: {
+        authorizationUrl: string;
+        expiresAt: string;
+    };
+};
+
+export type StartGoogleOAuthResponse = StartGoogleOAuthResponses[keyof StartGoogleOAuthResponses];
+
+export type CompleteGoogleOAuthData = {
+    body?: never;
+    path?: never;
+    query: {
+        state: string;
+        code: string;
+    };
+    url: '/oauth/google/callback';
+};
+
+export type CompleteGoogleOAuthErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    502: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type CompleteGoogleOAuthError = CompleteGoogleOAuthErrors[keyof CompleteGoogleOAuthErrors];
+
 export type StreamEventsData = {
     body?: never;
     path?: never;

@@ -46,6 +46,92 @@ paths:
       responses:
         "202": { description: Synchronization queued }
         default: { $ref: "#/components/responses/Problem" }
+  /accounts/{accountId}/refresh:
+    post:
+      operationId: refreshGoogleAccount
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Account credentials refreshed without exposing provider tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Problem" }
+  /accounts/{accountId}:
+    delete:
+      operationId: disconnectAccount
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Local access disabled and remote revocation attempted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account, remoteRevoked]
+                properties:
+                  account: { $ref: "#/components/schemas/Account" }
+                  remoteRevoked: { type: boolean }
+        default: { $ref: "#/components/responses/Problem" }
+  /oauth/google/status:
+    get:
+      operationId: getGoogleOAuthStatus
+      responses:
+        "200":
+          description: Per-installation Google OAuth capability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [configured, setup]
+                properties:
+                  configured: { type: boolean }
+                  setup: { type: string }
+        "401": { $ref: "#/components/responses/Problem" }
+  /oauth/google/start:
+    post:
+      operationId: startGoogleOAuth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reconsent: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Short-lived single-use authorization transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorizationUrl, expiresAt]
+                properties:
+                  authorizationUrl: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /oauth/google/callback:
+    get:
+      operationId: completeGoogleOAuth
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 256 }
+        - name: code
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+      responses:
+        "303":
+          description: Connection completed and browser redirected to account settings
+        "400": { $ref: "#/components/responses/Problem" }
+        "502": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /events:
     get:
       operationId: streamEvents

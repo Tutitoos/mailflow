@@ -9,6 +9,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
 	jwtware "github.com/gofiber/contrib/v3/jwt"
@@ -28,6 +29,7 @@ type Dependencies struct {
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
 	Events        EventStream
+	GoogleOAuth   *googleoauth.Service
 	Readiness     func(context.Context) error
 	Sentry        *mailflowsentry.Service
 	Translations  *translations.Catalog
@@ -73,6 +75,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/translations/:locale", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"locale": c.Params("locale"), "messages": deps.Translations.Locale(c.Params("locale"))})
 	})
+	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth))
 	if deps.AuthJWKSURL != "" {
 		if deps.AuthAudience == "" || deps.AuthIssuer == "" || deps.CurrentUsers == nil {
 			panic("authenticated API requires audience, issuer, and current-user resolver")
@@ -114,6 +117,12 @@ func New(deps Dependencies) *fiber.App {
 		}
 		return c.JSON(fiber.Map{"items": items})
 	})
+	v1.Get("/oauth/google/status", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
+	})
+	v1.Post("/oauth/google/start", googleOAuthStart(deps.GoogleOAuth))
+	v1.Post("/accounts/:accountId/refresh", googleOAuthRefresh(deps.GoogleOAuth))
+	v1.Delete("/accounts/:accountId", googleOAuthDisconnect(deps.GoogleOAuth))
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })

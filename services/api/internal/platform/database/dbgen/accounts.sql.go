@@ -113,6 +113,51 @@ func (q *Queries) DisableAccount(ctx context.Context, arg DisableAccountParams) 
 	return i, err
 }
 
+const getAccountByProviderRemote = `-- name: GetAccountByProviderRemote :one
+SELECT id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
+FROM accounts
+WHERE user_id = $1
+  AND provider = $2
+  AND remote_id = $3
+`
+
+type GetAccountByProviderRemoteParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Provider string      `json:"provider"`
+	RemoteID string      `json:"remote_id"`
+}
+
+type GetAccountByProviderRemoteRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Provider     string             `json:"provider"`
+	RemoteID     string             `json:"remote_id"`
+	DisplayName  string             `json:"display_name"`
+	Capabilities []byte             `json:"capabilities"`
+	SyncState    string             `json:"sync_state"`
+	DisabledAt   pgtype.Timestamptz `json:"disabled_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAccountByProviderRemote(ctx context.Context, arg GetAccountByProviderRemoteParams) (GetAccountByProviderRemoteRow, error) {
+	row := q.db.QueryRow(ctx, getAccountByProviderRemote, arg.UserID, arg.Provider, arg.RemoteID)
+	var i GetAccountByProviderRemoteRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.RemoteID,
+		&i.DisplayName,
+		&i.Capabilities,
+		&i.SyncState,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getAccountByUser = `-- name: GetAccountByUser :one
 SELECT id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
 FROM accounts
@@ -227,6 +272,66 @@ func (q *Queries) ListAccountsByUser(ctx context.Context, userID pgtype.UUID) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const replaceAccountCredentials = `-- name: ReplaceAccountCredentials :one
+UPDATE accounts
+SET encrypted_credentials = $1,
+    credential_nonce = $2,
+    display_name = $3,
+    capabilities = $4,
+    sync_state = 'pending',
+    disabled_at = NULL,
+    updated_at = now()
+WHERE id = $5 AND user_id = $6
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
+`
+
+type ReplaceAccountCredentialsParams struct {
+	EncryptedCredentials []byte      `json:"encrypted_credentials"`
+	CredentialNonce      []byte      `json:"credential_nonce"`
+	DisplayName          string      `json:"display_name"`
+	Capabilities         []byte      `json:"capabilities"`
+	ID                   pgtype.UUID `json:"id"`
+	UserID               pgtype.UUID `json:"user_id"`
+}
+
+type ReplaceAccountCredentialsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Provider     string             `json:"provider"`
+	RemoteID     string             `json:"remote_id"`
+	DisplayName  string             `json:"display_name"`
+	Capabilities []byte             `json:"capabilities"`
+	SyncState    string             `json:"sync_state"`
+	DisabledAt   pgtype.Timestamptz `json:"disabled_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ReplaceAccountCredentials(ctx context.Context, arg ReplaceAccountCredentialsParams) (ReplaceAccountCredentialsRow, error) {
+	row := q.db.QueryRow(ctx, replaceAccountCredentials,
+		arg.EncryptedCredentials,
+		arg.CredentialNonce,
+		arg.DisplayName,
+		arg.Capabilities,
+		arg.ID,
+		arg.UserID,
+	)
+	var i ReplaceAccountCredentialsRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.RemoteID,
+		&i.DisplayName,
+		&i.Capabilities,
+		&i.SyncState,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateAccountCapabilities = `-- name: UpdateAccountCapabilities :one

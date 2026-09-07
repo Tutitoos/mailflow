@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -158,7 +159,9 @@ func main() {
 			logger.Error("CDN storage configuration failed", "event", "cdn.storage_unavailable", "error", err)
 			os.Exit(1)
 		}
-		sentryService, err := mailflowsentry.NewPersistentService(pool, cdnStore, mailflowsentry.DefaultConfig())
+		sentryConfig := mailflowsentry.DefaultConfig()
+		sentryConfig.ReplayEnabled = strings.EqualFold(strings.TrimSpace(os.Getenv("MAILFLOW_SENTRY_REPLAY_ENABLED")), "true")
+		sentryService, err := mailflowsentry.NewPersistentService(pool, cdnStore, sentryConfig)
 		if err != nil {
 			logger.Error("Sentry ingestion configuration failed", "event", "sentry.ingestion_unavailable")
 			os.Exit(1)

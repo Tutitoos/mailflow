@@ -39,6 +39,15 @@ export type SentryIssue = {
     eventCount: number;
 };
 
+export type SentryTelemetrySummary = {
+    traces: number;
+    spans: number;
+    profiles: number;
+    replays: number;
+    replaySegments: number;
+    replayEnabled: boolean;
+};
+
 export type CurrentUser = {
     id: string;
     email: string;
@@ -1413,6 +1422,31 @@ export type GetSentryIssuesResponses = {
 };
 
 export type GetSentryIssuesResponse = GetSentryIssuesResponses[keyof GetSentryIssuesResponses];
+
+export type GetSentryTelemetryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/sentry/telemetry';
+};
+
+export type GetSentryTelemetryErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetSentryTelemetryError = GetSentryTelemetryErrors[keyof GetSentryTelemetryErrors];
+
+export type GetSentryTelemetryResponses = {
+    /**
+     * Privacy-safe Sentry telemetry totals from the last 24 hours
+     */
+    200: SentryTelemetrySummary;
+};
+
+export type GetSentryTelemetryResponse = GetSentryTelemetryResponses[keyof GetSentryTelemetryResponses];
 
 export type SetSentryIssueStatusData = {
     body: {

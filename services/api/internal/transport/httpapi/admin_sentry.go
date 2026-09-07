@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"strconv"
+	"time"
 
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	"github.com/gofiber/fiber/v3"
@@ -29,6 +30,19 @@ func adminSentryIssues(service *mailflowsentry.Service) fiber.Handler {
 			return sentryAdminUnavailable()
 		}
 		return c.JSON(fiber.Map{"items": issues})
+	}
+}
+
+func adminSentryTelemetry(service *mailflowsentry.Service) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if service == nil {
+			return sentryAdminUnavailable()
+		}
+		summary, err := service.TelemetrySummary(c.Context(), time.Now().UTC().Add(-24*time.Hour))
+		if err != nil {
+			return sentryAdminUnavailable()
+		}
+		return c.JSON(summary)
 	}
 }
 

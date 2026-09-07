@@ -391,6 +391,7 @@ export function ComposePanel({
   return (
     <section
       className={panelClass}
+      data-sentry-block
       aria-label={t("newMessage")}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget))

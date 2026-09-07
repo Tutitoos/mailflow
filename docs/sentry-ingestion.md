@@ -2,7 +2,7 @@
 
 Mailflow accepts the official SDK envelope protocol at `/sentry/api/1/envelope/` and legacy JSON events at `/sentry/api/1/store/`. Four component projects (`api`, `web`, `desktop`, and `ios`) receive stable public keys derived with HMAC from the installation master key. The key selects a component; it does not grant access to Admin data.
 
-The foundation accepts events, exceptions, breadcrumbs, sessions, transactions and spans, attachments, client reports, and check-ins. Error events are grouped into issues using a deterministic, component-and-environment-scoped fingerprint. Profiles and Replay remain separate roadmap work.
+The foundation accepts events, exceptions, breadcrumbs, sessions, transactions and spans, profiles, Replay, attachments, client reports, and check-ins. Error events are grouped into issues using a deterministic, component-and-environment-scoped fingerprint.
 
 ## Privacy and bounds
 
@@ -12,11 +12,22 @@ The foundation accepts events, exceptions, breadcrumbs, sessions, transactions a
 - For a JSON item of at least 64 KiB, the Sentry CDN namespace stores only its normalized metadata summary, never the original payload.
 - Events expire after 30 days. Daily cleanup removes associated database rows and CDN summaries.
 - Release artifacts expire after the same configured retention period. Source maps are normalized before storage: `sourcesContent` is removed and source paths are reduced to basenames.
+- Traces and profiles expire after 7 days. Only allowlisted IDs, operations, statuses, timestamps, durations, platforms, and aggregate counts are stored; raw profile samples and frames are discarded.
+- Replay is disabled by default. When explicitly enabled, every string value is replaced before persistence, malformed chunks are discarded without blocking the rest of an envelope, and stored segments expire after 3 days.
+- Replay has a separate 512 MiB storage quota and a 1 MiB decoded limit per segment. The general envelope, item-count, rate, and Sentry storage limits still apply.
 - Duplicate component/event IDs are idempotent and return the original protocol ID.
 
 Authentication follows the SDK protocol through `X-Sentry-Auth: Sentry sentry_key=<key>, sentry_version=7` or the browser-compatible `sentry_key` query parameter. Missing or disabled keys return 401; malformed, oversized, rate-limited, and quota-exhausted requests return 400, 413, 429, and 507 respectively.
 
 The ingestion routes are registered before the Fiber Sentry adapter, preventing failed ingestion from capturing itself and creating a feedback loop.
+
+## Tracing, profiles, and Replay
+
+The web client initializes the official Sentry React SDK only when `VITE_SENTRY_DSN` is provided at build time. Trace sampling defaults to 10%. Before sending, the client removes user, request, extra, breadcrumb, exception-message, source-context, span-description, and span-data fields that could contain mail data.
+
+Replay requires both sides of the installation to opt in with `MAILFLOW_SENTRY_REPLAY_ENABLED=true`: Compose passes the value to the API and embeds it into the web build. The SDK then uses 5% session sampling and 10% error sampling. All text and inputs are masked, all media is blocked, mail and composer containers are explicitly blocked, and no selector is unmasked or unblocked. The API repeats masking before writing a segment, so client configuration is not a privacy boundary.
+
+Admin can read bounded 24-hour totals for traces, spans, profiles, Replays, and Replay segments at `GET /api/v1/admin/sentry/telemetry`. The response also states whether Replay persistence is enabled. It never exposes captured payloads.
 
 ## Issues and release artifacts
 

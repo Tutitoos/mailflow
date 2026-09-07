@@ -11,8 +11,9 @@
     "test": "vitest run src"
   },
   "dependencies": {
-    "@lexical/react": "0.50.0",
     "@lexical/html": "0.50.0",
+    "@lexical/react": "0.50.0",
+    "@sentry/react": "10.73.0",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-virtual": "3.14.10",
     "class-variance-authority": "0.7.1",

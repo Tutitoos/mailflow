@@ -19,6 +19,7 @@ import {
   type ConversationMessage,
   type ConversationPage,
   loadConversationPage,
+  type MailActionKind,
 } from "./mailflow-api";
 import { buildSafeMailDocument } from "./safe-mail";
 
@@ -142,12 +143,14 @@ export function ConversationView({
   locale,
   onBack,
   onCompose,
+  onAction,
 }: {
   accountId: string;
   threadId: string;
   locale: Locale;
   onBack: () => void;
   onCompose: () => void;
+  onAction: (kind: MailActionKind) => void;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [page, setPage] = useState<ConversationPage | null>(null);
@@ -201,13 +204,13 @@ export function ConversationView({
         <Button size="icon" aria-label={t("back")} onClick={onBack}>
           <ArrowLeft size={18} />
         </Button>
-        <Button size="icon" aria-label={t("archive")}>
+        <Button size="icon" aria-label={t("archive")} onClick={() => onAction("archive")}>
           <Archive size={17} />
         </Button>
-        <Button size="icon" aria-label={t("delete")}>
+        <Button size="icon" aria-label={t("delete")} onClick={() => onAction("move_to_trash")}>
           <Trash2 size={17} />
         </Button>
-        <Button size="icon" aria-label={t("markUnread")}>
+        <Button size="icon" aria-label={t("markUnread")} onClick={() => onAction("mark_unread")}>
           <Mail size={17} />
         </Button>
         <Button size="icon" aria-label={t("labels")}>

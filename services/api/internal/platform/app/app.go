@@ -20,6 +20,8 @@ import (
 
 type Options struct {
 	Accounts      *accounts.Service
+	Actions       *mail.PendingActionService
+	ActionState   mail.ActionStateStore
 	Attachments   *cdn.Service
 	AuthAudience  string
 	AuthIssuer    string
@@ -46,6 +48,8 @@ func Build(version string, options ...Options) *fiber.App {
 	}
 	return httpapi.New(httpapi.Dependencies{
 		Accounts:      runtimeOptions.Accounts,
+		Actions:       runtimeOptions.Actions,
+		ActionState:   runtimeOptions.ActionState,
 		Attachments:   runtimeOptions.Attachments,
 		Admin:         admin.NewService(version, registry),
 		AuthAudience:  runtimeOptions.AuthAudience,

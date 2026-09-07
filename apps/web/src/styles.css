@@ -181,6 +181,18 @@ select:focus-visible {
   color: #fca5a5;
   font-size: 13px;
 }
+.action-notice {
+  padding: 8px 18px;
+  border-bottom: 1px solid #365314;
+  background: #0d1608;
+  color: #bef264;
+  font-size: 13px;
+}
+.action-notice.error {
+  border-bottom-color: #7f1d1d;
+  background: #1c0909;
+  color: #fca5a5;
+}
 .search-box kbd {
   min-width: 24px;
   padding: 3px 7px;

@@ -24,6 +24,8 @@ import (
 
 type Dependencies struct {
 	Accounts      AccountLister
+	Actions       *mail.PendingActionService
+	ActionState   mail.ActionStateStore
 	Admin         *admin.Service
 	Attachments   AttachmentReader
 	AuthAudience  string
@@ -152,6 +154,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/threads", listInbox(deps.Inbox))
 	v1.Get("/threads/:threadId", getConversation(deps.Threads))
 	v1.Get("/search", searchMail(deps.Search))
+	v1.Post("/actions", createMailActions(deps.Actions, deps.ActionState, deps.Threads))
 	v1.Get("/oauth/google/status", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
 	})

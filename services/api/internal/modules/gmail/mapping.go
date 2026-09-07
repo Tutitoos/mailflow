@@ -44,7 +44,7 @@ func mapLabel(label labelResponse) mail.RemoteLabel {
 	return mail.RemoteLabel{RemoteID: label.ID, Name: label.Name, Kind: kind, Category: category, TotalCount: label.MessagesTotal, UnreadCount: label.MessagesUnread}
 }
 
-func actionLabels(kind string) (add, remove []string, ok bool) {
+func actionLabels(kind string, labels []string) (add, remove []string, ok bool) {
 	switch kind {
 	case "mark_read":
 		return nil, []string{"UNREAD"}, true
@@ -62,6 +62,12 @@ func actionLabels(kind string) (add, remove []string, ok bool) {
 		return []string{"TRASH"}, []string{"INBOX"}, true
 	case "restore_from_trash":
 		return []string{"INBOX"}, []string{"TRASH"}, true
+	case "archive":
+		return nil, []string{"INBOX"}, true
+	case "add_label":
+		return labels, nil, len(labels) > 0
+	case "remove_label":
+		return nil, labels, len(labels) > 0
 	default:
 		return nil, nil, false
 	}

@@ -90,7 +90,7 @@ func (q *Queries) GetExistingMessageThread(ctx context.Context, arg GetExistingM
 }
 
 const getThreadByOwner = `-- name: GetThreadByOwner :one
-SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at
+SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at, threads.archived_at
 FROM threads
 JOIN accounts ON accounts.id = threads.account_id
 WHERE threads.id = $1
@@ -121,6 +121,7 @@ func (q *Queries) GetThreadByOwner(ctx context.Context, arg GetThreadByOwnerPara
 		&i.UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -364,7 +365,7 @@ func (q *Queries) ListMessagesFirstPage(ctx context.Context, arg ListMessagesFir
 }
 
 const listThreadsAfter = `-- name: ListThreadsAfter :many
-SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at
+SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at, threads.archived_at
 FROM threads
 JOIN accounts ON accounts.id = threads.account_id
 WHERE threads.account_id = $1
@@ -417,6 +418,7 @@ func (q *Queries) ListThreadsAfter(ctx context.Context, arg ListThreadsAfterPara
 			&i.UnreadCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -429,7 +431,7 @@ func (q *Queries) ListThreadsAfter(ctx context.Context, arg ListThreadsAfterPara
 }
 
 const listThreadsFirstPage = `-- name: ListThreadsFirstPage :many
-SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at
+SELECT threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at, threads.archived_at
 FROM threads
 JOIN accounts ON accounts.id = threads.account_id
 WHERE threads.account_id = $1
@@ -467,6 +469,7 @@ func (q *Queries) ListThreadsFirstPage(ctx context.Context, arg ListThreadsFirst
 			&i.UnreadCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -513,7 +516,7 @@ FROM (
 ) AS summary
 WHERE threads.id = $1
   AND threads.account_id = $2
-RETURNING threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at
+RETURNING threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at, threads.archived_at
 `
 
 type RefreshThreadSummaryParams struct {
@@ -538,6 +541,7 @@ func (q *Queries) RefreshThreadSummary(ctx context.Context, arg RefreshThreadSum
 		&i.UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -706,7 +710,7 @@ WHERE threads.id = $5
   AND threads.account_id = $6
   AND accounts.id = threads.account_id
   AND accounts.user_id = $7
-RETURNING threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at
+RETURNING threads.id, threads.account_id, threads.remote_id, threads.last_message_at, threads.is_read, threads.is_starred, threads.category, threads.is_important, threads.deleted_at, threads.message_count, threads.unread_count, threads.created_at, threads.updated_at, threads.archived_at
 `
 
 type UpdateThreadStateParams struct {
@@ -744,6 +748,7 @@ func (q *Queries) UpdateThreadState(ctx context.Context, arg UpdateThreadStatePa
 		&i.UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -935,7 +940,7 @@ ON CONFLICT (account_id, remote_id) DO UPDATE SET
   END,
   deleted_at = EXCLUDED.deleted_at,
   updated_at = now()
-RETURNING id, account_id, remote_id, last_message_at, is_read, is_starred, category, is_important, deleted_at, message_count, unread_count, created_at, updated_at
+RETURNING id, account_id, remote_id, last_message_at, is_read, is_starred, category, is_important, deleted_at, message_count, unread_count, created_at, updated_at, archived_at
 `
 
 type UpsertThreadParams struct {
@@ -979,6 +984,7 @@ func (q *Queries) UpsertThread(ctx context.Context, arg UpsertThreadParams) (Thr
 		&i.UnreadCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }

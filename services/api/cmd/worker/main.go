@@ -80,6 +80,7 @@ func main() {
 	handlers := make(map[string]queue.Handler)
 	var cleanupDone chan struct{}
 	var schedulerDone chan struct{}
+	var actionDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -126,6 +127,37 @@ func main() {
 			os.Exit(1)
 		}
 		orchestrator.SetActivityTracker(mailflowsync.NewRedisActivityTracker(client, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
+		actionService := mail.NewPendingActionService(mail.NewPendingActionRepository(pool), eventStore)
+		actionProcessor, err := mail.NewActionProcessor(actionService, gmailActionProviderResolver{resolver}, mail.NewThreadRepository(pool), mail.NewThreadRepository(pool))
+		if err != nil {
+			logger.Error("mail action processor configuration failed", "event", "mail.actions_unavailable", "error", err)
+			os.Exit(1)
+		}
+		actionDone = make(chan struct{})
+		go func() {
+			defer close(actionDone)
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				var userID string
+				if queryErr := pool.QueryRow(ctx, `select id::text from users order by created_at limit 1`).Scan(&userID); queryErr == nil {
+					for {
+						processed, processErr := actionProcessor.ProcessNext(ctx, userID)
+						if processErr != nil && !errors.Is(processErr, context.Canceled) {
+							logger.Error("mail action processing failed", "event", "mail.action_failed")
+						}
+						if !processed || processErr != nil {
+							break
+						}
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		handlers[mailflowsync.SyncExecuteJobKind] = orchestrator.Handler()
 		schedulerDone = make(chan struct{})
 		go func() {
@@ -188,11 +220,22 @@ func main() {
 	if schedulerDone != nil {
 		<-schedulerDone
 	}
+	if actionDone != nil {
+		<-actionDone
+	}
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)
 		os.Exit(1)
 	}
 	logger.Info("worker stopped", "event", "worker.stopped")
+}
+
+type gmailActionProviderResolver struct {
+	resolver *mailflowsync.GmailAccountResolver
+}
+
+func (resolver gmailActionProviderResolver) ResolveActionProvider(ctx context.Context, userID, accountID string) (mail.ActionProvider, error) {
+	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
 }
 
 func consumerName() (string, error) {

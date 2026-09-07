@@ -1,11 +1,11 @@
 -- name: CreatePendingAction :one
 INSERT INTO pending_actions (
   id, account_id, idempotency_key, kind, target_kind, target_id,
-  desired_state, status, max_attempts
+  desired_state, authoritative_state, status, max_attempts
 )
 SELECT
   sqlc.arg(id), accounts.id, sqlc.arg(idempotency_key), sqlc.arg(kind),
-  sqlc.arg(target_kind), sqlc.arg(target_id), sqlc.arg(desired_state),
+  sqlc.arg(target_kind), sqlc.arg(target_id), sqlc.arg(desired_state), sqlc.arg(authoritative_state),
   'pending', sqlc.arg(max_attempts)
 FROM accounts
 WHERE accounts.id = sqlc.arg(account_id)

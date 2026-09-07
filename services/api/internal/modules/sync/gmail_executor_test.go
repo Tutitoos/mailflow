@@ -45,6 +45,7 @@ func (provider *fakeGmailProvider) Backfill(_ context.Context, cursor mail.SyncC
 	}
 	return mail.ChangePage{Messages: []mail.RemoteMessage{{RemoteID: "last"}}}, nil
 }
+func (*fakeGmailProvider) Apply(context.Context, mail.RemoteAction) error { return nil }
 
 type fakeGmailWriter struct {
 	catalogs int

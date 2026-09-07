@@ -237,7 +237,7 @@ func (provider *Provider) Backfill(ctx context.Context, cursor mail.SyncCursor, 
 }
 
 func (provider *Provider) Apply(ctx context.Context, action mail.RemoteAction) error {
-	add, remove, ok := actionLabels(action.Kind)
+	add, remove, ok := actionLabels(action.Kind, action.LabelIDs)
 	if !ok || len(action.TargetIDs) == 0 || (action.TargetKind != "message" && action.TargetKind != "thread") {
 		return &ProviderError{Kind: ErrorPermanent}
 	}

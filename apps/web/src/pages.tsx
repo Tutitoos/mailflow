@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ChevronsUpDown,
   CircleUserRound,
-  Clock3,
   FileText,
   Inbox,
   Info,
@@ -41,6 +40,7 @@ import { Button } from "./components/ui/button";
 import { ConversationView } from "./conversation";
 import { type Locale, type TranslationKey, translate } from "./i18n";
 import {
+  createMailActions,
   disconnectAccount,
   type InboxThread,
   loadGoogleAccounts,
@@ -48,6 +48,7 @@ import {
   loadMailAccounts,
   loadMailNavigation,
   type MailAccount,
+  type MailActionKind,
   type Mailbox,
   type MailCategory,
   type MailLabel,
@@ -320,6 +321,11 @@ function MailToolbar({
   canPrevious,
   canNext,
   range,
+  selectedCount,
+  onArchive,
+  onTrash,
+  onUnread,
+  onLabel,
   t,
 }: {
   allSelected: boolean;
@@ -330,6 +336,11 @@ function MailToolbar({
   canPrevious: boolean;
   canNext: boolean;
   range: string;
+  selectedCount: number;
+  onArchive: () => void;
+  onTrash: () => void;
+  onUnread: () => void;
+  onLabel: () => void;
   t: Translator;
 }) {
   return (
@@ -347,6 +358,22 @@ function MailToolbar({
         <Button size="icon" aria-label={t("refresh")} onClick={onRefresh}>
           <RefreshCw size={17} />
         </Button>
+        {selectedCount > 0 && (
+          <>
+            <Button size="icon" aria-label={t("archive")} onClick={onArchive}>
+              <Archive size={17} />
+            </Button>
+            <Button size="icon" aria-label={t("delete")} onClick={onTrash}>
+              <Trash2 size={17} />
+            </Button>
+            <Button size="icon" aria-label={t("markUnread")} onClick={onUnread}>
+              <Mail size={17} />
+            </Button>
+            <Button size="icon" aria-label={t("applyLabel")} onClick={onLabel}>
+              <Tag size={17} />
+            </Button>
+          </>
+        )}
         <Button size="icon" aria-label="More actions">
           <MoreHorizontal size={18} />
         </Button>
@@ -411,6 +438,10 @@ function MessageRow({
   onSelect,
   onStar,
   onOpen,
+  onArchive,
+  onTrash,
+  onUnread,
+  onImportant,
   openLabel,
 }: {
   message: InboxThread;
@@ -419,6 +450,10 @@ function MessageRow({
   onSelect: () => void;
   onStar: () => void;
   onOpen: () => void;
+  onArchive: () => void;
+  onTrash: () => void;
+  onUnread: () => void;
+  onImportant: () => void;
   openLabel: string;
 }) {
   return (
@@ -445,6 +480,7 @@ function MessageRow({
         className="row-icon important"
         type="button"
         aria-label={`Mark ${message.subject || message.senderName} important`}
+        onClick={onImportant}
       >
         <ChevronsUpDown size={16} />
       </button>
@@ -470,17 +506,14 @@ function MessageRow({
         </time>
       </button>
       <div className="quick-actions">
-        <Button size="icon" aria-label="Archive">
+        <Button size="icon" aria-label="Archive" onClick={onArchive}>
           <Archive size={16} />
         </Button>
-        <Button size="icon" aria-label="Delete">
+        <Button size="icon" aria-label="Delete" onClick={onTrash}>
           <Trash2 size={16} />
         </Button>
-        <Button size="icon" aria-label="Mark unread">
+        <Button size="icon" aria-label="Mark unread" onClick={onUnread}>
           <Mail size={16} />
-        </Button>
-        <Button size="icon" aria-label="Snooze">
-          <Clock3 size={16} />
         </Button>
       </div>
     </article>
@@ -571,6 +604,7 @@ function VirtualMessageList({
   onSelect,
   onStar,
   onOpen,
+  onAction,
   t,
 }: {
   messages: InboxThread[];
@@ -579,6 +613,7 @@ function VirtualMessageList({
   onSelect: (id: string) => void;
   onStar: (id: string) => void;
   onOpen: (id: string) => void;
+  onAction: (kind: MailActionKind, ids: string[]) => void;
   t: Translator;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -610,6 +645,14 @@ function VirtualMessageList({
                 onSelect={() => onSelect(message.id)}
                 onOpen={() => onOpen(message.id)}
                 onStar={() => onStar(message.id)}
+                onArchive={() => onAction("archive", [message.id])}
+                onTrash={() => onAction("move_to_trash", [message.id])}
+                onUnread={() => onAction("mark_unread", [message.id])}
+                onImportant={() =>
+                  onAction(message.isImportant ? "mark_unimportant" : "mark_important", [
+                    message.id,
+                  ])
+                }
                 openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
               />
             </div>
@@ -653,6 +696,8 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [eventsConnected, setEventsConnected] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [starred, setStarred] = useState<Set<string>>(new Set());
+  const [actionNotice, setActionNotice] = useState<"pending" | "failed" | "partial" | null>(null);
+  const actionKeys = useRef(new Map<string, string>());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => window.matchMedia("(max-width: 900px)").matches,
   );
@@ -847,6 +892,93 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                       ? t("searchFailed")
                       : "";
 
+  const runAction = async (kind: MailActionKind, targetIds: string[], labelId?: string) => {
+    if (!activeAccountId || targetIds.length === 0) return;
+    if (!online) {
+      setActionNotice("failed");
+      return;
+    }
+    const signature = `${kind}:${[...targetIds].sort().join(",")}:${labelId ?? ""}`;
+    const key = actionKeys.current.get(signature) ?? `mailflow-${crypto.randomUUID()}`;
+    actionKeys.current.set(signature, key);
+    const previousThreads = threads;
+    const previousSearch = searchResults;
+    const previousStarred = new Set(starred);
+    const targets = new Set(targetIds);
+    const updateThread = (item: InboxThread) => ({
+      ...item,
+      isRead: kind === "mark_read" ? true : kind === "mark_unread" ? false : item.isRead,
+      isImportant:
+        kind === "mark_important" ? true : kind === "mark_unimportant" ? false : item.isImportant,
+    });
+    const remove = kind === "archive" || kind === "move_to_trash";
+    setThreads((current) =>
+      current
+        .filter((item) => !remove || !targets.has(item.id))
+        .map((item) => (targets.has(item.id) ? updateThread(item) : item)),
+    );
+    setSearchResults((current) =>
+      current
+        .filter((item) => !remove || !targets.has(item.threadId))
+        .map((item) =>
+          targets.has(item.threadId)
+            ? {
+                ...item,
+                isRead: kind === "mark_read" ? true : kind === "mark_unread" ? false : item.isRead,
+                isImportant:
+                  kind === "mark_important"
+                    ? true
+                    : kind === "mark_unimportant"
+                      ? false
+                      : item.isImportant,
+              }
+            : item,
+        ),
+    );
+    if (kind === "star" || kind === "unstar") {
+      setStarred((current) => {
+        const next = new Set(current);
+        for (const id of targetIds) kind === "star" ? next.add(id) : next.delete(id);
+        return next;
+      });
+    }
+    setSelected((current) => new Set([...current].filter((id) => !targets.has(id))));
+    setActionNotice("pending");
+    try {
+      const result = await createMailActions(activeAccountId, kind, targetIds, key, labelId);
+      setActionNotice(result.partial ? "partial" : null);
+      if (result.partial) setRefreshRevision((current) => current + 1);
+    } catch {
+      setThreads(previousThreads);
+      setSearchResults(previousSearch);
+      setStarred(previousStarred);
+      setActionNotice("failed");
+    } finally {
+      actionKeys.current.delete(signature);
+    }
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyboard bindings must follow the current optimistic action closure.
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        selected.size === 0
+      )
+        return;
+      if (event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        void runAction("archive", [...selected]);
+      } else if (event.key === "#") {
+        event.preventDefault();
+        void runAction("move_to_trash", [...selected]);
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [selected, activeAccountId, online, threads, searchResults, starred]);
+
   const toggleSelection = (id: string) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -894,6 +1026,10 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
               locale={locale}
               onBack={() => setActiveThreadId(null)}
               onCompose={() => setComposeOpen(true)}
+              onAction={(kind) => {
+                void runAction(kind, [activeThreadId]);
+                if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
+              }}
             />
           ) : (
             <>
@@ -938,6 +1074,14 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   (searching ? searchCursorHistory : cursorHistory).length * 50 +
                   displayedThreads.length
                 }`}
+                selectedCount={selected.size}
+                onArchive={() => void runAction("archive", [...selected])}
+                onTrash={() => void runAction("move_to_trash", [...selected])}
+                onUnread={() => void runAction("mark_unread", [...selected])}
+                onLabel={() => {
+                  const label = labels.find((item) => item.kind === "user");
+                  if (label) void runAction("add_label", [...selected], label.id);
+                }}
                 t={t}
               />
               {!searching && (
@@ -957,6 +1101,18 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
               {searchErrorMessage && (
                 <div id="search-error" className="search-error" role="alert">
                   {searchErrorMessage}
+                </div>
+              )}
+              {actionNotice && (
+                <div
+                  className={actionNotice === "pending" ? "action-notice" : "action-notice error"}
+                  role="status"
+                >
+                  {actionNotice === "pending"
+                    ? t("actionPending")
+                    : actionNotice === "partial"
+                      ? t("actionPartial")
+                      : t("actionFailed")}
                 </div>
               )}
               {navigationPartial && (
@@ -1013,15 +1169,9 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   starred={starred}
                   onSelect={toggleSelection}
                   onOpen={setActiveThreadId}
+                  onAction={(kind, ids) => void runAction(kind, ids)}
                   t={t}
-                  onStar={(id) =>
-                    setStarred((current) => {
-                      const next = new Set(current);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    })
-                  }
+                  onStar={(id) => void runAction(starred.has(id) ? "unstar" : "star", [id])}
                 />
               ) : (
                 <div className="empty-state" role="status">

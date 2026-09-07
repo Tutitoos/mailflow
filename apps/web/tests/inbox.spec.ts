@@ -32,6 +32,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   }));
   let remoteImageRequests = 0;
   let searchRequests = 0;
+  const actionRequests: Array<{ key: string | null; body: unknown }> = [];
   await page.route("**/api/auth/setup/status", (route) =>
     route.fulfill({ json: { configured: true } }),
   );
@@ -144,6 +145,26 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
       },
     });
   });
+  await page.route("**/api/v1/actions", async (route) => {
+    actionRequests.push({
+      key: route.request().headers()["idempotency-key"] ?? null,
+      body: route.request().postDataJSON(),
+    });
+    return route.fulfill({
+      status: 202,
+      json: {
+        items: [
+          {
+            targetId: syntheticThreads[0]?.id,
+            actionId: "40000000-0000-7000-8000-000000000001",
+            status: "pending",
+            created: true,
+          },
+        ],
+        partial: false,
+      },
+    });
+  });
   await page.route("https://images.example.test/**", (route) => {
     remoteImageRequests += 1;
     return route.abort();
@@ -184,6 +205,14 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Search Sender", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=quarterly\+from%3Asearch-sender%40example\.test/u);
   expect(searchRequests).toBe(1);
+  await page.getByRole("button", { name: "Mark unread" }).first().click();
+  await expect.poll(() => actionRequests.length).toBe(1);
+  expect(actionRequests[0]?.key).toMatch(/^mailflow-/u);
+  expect(actionRequests[0]?.body).toMatchObject({
+    accountId: account.id,
+    kind: "mark_unread",
+    targetIds: [syntheticThreads[0]?.id],
+  });
   await search.press("Escape");
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
 

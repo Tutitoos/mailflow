@@ -116,6 +116,7 @@ func main() {
 		options.Inbox = mail.NewThreadRepository(pool)
 		options.Threads = options.Inbox
 		options.Search = options.Inbox
+		options.ActionState = options.Inbox
 		options.Mailboxes = mail.NewMailboxLabelRepository(queries)
 		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
 		options.Accounts = accountService
@@ -134,6 +135,9 @@ func main() {
 		}
 		defer client.Close()
 		options.Events = store
+		if databasePool != nil {
+			options.Actions = mail.NewPendingActionService(mail.NewPendingActionRepository(databasePool), store)
+		}
 	}
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	if redisClient != nil && accountService != nil {

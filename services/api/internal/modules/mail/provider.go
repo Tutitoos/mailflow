@@ -75,6 +75,7 @@ type RemoteAction struct {
 	Kind           string
 	TargetKind     string
 	TargetIDs      []string
+	LabelIDs       []string
 }
 
 type OutgoingMessage struct {

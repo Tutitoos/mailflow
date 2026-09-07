@@ -23,6 +23,9 @@ const (
 	ActionMarkUnimportant ActionKind = "mark_unimportant"
 	ActionMoveToTrash     ActionKind = "move_to_trash"
 	ActionRestoreTrash    ActionKind = "restore_from_trash"
+	ActionArchive         ActionKind = "archive"
+	ActionAddLabel        ActionKind = "add_label"
+	ActionRemoveLabel     ActionKind = "remove_label"
 
 	ActionTargetThread  ActionTargetKind = "thread"
 	ActionTargetMessage ActionTargetKind = "message"
@@ -60,6 +63,7 @@ type PendingAction struct {
 	LastErrorCode      *string          `json:"lastErrorCode"`
 	CreatedAt          time.Time        `json:"createdAt"`
 	UpdatedAt          time.Time        `json:"updatedAt"`
+	IdempotencyKey     string           `json:"-"`
 }
 
 type ActionClaim struct {
@@ -68,14 +72,15 @@ type ActionClaim struct {
 }
 
 type EnqueueActionInput struct {
-	UserID         string
-	AccountID      string
-	IdempotencyKey string
-	Kind           ActionKind
-	TargetKind     ActionTargetKind
-	TargetID       string
-	DesiredState   json.RawMessage
-	MaxAttempts    int
+	UserID             string
+	AccountID          string
+	IdempotencyKey     string
+	Kind               ActionKind
+	TargetKind         ActionTargetKind
+	TargetID           string
+	DesiredState       json.RawMessage
+	AuthoritativeState json.RawMessage
+	MaxAttempts        int
 }
 
 type ApplyActionState func(context.Context, pgx.Tx) error

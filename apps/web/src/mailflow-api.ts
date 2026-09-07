@@ -67,6 +67,19 @@ export type SearchResult = {
 
 export type SearchPage = { items: SearchResult[]; nextCursor: string | null };
 
+export type MailActionKind =
+  | "mark_read"
+  | "mark_unread"
+  | "star"
+  | "unstar"
+  | "mark_important"
+  | "mark_unimportant"
+  | "move_to_trash"
+  | "restore_from_trash"
+  | "archive"
+  | "add_label"
+  | "remove_label";
+
 export type MessageAddress = {
   role: "from" | "sender" | "reply_to" | "to" | "cc" | "bcc";
   position: number;
@@ -231,6 +244,23 @@ export async function searchMail(
   const query = new URLSearchParams({ accountId, q: expression, limit: "50" });
   if (cursor) query.set("cursor", cursor);
   return request<SearchPage>(`/search?${query}`, { signal });
+}
+
+export async function createMailActions(
+  accountId: string,
+  kind: MailActionKind,
+  targetIds: string[],
+  idempotencyKey: string,
+  labelId?: string,
+) {
+  return request<{
+    items: Array<{ targetId: string; actionId?: string; status?: string; error?: string }>;
+    partial: boolean;
+  }>("/actions", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ accountId, kind, targetIds, ...(labelId ? { labelId } : {}) }),
+  });
 }
 
 export async function subscribeMailEvents(

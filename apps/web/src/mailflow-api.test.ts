@@ -6,6 +6,7 @@ import {
   loadGoogleAccounts,
   loadInboxPage,
   loadMailNavigation,
+  searchMail,
 } from "./mailflow-api";
 
 const json = (value: unknown, status = 200) =>
@@ -118,5 +119,22 @@ describe("Mailflow API client", () => {
     expect(fetch.mock.calls[2]?.[0]).toContain("accountId=account-1");
     expect(fetch.mock.calls[5]?.[0]).toContain("cursor=previous-cursor");
     expect(fetch.mock.calls[7]?.[0]).toContain("/threads/thread-1?accountId=account-1");
+  });
+
+  it("encodes account-scoped search expressions and cursors", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ items: [], nextCursor: "next-search" }));
+    vi.stubGlobal("fetch", fetch);
+
+    const page = await searchMail("account-1", "from:sender@example.test quarterly", "opaque");
+
+    expect(page.nextCursor).toBe("next-search");
+    const requestUrl = new URL(String(fetch.mock.calls[1]?.[0]), "https://mailflow.example.test");
+    expect(requestUrl.pathname).toBe("/api/v1/search");
+    expect(requestUrl.searchParams.get("accountId")).toBe("account-1");
+    expect(requestUrl.searchParams.get("q")).toBe("from:sender@example.test quarterly");
+    expect(requestUrl.searchParams.get("cursor")).toBe("opaque");
   });
 });

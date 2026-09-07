@@ -105,6 +105,28 @@ export type MessageAddress = {
     address: string;
 };
 
+export type SearchPage = {
+    items: Array<SearchResult>;
+    nextCursor: string | null;
+};
+
+export type SearchResult = {
+    id: string;
+    threadId: string;
+    accountId: string;
+    senderName: string;
+    senderAddress: string;
+    subject: string;
+    preview: string;
+    sentAt: string;
+    isRead: boolean;
+    isStarred: boolean;
+    isImportant: boolean;
+    hasAttachment: boolean;
+    attachmentCount: number;
+    rank: number;
+};
+
 export type MessageAttachment = {
     id: string;
     position: number;
@@ -549,17 +571,30 @@ export type SearchMailData = {
     path?: never;
     query: {
         q: string;
+        accountId: string;
         cursor?: string;
+        limit?: number;
     };
     url: '/search';
 };
 
+export type SearchMailErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type SearchMailError = SearchMailErrors[keyof SearchMailErrors];
+
 export type SearchMailResponses = {
     /**
-     * Search results
+     * Account-scoped local search results
      */
-    200: unknown;
+    200: SearchPage;
 };
+
+export type SearchMailResponse = SearchMailResponses[keyof SearchMailResponses];
 
 export type CreateMailActionData = {
     body?: never;

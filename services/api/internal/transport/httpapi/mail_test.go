@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -22,9 +23,11 @@ import (
 )
 
 type fakeMailReader struct {
-	accountID string
-	category  mail.Category
-	cursor    *mail.ThreadCursor
+	accountID    string
+	category     mail.Category
+	cursor       *mail.ThreadCursor
+	search       mail.SearchQuery
+	searchCursor *mail.SearchCursor
 }
 
 func (reader *fakeMailReader) ListInbox(_ context.Context, userID, accountID string, category mail.Category, cursor *mail.ThreadCursor, limit int) (mail.InboxPage, error) {
@@ -63,6 +66,21 @@ func (reader *fakeMailReader) ListMessages(_ context.Context, userID, accountID,
 	}}}, nil
 }
 
+func (reader *fakeMailReader) SearchMessages(_ context.Context, userID, accountID string, query mail.SearchQuery, cursor *mail.SearchCursor, limit int) (mail.SearchPage, error) {
+	if userID != testUserID || accountID != reader.accountID || limit != 1 {
+		return mail.SearchPage{}, &mail.SearchValidationError{Code: "invalid_query"}
+	}
+	reader.search, reader.searchCursor = query, cursor
+	displayName := "Fixture sender"
+	next := &mail.SearchCursor{Rank: 0.75, SentAt: time.Date(2026, 9, 7, 17, 0, 0, 0, time.UTC), ID: "0199ed3b-c950-7000-8000-000000000023"}
+	return mail.SearchPage{Items: []mail.SearchHit{{Rank: next.Rank, Message: mail.Message{
+		ID: next.ID, ThreadID: "0199ed3b-c950-7000-8000-000000000019", AccountID: accountID,
+		RemoteID: "provider-secret", Subject: "Fixture subject", BodyText: "Safe result preview", BodyHTML: "<p>private</p>",
+		SentAt: next.SentAt, Addresses: []mail.MessageAddress{{Role: mail.AddressFrom, DisplayName: &displayName, Address: "sender@example.test"}},
+		Attachments: []mail.Attachment{{ID: "0199ed3b-c950-7000-8000-000000000024"}},
+	}}}, Next: next}, nil
+}
+
 func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -76,7 +94,7 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 	app := httpapi.New(httpapi.Dependencies{
 		Admin: admin.NewService("test", registry), AuthAudience: testAudience, AuthIssuer: testIssuer,
 		AuthJWKSURL: server.URL, CurrentUsers: fakeUserResolver{user: authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}},
-		Inbox: reader, Mailboxes: reader, Threads: reader, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
+		Inbox: reader, Mailboxes: reader, Search: reader, Threads: reader, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})
 	token := signToken(t, privateKey, "mail", jwt.RegisteredClaims{Audience: jwt.ClaimStrings{testAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), Issuer: testIssuer, Subject: testUserID})
 
@@ -127,5 +145,46 @@ func TestInboxEndpointsRequireScopeAndExposeOpaqueCursor(t *testing.T) {
 		if strings.Contains(string(conversation.Messages[0]), forbidden) {
 			t.Fatalf("conversation exposed provider-only field %q: %s", forbidden, conversation.Messages[0])
 		}
+	}
+
+	searchPath := "/api/v1/search?accountId=" + reader.accountID + "&limit=1&q=" + url.QueryEscape("quarterly from:sender@example.test")
+	request = httptest.NewRequest(http.MethodGet, searchPath, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("search mail: status=%d error=%v", response.StatusCode, err)
+	}
+	var results struct {
+		Items      []json.RawMessage `json:"items"`
+		NextCursor *string           `json:"nextCursor"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&results); err != nil || len(results.Items) != 1 || results.NextCursor == nil {
+		t.Fatalf("decode search: items=%d cursor=%v error=%v", len(results.Items), results.NextCursor, err)
+	}
+	if reader.search.Text != "quarterly" || len(reader.search.From) != 1 {
+		t.Fatalf("search query not parsed: %+v", reader.search)
+	}
+	for _, forbidden := range []string{"remoteId", "bodyHtml", "provider-secret"} {
+		if strings.Contains(string(results.Items[0]), forbidden) {
+			t.Fatalf("search exposed provider-only field %q: %s", forbidden, results.Items[0])
+		}
+	}
+
+	request = httptest.NewRequest(http.MethodGet, searchPath+"&cursor="+url.QueryEscape(*results.NextCursor), nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusOK || reader.searchCursor == nil {
+		t.Fatalf("resume search: status=%d cursor=%+v error=%v", response.StatusCode, reader.searchCursor, err)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/search?accountId="+reader.accountID+"&q=after%3Ayesterday", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err = app.Test(request)
+	if err != nil || response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid search: status=%d error=%v", response.StatusCode, err)
+	}
+	var problemBody map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&problemBody); err != nil || problemBody["code"] != "search_invalid_value" {
+		t.Fatalf("invalid search problem = %+v, error=%v", problemBody, err)
 	}
 }

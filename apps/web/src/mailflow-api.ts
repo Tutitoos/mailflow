@@ -48,6 +48,25 @@ export type InboxThread = {
 
 export type InboxPage = { items: InboxThread[]; nextCursor: string | null };
 
+export type SearchResult = {
+  id: string;
+  threadId: string;
+  accountId: string;
+  senderName: string;
+  senderAddress: string;
+  subject: string;
+  preview: string;
+  sentAt: string;
+  isRead: boolean;
+  isStarred: boolean;
+  isImportant: boolean;
+  hasAttachment: boolean;
+  attachmentCount: number;
+  rank: number;
+};
+
+export type SearchPage = { items: SearchResult[]; nextCursor: string | null };
+
 export type MessageAddress = {
   role: "from" | "sender" | "reply_to" | "to" | "cc" | "bcc";
   position: number;
@@ -201,6 +220,17 @@ export async function loadConversationPage(
   const query = new URLSearchParams({ accountId });
   if (cursor) query.set("cursor", cursor);
   return request<ConversationPage>(`/threads/${encodeURIComponent(threadId)}?${query}`, { signal });
+}
+
+export async function searchMail(
+  accountId: string,
+  expression: string,
+  cursor?: string,
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({ accountId, q: expression, limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  return request<SearchPage>(`/search?${query}`, { signal });
 }
 
 export async function subscribeMailEvents(

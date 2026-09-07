@@ -31,6 +31,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     attachmentCount: index === 0 ? 1 : 0,
   }));
   let remoteImageRequests = 0;
+  let searchRequests = 0;
   await page.route("**/api/auth/setup/status", (route) =>
     route.fulfill({ json: { configured: true } }),
   );
@@ -117,6 +118,32 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
       },
     }),
   );
+  await page.route("**/api/v1/search?**", (route) => {
+    searchRequests += 1;
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            id: "30000000-0000-7000-8000-000000000001",
+            threadId: syntheticThreads[0]?.id,
+            accountId: account.id,
+            senderName: "Search Sender",
+            senderAddress: "search-sender@example.test",
+            subject: "Quarterly result",
+            preview: "Matched local search content",
+            sentAt: "2026-09-07T17:00:00Z",
+            isRead: true,
+            isStarred: false,
+            isImportant: false,
+            hasAttachment: false,
+            attachmentCount: 0,
+            rank: 0.8,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+  });
   await page.route("https://images.example.test/**", (route) => {
     remoteImageRequests += 1;
     return route.abort();
@@ -146,6 +173,19 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await page.getByRole("button", { name: "Display remote images" }).click();
   await expect.poll(() => remoteImageRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Back to inbox" }).click();
+
+  const search = page.getByRole("combobox", { name: "Search mail" });
+  await search.fill("after:yesterday");
+  await search.press("Enter");
+  await expect(page.getByRole("alert")).toContainText("invalid");
+  expect(searchRequests).toBe(0);
+  await search.fill("quarterly from:search-sender@example.test");
+  await search.press("Enter");
+  await expect(page.getByText("Search Sender", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/q=quarterly\+from%3Asearch-sender%40example\.test/u);
+  expect(searchRequests).toBe(1);
+  await search.press("Escape");
+  await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: "Promotions" }).click();
   await expect(page.getByText("No messages here")).toBeVisible();

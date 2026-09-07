@@ -229,9 +229,18 @@ paths:
           in: query
           required: true
           schema: { type: string, minLength: 1, maxLength: 1024 }
+        - $ref: "#/components/parameters/AccountIdQuery"
         - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        "200": { description: Search results }
+        "200":
+          description: Account-scoped local search results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchPage" }
+        default: { $ref: "#/components/responses/Problem" }
   /actions:
     post:
       operationId: createMailAction
@@ -471,6 +480,32 @@ components:
         position: { type: integer, minimum: 0 }
         displayName: { type: [string, "null"] }
         address: { type: string, format: email }
+    SearchPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SearchResult" }
+        nextCursor: { type: [string, "null"] }
+    SearchResult:
+      type: object
+      required: [id, threadId, accountId, senderName, senderAddress, subject, preview, sentAt, isRead, isStarred, isImportant, hasAttachment, attachmentCount, rank]
+      properties:
+        id: { type: string, format: uuid }
+        threadId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        senderName: { type: string }
+        senderAddress: { type: string, format: email }
+        subject: { type: string }
+        preview: { type: string, maxLength: 240 }
+        sentAt: { type: string, format: date-time }
+        isRead: { type: boolean }
+        isStarred: { type: boolean }
+        isImportant: { type: boolean }
+        hasAttachment: { type: boolean }
+        attachmentCount: { type: integer, minimum: 0 }
+        rank: { type: number, format: float, minimum: 0 }
     MessageAttachment:
       type: object
       required: [id, position, filename, mediaType, disposition, sizeBytes]

@@ -34,6 +34,7 @@ type Dependencies struct {
 	GoogleOAuth   *googleoauth.Service
 	Inbox         InboxReader
 	Mailboxes     MailboxLabelReader
+	Search        SearchReader
 	Threads       ThreadReader
 	Readiness     func(context.Context) error
 	Sentry        *mailflowsentry.Service
@@ -64,6 +65,10 @@ type MailboxLabelReader interface {
 type ThreadReader interface {
 	GetThread(context.Context, string, string, string) (mail.Thread, error)
 	ListMessages(context.Context, string, string, string, *mail.MessageCursor, int) (mail.MessagePage, error)
+}
+
+type SearchReader interface {
+	SearchMessages(context.Context, string, string, mail.SearchQuery, *mail.SearchCursor, int) (mail.SearchPage, error)
 }
 
 func New(deps Dependencies) *fiber.App {
@@ -146,6 +151,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/labels", listLabels(deps.Mailboxes))
 	v1.Get("/threads", listInbox(deps.Inbox))
 	v1.Get("/threads/:threadId", getConversation(deps.Threads))
+	v1.Get("/search", searchMail(deps.Search))
 	v1.Get("/oauth/google/status", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
 	})

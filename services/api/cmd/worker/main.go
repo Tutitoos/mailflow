@@ -10,9 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
+	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
@@ -71,7 +77,9 @@ func main() {
 		os.Exit(1)
 	}
 	registry := metrics.NewRegistry()
+	handlers := make(map[string]queue.Handler)
 	var cleanupDone chan struct{}
+	var schedulerDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -79,12 +87,68 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
+		vault, err := platformcrypto.NewVault(runtimeConfig.MasterKey)
+		if err != nil {
+			logger.Error("account vault configuration failed", "event", "worker.config_invalid", "error", err)
+			os.Exit(1)
+		}
+		queries := dbgen.New(pool)
+		accountService := accounts.NewService(accounts.NewRepository(queries, vault))
+		normalizer, err := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+		if err != nil {
+			logger.Error("mail normalizer configuration failed", "event", "worker.config_invalid", "error", err)
+			os.Exit(1)
+		}
+		googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
+		resolver, err := mailflowsync.NewGmailAccountResolver(accountService, googleoauth.NewClient(googleConfig, nil), nil, normalizer)
+		if err != nil {
+			logger.Error("Gmail resolver configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		executor, err := mailflowsync.NewGmailExecutor(resolver, mail.NewRemotePageWriter())
+		if err != nil {
+			logger.Error("Gmail executor configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		leases, err := mailflowsync.NewLeaseManager(client, queueConfig.Prefix, handleTimeout+time.Minute)
+		if err != nil {
+			logger.Error("sync lease configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		eventStore, err := events.NewStore(ctx, client, events.DefaultConfig())
+		if err != nil {
+			logger.Error("sync event store configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		orchestrator, err := mailflowsync.NewOrchestrator(mailflowsync.NewRunRepository(pool), store, leases, executor, eventStore, registry)
+		if err != nil {
+			logger.Error("sync orchestrator configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		orchestrator.SetActivityTracker(mailflowsync.NewRedisActivityTracker(client, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
+		handlers[mailflowsync.SyncExecuteJobKind] = orchestrator.Handler()
+		schedulerDone = make(chan struct{})
+		go func() {
+			defer close(schedulerDone)
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				if _, scheduleErr := orchestrator.EnqueueDue(ctx); scheduleErr != nil && !errors.Is(scheduleErr, context.Canceled) {
+					logger.Error("sync scheduling failed", "event", "sync.schedule_failed", "error", scheduleErr)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		cdnStore, err := cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
 		if err != nil {
 			logger.Error("CDN cleanup storage unavailable", "event", "cdn.cleanup_unavailable", "error", err)
 			os.Exit(1)
 		}
-		cdnService, err := cdn.NewService(cdnStore, dbgen.New(pool), cdn.DefaultRetention)
+		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention)
 		if err != nil {
 			logger.Error("CDN cleanup service unavailable", "event", "cdn.cleanup_unavailable", "error", err)
 			os.Exit(1)
@@ -114,12 +178,15 @@ func main() {
 			logger.Error("queue metric rejected", "event", "metrics.rejected", "error", err)
 		}
 	})
-	runner := queue.NewRunner(store, map[string]queue.Handler{}, observer, queue.RunnerConfig{HandleTimeout: handleTimeout, ShutdownGrace: shutdownGrace})
+	runner := queue.NewRunner(store, handlers, observer, queue.RunnerConfig{HandleTimeout: handleTimeout, ShutdownGrace: shutdownGrace})
 	logger.Info("worker ready", "event", "worker.ready", "consumer", consumer)
 	runErr := runner.Run(ctx)
 	stop()
 	if cleanupDone != nil {
 		<-cleanupDone
+	}
+	if schedulerDone != nil {
+		<-schedulerDone
 	}
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)

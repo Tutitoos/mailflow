@@ -40,13 +40,13 @@ func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
 				{"id": "Label_1", "name": "Projects", "type": "user", "messagesTotal": 4},
 			}})
 		case path == "/history" && request.URL.Query().Get("pageToken") == "":
-			writeJSON(response, map[string]any{"history": []any{map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "message-1"}}}}}, "historyId": "101", "nextPageToken": "history-page-2"})
+			writeJSON(response, map[string]any{"history": []any{map[string]any{"messagesAdded": []any{map[string]any{"message": map[string]string{"id": "message-1"}}}, "messagesDeleted": []any{map[string]any{"message": map[string]string{"id": "message-deleted"}}}}}, "historyId": "101", "nextPageToken": "history-page-2"})
 		case path == "/history":
 			writeJSON(response, map[string]any{"history": []any{}, "historyId": "102"})
 		case path == "/messages" && request.Method == http.MethodGet:
 			writeJSON(response, map[string]any{"messages": []any{map[string]string{"id": "message-1"}}, "nextPageToken": "backfill-page-2"})
 		case path == "/messages/message-1" && request.Method == http.MethodGet:
-			writeJSON(response, map[string]string{"id": "message-1", "threadId": "thread-1", "internalDate": "1788782400000", "raw": base64.RawURLEncoding.EncodeToString([]byte(sanitizedMessage))})
+			writeJSON(response, map[string]any{"id": "message-1", "threadId": "thread-1", "internalDate": "1788782400000", "labelIds": []string{"UNREAD", "STARRED", "CATEGORY_PROMOTIONS"}, "raw": base64.RawURLEncoding.EncodeToString([]byte(sanitizedMessage))})
 		case strings.HasSuffix(path, "/modify"):
 			response.WriteHeader(http.StatusOK)
 			_, _ = response.Write([]byte(`{}`))
@@ -86,7 +86,7 @@ func TestProviderMapsProfileLabelsAndPaginatedChanges(t *testing.T) {
 		t.Fatalf("catalog = %+v, %v", catalog, err)
 	}
 	first, err := provider.Changes(ctx, profile.History)
-	if err != nil || !first.HasMore || len(first.Messages) != 1 || first.Messages[0].ThreadID != "thread-1" || first.Messages[0].Content.Subject != "Sanitized fixture" {
+	if err != nil || !first.HasMore || len(first.Messages) != 1 || len(first.DeletedRemoteIDs) != 1 || first.Messages[0].ThreadID != "thread-1" || first.Messages[0].Content.Subject != "Sanitized fixture" || first.Messages[0].IsRead || !first.Messages[0].IsStarred || first.Messages[0].Category != mail.CategoryPromotions {
 		t.Fatalf("first changes = %+v, %v", first, err)
 	}
 	second, err := provider.Changes(ctx, first.NextCursor)
@@ -99,7 +99,8 @@ func TestProviderBackfillActionsDraftSendAndAttachment(t *testing.T) {
 	provider, server, requests := gmailFixture(t)
 	defer server.Close()
 	ctx := context.Background()
-	page, err := provider.Backfill(ctx, mail.SyncCursor{}, time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC), 25)
+	before := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	page, err := provider.Backfill(ctx, mail.SyncCursor{}, nil, &before, 25)
 	if err != nil || !page.HasMore || string(page.NextCursor.Value) != "backfill-page-2" || len(page.Messages) != 1 {
 		t.Fatalf("backfill = %+v, %v", page, err)
 	}

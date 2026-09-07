@@ -84,3 +84,15 @@ WHERE id = sqlc.arg(id)
   AND state = 'running'
   AND NOT cancel_requested
 RETURNING *;
+
+-- name: ExpediteSyncReconciliation :one
+UPDATE sync_runs
+SET scheduled_for = CASE WHEN state = 'queued' THEN sqlc.arg(requested_at) ELSE scheduled_for END,
+    updated_at = sqlc.arg(requested_at)
+FROM accounts
+WHERE sync_runs.account_id = sqlc.arg(account_id)
+  AND sync_runs.phase = 'reconcile'
+  AND sync_runs.state IN ('queued', 'running')
+  AND accounts.id = sync_runs.account_id
+  AND accounts.user_id = sqlc.arg(user_id)
+RETURNING sync_runs.*;

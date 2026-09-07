@@ -28,6 +28,7 @@ const (
 )
 
 var ErrInvalidCursor = errors.New("invalid Gmail cursor")
+var ErrHistoryExpired = errors.New("Gmail history cursor expired")
 
 type ProviderError struct {
 	Kind       ErrorKind
@@ -108,7 +109,7 @@ func (provider *Provider) Changes(ctx context.Context, cursor mail.SyncCursor) (
 	if err != nil || parsed.HistoryID == "" {
 		return mail.ChangePage{}, ErrInvalidCursor
 	}
-	query := url.Values{"startHistoryId": {parsed.HistoryID}, "historyTypes": {"messageAdded"}, "maxResults": {"100"}}
+	query := url.Values{"startHistoryId": {parsed.HistoryID}, "maxResults": {"100"}}
 	if parsed.PageToken != "" {
 		query.Set("pageToken", parsed.PageToken)
 	}
@@ -119,6 +120,21 @@ func (provider *Provider) Changes(ctx context.Context, cursor mail.SyncCursor) (
 					ID string `json:"id"`
 				} `json:"message"`
 			} `json:"messagesAdded"`
+			MessagesDeleted []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+			} `json:"messagesDeleted"`
+			LabelsAdded []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+			} `json:"labelsAdded"`
+			LabelsRemoved []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+			} `json:"labelsRemoved"`
 		} `json:"history"`
 		HistoryID     string `json:"historyId"`
 		NextPageToken string `json:"nextPageToken"`
@@ -127,7 +143,9 @@ func (provider *Provider) Changes(ctx context.Context, cursor mail.SyncCursor) (
 		return mail.ChangePage{}, err
 	}
 	ids := make([]string, 0)
+	deleted := make([]string, 0)
 	seen := make(map[string]struct{})
+	deletedSeen := make(map[string]struct{})
 	for _, history := range response.History {
 		for _, added := range history.MessagesAdded {
 			if added.Message.ID != "" {
@@ -137,6 +155,31 @@ func (provider *Provider) Changes(ctx context.Context, cursor mail.SyncCursor) (
 				}
 			}
 		}
+		for _, changed := range append(history.LabelsAdded, history.LabelsRemoved...) {
+			if changed.Message.ID != "" {
+				if _, exists := seen[changed.Message.ID]; !exists {
+					seen[changed.Message.ID] = struct{}{}
+					ids = append(ids, changed.Message.ID)
+				}
+			}
+		}
+		for _, removed := range history.MessagesDeleted {
+			if removed.Message.ID != "" {
+				if _, exists := deletedSeen[removed.Message.ID]; !exists {
+					deletedSeen[removed.Message.ID] = struct{}{}
+					deleted = append(deleted, removed.Message.ID)
+				}
+			}
+		}
+	}
+	if len(deletedSeen) > 0 {
+		filtered := ids[:0]
+		for _, id := range ids {
+			if _, deletedOnPage := deletedSeen[id]; !deletedOnPage {
+				filtered = append(filtered, id)
+			}
+		}
+		ids = filtered
 	}
 	page, err := provider.loadMessages(ctx, ids)
 	if err != nil {
@@ -147,19 +190,27 @@ func (provider *Provider) Changes(ctx context.Context, cursor mail.SyncCursor) (
 		nextHistory = parsed.HistoryID
 	}
 	page.NextCursor, _ = encodeCursor(historyCursor{HistoryID: nextHistory, PageToken: response.NextPageToken})
+	page.DeletedRemoteIDs = deleted
 	page.HasMore = response.NextPageToken != ""
 	return page, nil
 }
 
-func (provider *Provider) Backfill(ctx context.Context, cursor mail.SyncCursor, before time.Time, limit int) (mail.ChangePage, error) {
-	if before.IsZero() || limit < 1 || limit > 500 {
+func (provider *Provider) Backfill(ctx context.Context, cursor mail.SyncCursor, after, before *time.Time, limit int) (mail.ChangePage, error) {
+	if (after == nil && before == nil) || (after != nil && after.IsZero()) || (before != nil && before.IsZero()) || (after != nil && before != nil && !after.Before(*before)) || limit < 1 || limit > 500 {
 		return mail.ChangePage{}, ErrInvalidCursor
 	}
 	pageToken, err := decodePageCursor(cursor, "google_backfill")
 	if err != nil {
 		return mail.ChangePage{}, err
 	}
-	query := url.Values{"maxResults": {strconv.Itoa(limit)}, "q": {"before:" + strconv.FormatInt(before.UTC().Unix(), 10)}}
+	terms := make([]string, 0, 2)
+	if after != nil {
+		terms = append(terms, "after:"+strconv.FormatInt(after.UTC().Unix(), 10))
+	}
+	if before != nil {
+		terms = append(terms, "before:"+strconv.FormatInt(before.UTC().Unix(), 10))
+	}
+	query := url.Values{"maxResults": {strconv.Itoa(limit)}, "q": {strings.Join(terms, " ")}}
 	if pageToken != "" {
 		query.Set("pageToken", pageToken)
 	}

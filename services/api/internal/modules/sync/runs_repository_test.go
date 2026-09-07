@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -38,5 +39,26 @@ func TestRunRepositoryCommitsEffectsAndCheckpointAtomically(t *testing.T) {
 	}
 	if committed.State != RunQueued || committed.Version != 2 || committed.AppliedCount != 1 {
 		t.Fatalf("committed run = %+v", committed)
+	}
+}
+
+func TestRunRepositoryDistinguishesActiveRunFromMissingOwner(t *testing.T) {
+	_, pool, userID, accountID := cursorFixture(t)
+	repository := NewRunRepository(pool)
+	now := time.Now().UTC()
+	input := CreateRunInput{UserID: userID, AccountID: accountID, Phase: PhaseReconcile, Checkpoint: json.RawMessage(`{}`), ScheduledFor: now}
+	if _, err := repository.CreateRun(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CreateRun(context.Background(), input); !errors.Is(err, ErrRunExists) {
+		t.Fatalf("duplicate run error = %v", err)
+	}
+	input.AccountID = "0199ed3b-c950-7000-8000-000000000099"
+	if _, err := repository.CreateRun(context.Background(), input); !errors.Is(err, ErrRunNotFound) {
+		t.Fatalf("missing account error = %v", err)
+	}
+	input.AccountID, input.UserID = accountID, "0199ed3b-c950-7000-8000-000000000099"
+	if _, err := repository.CreateRun(context.Background(), input); !errors.Is(err, ErrRunNotFound) {
+		t.Fatalf("cross-owner account error = %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
 	jwtware "github.com/gofiber/contrib/v3/jwt"
 	fibersentry "github.com/gofiber/contrib/v3/sentry"
@@ -35,10 +36,16 @@ type Dependencies struct {
 	Translations  *translations.Catalog
 	CaptureSentry bool
 	Shutdown      context.Context
+	Sync          SyncRequester
 }
 
 type AccountLister interface {
 	List(context.Context, string) ([]accounts.Account, error)
+}
+
+type SyncRequester interface {
+	Request(context.Context, string, string) (mailflowsync.Run, error)
+	StartInitial(context.Context, string, string) (mailflowsync.Run, error)
 }
 
 func New(deps Dependencies) *fiber.App {
@@ -75,7 +82,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Get("/translations/:locale", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"locale": c.Params("locale"), "messages": deps.Translations.Locale(c.Params("locale"))})
 	})
-	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth))
+	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth, deps.Sync))
 	if deps.AuthJWKSURL != "" {
 		if deps.AuthAudience == "" || deps.AuthIssuer == "" || deps.CurrentUsers == nil {
 			panic("authenticated API requires audience, issuer, and current-user resolver")
@@ -122,6 +129,7 @@ func New(deps Dependencies) *fiber.App {
 	})
 	v1.Post("/oauth/google/start", googleOAuthStart(deps.GoogleOAuth))
 	v1.Post("/accounts/:accountId/refresh", googleOAuthRefresh(deps.GoogleOAuth))
+	v1.Post("/accounts/:accountId/sync", synchronizeAccount(deps.Sync))
 	v1.Delete("/accounts/:accountId", googleOAuthDisconnect(deps.GoogleOAuth))
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")

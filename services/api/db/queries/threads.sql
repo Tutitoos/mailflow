@@ -12,11 +12,14 @@ WHERE owned.id = sqlc.arg(account_id)
   AND owned.user_id = sqlc.arg(user_id)
   AND owned.disabled_at IS NULL
 ON CONFLICT (account_id, remote_id) DO UPDATE SET
-  last_message_at = EXCLUDED.last_message_at,
+  last_message_at = GREATEST(threads.last_message_at, EXCLUDED.last_message_at),
   is_read = EXCLUDED.is_read,
   is_starred = EXCLUDED.is_starred,
   is_important = EXCLUDED.is_important,
-  category = EXCLUDED.category,
+  category = CASE
+    WHEN EXCLUDED.last_message_at >= threads.last_message_at THEN EXCLUDED.category
+    ELSE threads.category
+  END,
   deleted_at = EXCLUDED.deleted_at,
   updated_at = now()
 RETURNING *;
@@ -255,3 +258,16 @@ FROM (
 WHERE threads.id = sqlc.arg(thread_id)
   AND threads.account_id = sqlc.arg(account_id)
 RETURNING threads.*;
+
+-- name: SoftDeleteRemoteMessages :many
+WITH deleted AS (
+  UPDATE messages
+  SET deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+  FROM accounts
+  WHERE messages.account_id = sqlc.arg(account_id)
+    AND messages.remote_id = ANY(sqlc.arg(remote_ids)::text[])
+    AND accounts.id = messages.account_id
+    AND accounts.user_id = sqlc.arg(user_id)
+  RETURNING messages.thread_id
+)
+SELECT DISTINCT thread_id FROM deleted;

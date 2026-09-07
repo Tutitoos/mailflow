@@ -542,6 +542,46 @@ func (q *Queries) RefreshThreadSummary(ctx context.Context, arg RefreshThreadSum
 	return i, err
 }
 
+const softDeleteRemoteMessages = `-- name: SoftDeleteRemoteMessages :many
+WITH deleted AS (
+  UPDATE messages
+  SET deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+  FROM accounts
+  WHERE messages.account_id = $1
+    AND messages.remote_id = ANY($2::text[])
+    AND accounts.id = messages.account_id
+    AND accounts.user_id = $3
+  RETURNING messages.thread_id
+)
+SELECT DISTINCT thread_id FROM deleted
+`
+
+type SoftDeleteRemoteMessagesParams struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	RemoteIds []string    `json:"remote_ids"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) SoftDeleteRemoteMessages(ctx context.Context, arg SoftDeleteRemoteMessagesParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, softDeleteRemoteMessages, arg.AccountID, arg.RemoteIds, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var thread_id pgtype.UUID
+		if err := rows.Scan(&thread_id); err != nil {
+			return nil, err
+		}
+		items = append(items, thread_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateMessageState = `-- name: UpdateMessageState :one
 UPDATE messages
 SET
@@ -885,11 +925,14 @@ WHERE owned.id = $9
   AND owned.user_id = $10
   AND owned.disabled_at IS NULL
 ON CONFLICT (account_id, remote_id) DO UPDATE SET
-  last_message_at = EXCLUDED.last_message_at,
+  last_message_at = GREATEST(threads.last_message_at, EXCLUDED.last_message_at),
   is_read = EXCLUDED.is_read,
   is_starred = EXCLUDED.is_starred,
   is_important = EXCLUDED.is_important,
-  category = EXCLUDED.category,
+  category = CASE
+    WHEN EXCLUDED.last_message_at >= threads.last_message_at THEN EXCLUDED.category
+    ELSE threads.category
+  END,
   deleted_at = EXCLUDED.deleted_at,
   updated_at = now()
 RETURNING id, account_id, remote_id, last_message_at, is_read, is_starred, category, is_important, deleted_at, message_count, unread_count, created_at, updated_at

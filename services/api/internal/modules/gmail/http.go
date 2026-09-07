@@ -22,6 +22,10 @@ type historyCursor struct {
 	PageToken string `json:"pageToken,omitempty"`
 }
 
+func (providerError *ProviderError) Is(target error) bool {
+	return target == ErrHistoryExpired && providerError.StatusCode == http.StatusNotFound
+}
+
 func encodeCursor(cursor historyCursor) (mail.SyncCursor, error) {
 	value, err := json.Marshal(cursor)
 	return mail.SyncCursor{Kind: "google_history", Value: value}, err
@@ -133,10 +137,11 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 	page := mail.ChangePage{Messages: make([]mail.RemoteMessage, 0, len(ids))}
 	for _, id := range ids {
 		var response struct {
-			ID           string `json:"id"`
-			ThreadID     string `json:"threadId"`
-			InternalDate string `json:"internalDate"`
-			Raw          string `json:"raw"`
+			ID           string   `json:"id"`
+			ThreadID     string   `json:"threadId"`
+			InternalDate string   `json:"internalDate"`
+			LabelIDs     []string `json:"labelIds"`
+			Raw          string   `json:"raw"`
 		}
 		if err := provider.json(ctx, http.MethodGet, "/messages/"+url.PathEscape(id), url.Values{"format": {"raw"}}, nil, &response); err != nil {
 			return mail.ChangePage{}, err
@@ -158,9 +163,34 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		if err != nil || response.ID == "" || response.ThreadID == "" {
 			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent}
 		}
-		page.Messages = append(page.Messages, mail.RemoteMessage{RemoteID: response.ID, ThreadID: response.ThreadID, SentAt: time.UnixMilli(milliseconds).UTC(), Content: content})
+		page.Messages = append(page.Messages, remoteMessage(response.ID, response.ThreadID, milliseconds, response.LabelIDs, content))
 	}
 	return page, nil
+}
+
+func remoteMessage(id, threadID string, milliseconds int64, labels []string, content mail.NormalizedMessageContent) mail.RemoteMessage {
+	message := mail.RemoteMessage{RemoteID: id, ThreadID: threadID, SentAt: time.UnixMilli(milliseconds).UTC(), IsRead: true, Category: mail.CategoryPrimary, LabelIDs: append([]string(nil), labels...), Content: content}
+	for _, label := range labels {
+		switch label {
+		case "UNREAD":
+			message.IsRead = false
+		case "STARRED":
+			message.IsStarred = true
+		case "IMPORTANT":
+			message.IsImportant = true
+		case "TRASH":
+			message.InTrash = true
+		case "CATEGORY_PROMOTIONS":
+			message.Category = mail.CategoryPromotions
+		case "CATEGORY_SOCIAL":
+			message.Category = mail.CategorySocial
+		case "CATEGORY_UPDATES":
+			message.Category = mail.CategoryNotifications
+		case "CATEGORY_FORUMS":
+			message.Category = mail.CategoryForums
+		}
+	}
+	return message
 }
 
 func (provider *Provider) mapAttachmentIDs(ctx context.Context, messageID string, content *mail.NormalizedMessageContent) error {

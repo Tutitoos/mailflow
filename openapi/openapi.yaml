@@ -44,7 +44,11 @@ paths:
         - $ref: "#/components/parameters/AccountId"
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
-        "202": { description: Synchronization queued }
+        "202":
+          description: Synchronization queued or already pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncRunAccepted" }
         default: { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/refresh:
     post:
@@ -321,6 +325,12 @@ components:
         disabledAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    SyncRunAccepted:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [queued, already_queued] }
+        runId: { type: string, format: uuid }
     EventEnvelope:
       type: object
       required: [version, cursor, type, timestamp, payload]

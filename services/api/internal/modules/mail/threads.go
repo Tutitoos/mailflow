@@ -54,12 +54,17 @@ type Message struct {
 	RemoteID    string           `json:"remoteId"`
 	MessageID   *string          `json:"messageId"`
 	References  []string         `json:"references"`
+	InReplyTo   []string         `json:"inReplyTo"`
+	Subject     string           `json:"subject"`
+	BodyText    string           `json:"bodyText"`
+	BodyHTML    string           `json:"bodyHtml"`
 	SentAt      time.Time        `json:"sentAt"`
 	IsRead      bool             `json:"isRead"`
 	IsStarred   bool             `json:"isStarred"`
 	IsImportant bool             `json:"isImportant"`
 	DeletedAt   *time.Time       `json:"deletedAt"`
 	Addresses   []MessageAddress `json:"addresses"`
+	Attachments []Attachment     `json:"attachments"`
 	CreatedAt   time.Time        `json:"createdAt"`
 	UpdatedAt   time.Time        `json:"updatedAt"`
 }
@@ -89,12 +94,37 @@ type UpsertMessageInput struct {
 	RemoteID    string
 	MessageID   string
 	References  []string
+	InReplyTo   []string
+	Subject     string
+	BodyText    string
+	BodyHTML    string
 	SentAt      time.Time
 	IsRead      bool
 	IsStarred   bool
 	IsImportant bool
 	DeletedAt   *time.Time
 	Addresses   []MessageAddressInput
+	Attachments []AttachmentInput
+}
+
+type AttachmentInput struct {
+	RemoteID    string
+	Filename    string
+	MediaType   string
+	Disposition string
+	ContentID   string
+	SizeBytes   int64
+}
+
+type Attachment struct {
+	ID          string  `json:"id"`
+	Position    int32   `json:"position"`
+	RemoteID    *string `json:"remoteId"`
+	Filename    *string `json:"filename"`
+	MediaType   string  `json:"mediaType"`
+	Disposition string  `json:"disposition"`
+	ContentID   *string `json:"contentId"`
+	SizeBytes   int64   `json:"sizeBytes"`
 }
 
 type StatePatch struct {

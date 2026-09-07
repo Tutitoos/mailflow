@@ -65,13 +65,15 @@ SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(account_id)::text, 0));
 -- name: UpsertMessage :one
 INSERT INTO messages (
   id, thread_id, account_id, remote_id, message_id, references_header,
-  sender, recipients, sent_at, is_read, is_starred, is_important, deleted_at
+  in_reply_to, sender, recipients, subject, body_text, body_html_sanitized,
+  sent_at, is_read, is_starred, is_important, deleted_at, content_updated_at
 )
 SELECT
   sqlc.arg(id), owned_thread.id, owned_thread.account_id, sqlc.arg(remote_id),
-  sqlc.narg(message_id), sqlc.arg(references_header), '{}'::jsonb, '[]'::jsonb,
-  sqlc.arg(sent_at), sqlc.arg(is_read), sqlc.arg(is_starred),
-  sqlc.arg(is_important), sqlc.narg(deleted_at)
+  sqlc.narg(message_id), sqlc.arg(references_header), sqlc.arg(in_reply_to),
+  '{}'::jsonb, '[]'::jsonb, sqlc.arg(subject), sqlc.arg(body_text),
+  sqlc.arg(body_html_sanitized), sqlc.arg(sent_at), sqlc.arg(is_read),
+  sqlc.arg(is_starred), sqlc.arg(is_important), sqlc.narg(deleted_at), now()
 FROM threads AS owned_thread
 JOIN accounts ON accounts.id = owned_thread.account_id
 WHERE owned_thread.id = sqlc.arg(thread_id)
@@ -82,11 +84,37 @@ ON CONFLICT (account_id, remote_id) DO UPDATE SET
   thread_id = EXCLUDED.thread_id,
   message_id = EXCLUDED.message_id,
   references_header = EXCLUDED.references_header,
+  in_reply_to = EXCLUDED.in_reply_to,
+  subject = EXCLUDED.subject,
+  body_text = EXCLUDED.body_text,
+  body_html_sanitized = EXCLUDED.body_html_sanitized,
+  content_updated_at = now(),
   sent_at = EXCLUDED.sent_at,
   is_read = EXCLUDED.is_read,
   is_starred = EXCLUDED.is_starred,
   is_important = EXCLUDED.is_important,
   deleted_at = EXCLUDED.deleted_at,
+  updated_at = now()
+RETURNING *;
+
+-- name: DeleteMessageAttachmentsFromPosition :exec
+DELETE FROM message_attachments
+WHERE message_id = sqlc.arg(message_id)
+  AND account_id = sqlc.arg(account_id)
+  AND position >= sqlc.arg(from_position);
+
+-- name: UpsertMessageAttachment :one
+INSERT INTO message_attachments (
+  id, message_id, account_id, position, remote_id, filename,
+  media_type, disposition, content_id, size_bytes
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (message_id, position) DO UPDATE SET
+  remote_id = EXCLUDED.remote_id,
+  filename = EXCLUDED.filename,
+  media_type = EXCLUDED.media_type,
+  disposition = EXCLUDED.disposition,
+  content_id = EXCLUDED.content_id,
+  size_bytes = EXCLUDED.size_bytes,
   updated_at = now()
 RETURNING *;
 
@@ -136,6 +164,15 @@ WHERE message_addresses.message_id = ANY(sqlc.arg(message_ids)::uuid[])
   AND message_addresses.account_id = sqlc.arg(account_id)
   AND accounts.user_id = sqlc.arg(user_id)
 ORDER BY message_addresses.message_id, message_addresses.role, message_addresses.position;
+
+-- name: ListAttachmentsForMessages :many
+SELECT message_attachments.*
+FROM message_attachments
+JOIN accounts ON accounts.id = message_attachments.account_id
+WHERE message_attachments.message_id = ANY(sqlc.arg(message_ids)::uuid[])
+  AND message_attachments.account_id = sqlc.arg(account_id)
+  AND accounts.user_id = sqlc.arg(user_id)
+ORDER BY message_attachments.message_id, message_attachments.position;
 
 -- name: UpdateMessagesStateByThread :exec
 UPDATE messages

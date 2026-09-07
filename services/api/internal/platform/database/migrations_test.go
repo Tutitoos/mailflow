@@ -189,3 +189,57 @@ func TestThreadMigrationPreservesExistingThreadState(t *testing.T) {
 		t.Fatalf("migrated thread = count %d, unread %d, read %v, starred %v", count, unread, threadRead, threadStarred)
 	}
 }
+
+func TestMessageContentMigrationPreservesExistingBodies(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 6); err != nil {
+		t.Fatalf("apply thread migrations: %v", err)
+	}
+
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb738")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb739")
+	threadID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb740")
+	messageID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb741")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "content-migration@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities) values ($1, $2, 'google', 'content-migration', 'Personal', $3, $4, '{}')`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into threads (id, account_id, remote_id, last_message_at) values ($1, $2, 'content-thread', '2026-09-07T16:00:00Z')`, threadID, accountID); err != nil {
+		t.Fatalf("insert thread: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `insert into messages (id, thread_id, account_id, remote_id, sender, recipients, subject, body_text, body_html_sanitized, sent_at) values ($1, $2, $3, 'content-message', '{}', '[]', 'Existing', 'Existing text', '<p>Existing text</p>', '2026-09-07T16:00:00Z')`, messageID, threadID, accountID); err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply content migration: %v", err)
+	}
+	var subject, bodyText, bodyHTML string
+	var replyCount int
+	if err := database.QueryRowContext(ctx, `select subject, body_text, body_html_sanitized, cardinality(in_reply_to) from messages where id = $1`, messageID).Scan(&subject, &bodyText, &bodyHTML, &replyCount); err != nil {
+		t.Fatalf("load migrated content: %v", err)
+	}
+	if subject != "Existing" || bodyText != "Existing text" || bodyHTML != "<p>Existing text</p>" || replyCount != 0 {
+		t.Fatalf("migrated content = %q, %q, %q, replies %d", subject, bodyText, bodyHTML, replyCount)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 6); err != nil {
+		t.Fatalf("roll back content migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select subject, body_text, body_html_sanitized from messages where id = $1`, messageID).Scan(&subject, &bodyText, &bodyHTML); err != nil {
+		t.Fatalf("load rolled-back content: %v", err)
+	}
+	if subject != "Existing" || bodyText != "Existing text" || bodyHTML != "<p>Existing text</p>" {
+		t.Fatalf("rolled-back content = %q, %q, %q", subject, bodyText, bodyHTML)
+	}
+}

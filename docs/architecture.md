@@ -109,6 +109,8 @@ services/api/
 
 Cada módulo será propietario de su lógica y sus tablas. La comunicación síncrona utilizará interfaces Go explícitas; los trabajos asíncronos utilizarán Redis. La composición de dependencias será manual.
 
+El pipeline de [métricas internas](metrics.md) agrega series acotadas en cada proceso y persiste minutos, horas y días en PostgreSQL sin Prometheus.
+
 ## Contratos
 
 - REST JSON bajo `/api/v1`.

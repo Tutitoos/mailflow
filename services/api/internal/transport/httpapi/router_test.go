@@ -67,3 +67,33 @@ func TestProblemDetailsAndSentryEnvelopeLimit(t *testing.T) {
 		t.Fatalf("expected 413, got %d: %s", response.StatusCode, body)
 	}
 }
+
+func TestAdminMetricsValidatesAndReturnsBoundedSeries(t *testing.T) {
+	registry := metrics.NewRegistry()
+	if err := registry.Observe("mailflow_http_request_duration_seconds", 0.02, map[string]string{"service": "api", "module": "http", "operation": "get", "result": "success"}); err != nil {
+		t.Fatal(err)
+	}
+	app := httpapi.New(httpapi.Dependencies{
+		Admin: admin.NewService("test", registry), Metrics: registry,
+		Sentry: mailflowsentry.NewService(4), Translations: translations.NewCatalog(),
+	})
+
+	response, err := app.Test(httptest.NewRequest("GET", "/api/v1/admin/metrics?resolution=minute&limit=10", nil))
+	if err != nil || response.StatusCode != 200 {
+		t.Fatalf("metrics response status=%d err=%v", response.StatusCode, err)
+	}
+	var payload struct {
+		Items []metrics.SeriesPoint `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 1 || payload.Items[0].P95 == nil {
+		t.Fatalf("unexpected metric payload: %+v", payload.Items)
+	}
+
+	response, err = app.Test(httptest.NewRequest("GET", "/api/v1/admin/metrics?resolution=raw", nil))
+	if err != nil || response.StatusCode != 400 {
+		t.Fatalf("invalid query status=%d err=%v", response.StatusCode, err)
+	}
+}

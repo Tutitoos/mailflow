@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"runtime"
 	"time"
 
@@ -22,11 +23,15 @@ type Status struct {
 
 type Service struct {
 	version string
-	metrics *metrics.Registry
+	metrics *metrics.Service
 }
 
 func NewService(version string, registry *metrics.Registry) *Service {
-	return &Service{version: version, metrics: registry}
+	return NewServiceWithMetrics(version, metrics.NewService(registry, nil))
+}
+
+func NewServiceWithMetrics(version string, service *metrics.Service) *Service {
+	return &Service{version: version, metrics: service}
 }
 
 func (s *Service) Status() Status {
@@ -36,4 +41,6 @@ func (s *Service) Status() Status {
 	}
 }
 
-func (s *Service) Metrics() []metrics.Point { return s.metrics.Snapshot() }
+func (s *Service) Metrics(ctx context.Context, query metrics.Query) ([]metrics.SeriesPoint, error) {
+	return s.metrics.Query(ctx, query)
+}

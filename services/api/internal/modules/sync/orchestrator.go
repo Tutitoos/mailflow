@@ -270,7 +270,7 @@ func (orchestrator *Orchestrator) publish(user string, run Run, state string) {
 
 func (orchestrator *Orchestrator) observe(phase RunPhase, result string) {
 	if orchestrator.metrics != nil {
-		_ = orchestrator.metrics.Add("mailflow_sync_pages_total", 1, map[string]string{"module": "sync", "operation": string(phase), "result": result, "service": "worker"})
+		_ = orchestrator.metrics.Add("mailflow_sync_pages_total", 1, map[string]string{"module": "sync", "operation": string(phase), "provider": "google", "result": result, "service": "worker"})
 	}
 }
 

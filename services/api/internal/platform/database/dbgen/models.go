@@ -257,6 +257,10 @@ type MetricPoint struct {
 	Dimensions []byte             `json:"dimensions"`
 	Value      float64            `json:"value"`
 	Count      int64              `json:"count"`
+	MinValue   float64            `json:"min_value"`
+	MaxValue   float64            `json:"max_value"`
+	Histogram  []int64            `json:"histogram"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type OutboundDelivery struct {

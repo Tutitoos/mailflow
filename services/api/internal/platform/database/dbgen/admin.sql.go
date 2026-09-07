@@ -52,33 +52,3 @@ func (q *Queries) RecentLogs(ctx context.Context, arg RecentLogsParams) ([]LogEn
 	}
 	return items, nil
 }
-
-const upsertMetricPoint = `-- name: UpsertMetricPoint :exec
-INSERT INTO metric_points (bucket, resolution, name, kind, dimensions, value, count)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (bucket, resolution, name, dimensions)
-DO UPDATE SET value = EXCLUDED.value, count = metric_points.count + EXCLUDED.count
-`
-
-type UpsertMetricPointParams struct {
-	Bucket     pgtype.Timestamptz `json:"bucket"`
-	Resolution string             `json:"resolution"`
-	Name       string             `json:"name"`
-	Kind       string             `json:"kind"`
-	Dimensions []byte             `json:"dimensions"`
-	Value      float64            `json:"value"`
-	Count      int64              `json:"count"`
-}
-
-func (q *Queries) UpsertMetricPoint(ctx context.Context, arg UpsertMetricPointParams) error {
-	_, err := q.db.Exec(ctx, upsertMetricPoint,
-		arg.Bucket,
-		arg.Resolution,
-		arg.Name,
-		arg.Kind,
-		arg.Dimensions,
-		arg.Value,
-		arg.Count,
-	)
-	return err
-}

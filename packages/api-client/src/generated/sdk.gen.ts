@@ -108,7 +108,11 @@ export const searchMail = <ThrowOnError extends boolean = false>(options: Option
 export const createMailAction = <ThrowOnError extends boolean = false>(options: Options<CreateMailActionData, ThrowOnError>): RequestResult<CreateMailActionResponses, CreateMailActionErrors, ThrowOnError> => (options.client ?? client).post<CreateMailActionResponses, CreateMailActionErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/actions',
-    ...options
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const saveDraft = <ThrowOnError extends boolean = false>(options?: Options<SaveDraftData, ThrowOnError>): RequestResult<SaveDraftResponses, unknown, ThrowOnError> => (options?.client ?? client).post<SaveDraftResponses, unknown, ThrowOnError>({

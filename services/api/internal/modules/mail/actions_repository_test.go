@@ -29,7 +29,7 @@ func TestPendingActionEnqueueIsIdempotentAndOwnerScoped(t *testing.T) {
 	input := EnqueueActionInput{
 		UserID: userID, AccountID: accountID, IdempotencyKey: "request-0000000001",
 		Kind: ActionMoveToTrash, TargetKind: ActionTargetThread,
-		TargetID: "0199ed3b-c950-7000-8000-000000000332", DesiredState: json.RawMessage(`{"trashed":true}`), MaxAttempts: 3,
+		TargetID: "0199ed3b-c950-7000-8000-000000000332", DesiredState: json.RawMessage(`{"trashed":true}`), AuthoritativeState: json.RawMessage(`{"trashed":false}`), MaxAttempts: 3,
 	}
 	action, created, err := repository.Enqueue(ctx, input, func(ctx context.Context, tx pgx.Tx) error {
 		_, applyErr := tx.Exec(ctx, "update optimistic_state set value = value + 1 where id = 1")
@@ -214,7 +214,7 @@ func enqueueAction(t *testing.T, repository *PendingActionRepository, userID, ac
 	action, created, err := repository.Enqueue(context.Background(), EnqueueActionInput{
 		UserID: userID, AccountID: accountID, IdempotencyKey: key,
 		Kind: ActionMarkRead, TargetKind: ActionTargetMessage,
-		TargetID: "0199ed3b-c950-7000-8000-000000000333", DesiredState: json.RawMessage(`{"read":true}`), MaxAttempts: maxAttempts,
+		TargetID: "0199ed3b-c950-7000-8000-000000000333", DesiredState: json.RawMessage(`{"read":true}`), AuthoritativeState: json.RawMessage(`{"read":false}`), MaxAttempts: maxAttempts,
 	}, func(context.Context, pgx.Tx) error { return nil })
 	if err != nil || !created {
 		t.Fatalf("enqueue fixture action = %+v, created=%v, error=%v", action, created, err)

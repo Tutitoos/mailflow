@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGoogleAuthorization,
+  createMailActions,
   disconnectAccount,
   loadConversationPage,
   loadGoogleAccounts,
@@ -136,5 +137,25 @@ describe("Mailflow API client", () => {
     expect(requestUrl.searchParams.get("accountId")).toBe("account-1");
     expect(requestUrl.searchParams.get("q")).toBe("from:sender@example.test quarterly");
     expect(requestUrl.searchParams.get("cursor")).toBe("opaque");
+  });
+
+  it("sends idempotent batch actions without provider data", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ items: [], partial: false }, 202));
+    vi.stubGlobal("fetch", fetch);
+
+    await createMailActions("account-1", "archive", ["thread-1"], "mailflow-action-key");
+
+    expect(fetch.mock.calls[1]?.[1]?.headers).toMatchObject({
+      authorization: "Bearer mail-jwt",
+      "Idempotency-Key": "mailflow-action-key",
+    });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+      accountId: "account-1",
+      kind: "archive",
+      targetIds: ["thread-1"],
+    });
   });
 });

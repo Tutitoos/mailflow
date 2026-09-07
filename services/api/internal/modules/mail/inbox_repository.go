@@ -74,6 +74,7 @@ WHERE threads.account_id = $1
   AND accounts.user_id = $2
   AND accounts.disabled_at IS NULL
   AND threads.deleted_at IS NULL
+  AND threads.archived_at IS NULL
   AND threads.category = $3`+cursorClause+`
 ORDER BY threads.last_message_at DESC, threads.id DESC
 LIMIT $4`, args...)

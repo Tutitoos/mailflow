@@ -155,30 +155,31 @@ func (q *Queries) ConflictPendingAction(ctx context.Context, arg ConflictPending
 const createPendingAction = `-- name: CreatePendingAction :one
 INSERT INTO pending_actions (
   id, account_id, idempotency_key, kind, target_kind, target_id,
-  desired_state, status, max_attempts
+  desired_state, authoritative_state, status, max_attempts
 )
 SELECT
   $1, accounts.id, $2, $3,
-  $4, $5, $6,
-  'pending', $7
+  $4, $5, $6, $7,
+  'pending', $8
 FROM accounts
-WHERE accounts.id = $8
-  AND accounts.user_id = $9
+WHERE accounts.id = $9
+  AND accounts.user_id = $10
   AND accounts.disabled_at IS NULL
 ON CONFLICT (account_id, idempotency_key) DO NOTHING
 RETURNING id, account_id, idempotency_key, kind, desired_state, status, attempts, available_at, last_error_code, created_at, target_kind, target_id, authoritative_state, max_attempts, claim_token, claimed_at, completed_at, failed_at, updated_at
 `
 
 type CreatePendingActionParams struct {
-	ID             pgtype.UUID `json:"id"`
-	IdempotencyKey string      `json:"idempotency_key"`
-	Kind           string      `json:"kind"`
-	TargetKind     string      `json:"target_kind"`
-	TargetID       pgtype.UUID `json:"target_id"`
-	DesiredState   []byte      `json:"desired_state"`
-	MaxAttempts    int32       `json:"max_attempts"`
-	AccountID      pgtype.UUID `json:"account_id"`
-	UserID         pgtype.UUID `json:"user_id"`
+	ID                 pgtype.UUID `json:"id"`
+	IdempotencyKey     string      `json:"idempotency_key"`
+	Kind               string      `json:"kind"`
+	TargetKind         string      `json:"target_kind"`
+	TargetID           pgtype.UUID `json:"target_id"`
+	DesiredState       []byte      `json:"desired_state"`
+	AuthoritativeState []byte      `json:"authoritative_state"`
+	MaxAttempts        int32       `json:"max_attempts"`
+	AccountID          pgtype.UUID `json:"account_id"`
+	UserID             pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) CreatePendingAction(ctx context.Context, arg CreatePendingActionParams) (PendingAction, error) {
@@ -189,6 +190,7 @@ func (q *Queries) CreatePendingAction(ctx context.Context, arg CreatePendingActi
 		arg.TargetKind,
 		arg.TargetID,
 		arg.DesiredState,
+		arg.AuthoritativeState,
 		arg.MaxAttempts,
 		arg.AccountID,
 		arg.UserID,

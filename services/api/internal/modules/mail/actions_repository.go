@@ -41,7 +41,7 @@ func (repository *PendingActionRepository) Enqueue(ctx context.Context, input En
 	row, err := queries.CreatePendingAction(ctx, dbgen.CreatePendingActionParams{
 		ID: actionID, IdempotencyKey: input.IdempotencyKey, Kind: string(input.Kind),
 		TargetKind: string(input.TargetKind), TargetID: targetID, DesiredState: input.DesiredState,
-		MaxAttempts: int32(input.MaxAttempts), AccountID: accountID, UserID: userID,
+		AuthoritativeState: input.AuthoritativeState, MaxAttempts: int32(input.MaxAttempts), AccountID: accountID, UserID: userID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		existing, getErr := queries.GetPendingActionByIdempotency(ctx, dbgen.GetPendingActionByIdempotencyParams{
@@ -170,7 +170,7 @@ func (repository *PendingActionRepository) finish(ctx context.Context, user stri
 }
 
 func validActionInput(input EnqueueActionInput) bool {
-	return validIdempotencyKey(input.IdempotencyKey) && validActionKind(input.Kind) &&
+	return validIdempotencyKey(input.IdempotencyKey) && validActionKind(input.Kind) && validActionState(input.AuthoritativeState) &&
 		(input.TargetKind == ActionTargetThread || input.TargetKind == ActionTargetMessage) && validDesiredActionState(input.Kind, input.DesiredState) &&
 		input.MaxAttempts >= 1 && input.MaxAttempts <= 20
 }
@@ -189,7 +189,7 @@ func validIdempotencyKey(key string) bool {
 
 func validActionKind(kind ActionKind) bool {
 	switch kind {
-	case ActionMarkRead, ActionMarkUnread, ActionStar, ActionUnstar, ActionMarkImportant, ActionMarkUnimportant, ActionMoveToTrash, ActionRestoreTrash:
+	case ActionMarkRead, ActionMarkUnread, ActionStar, ActionUnstar, ActionMarkImportant, ActionMarkUnimportant, ActionMoveToTrash, ActionRestoreTrash, ActionArchive, ActionAddLabel, ActionRemoveLabel:
 		return true
 	default:
 		return false
@@ -205,10 +205,15 @@ func validActionState(value json.RawMessage) bool {
 		return false
 	}
 	for key, value := range object {
-		if key != "read" && key != "starred" && key != "important" && key != "trashed" {
+		if key != "read" && key != "starred" && key != "important" && key != "trashed" && key != "archived" && key != "labelId" && key != "labelled" {
 			return false
 		}
-		if _, ok := value.(bool); !ok {
+		if key == "labelId" {
+			text, ok := value.(string)
+			if !ok || uuid.Validate(text) != nil {
+				return false
+			}
+		} else if _, ok := value.(bool); !ok {
 			return false
 		}
 	}
@@ -219,8 +224,8 @@ func validDesiredActionState(kind ActionKind, value json.RawMessage) bool {
 	if !validActionState(value) {
 		return false
 	}
-	var object map[string]bool
-	if json.Unmarshal(value, &object) != nil || len(object) != 1 {
+	var object map[string]any
+	if json.Unmarshal(value, &object) != nil {
 		return false
 	}
 	wantKey, wantValue := "", false
@@ -241,11 +246,17 @@ func validDesiredActionState(kind ActionKind, value json.RawMessage) bool {
 		wantKey, wantValue = "trashed", true
 	case ActionRestoreTrash:
 		wantKey = "trashed"
+	case ActionArchive:
+		wantKey, wantValue = "archived", true
+	case ActionAddLabel, ActionRemoveLabel:
+		labelID, labelOK := object["labelId"].(string)
+		labelled, stateOK := object["labelled"].(bool)
+		return len(object) == 2 && labelOK && uuid.Validate(labelID) == nil && stateOK && labelled == (kind == ActionAddLabel)
 	default:
 		return false
 	}
 	actual, ok := object[wantKey]
-	return ok && actual == wantValue
+	return len(object) == 1 && ok && actual == wantValue
 }
 
 func validActionErrorCode(code string) bool {
@@ -312,5 +323,6 @@ func mapPendingAction(row dbgen.PendingAction) PendingAction {
 		Status: ActionStatus(row.Status), Attempts: int(row.Attempts), MaxAttempts: int(row.MaxAttempts),
 		AvailableAt: row.AvailableAt.Time.UTC(), LastErrorCode: textPointer(row.LastErrorCode),
 		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+		IdempotencyKey: row.IdempotencyKey,
 	}
 }

@@ -127,6 +127,24 @@ export type SearchResult = {
     rank: number;
 };
 
+export type CreateMailActions = {
+    accountId: string;
+    kind: 'mark_read' | 'mark_unread' | 'star' | 'unstar' | 'mark_important' | 'mark_unimportant' | 'move_to_trash' | 'restore_from_trash' | 'archive' | 'add_label' | 'remove_label';
+    targetIds: Array<string>;
+    labelId?: string;
+};
+
+export type MailActionBatch = {
+    partial: boolean;
+    items: Array<{
+        targetId: string;
+        actionId?: string;
+        status?: 'pending' | 'processing' | 'retry_wait' | 'completed' | 'conflict';
+        created?: boolean;
+        error?: string;
+    }>;
+};
+
 export type MessageAttachment = {
     id: string;
     position: number;
@@ -597,7 +615,7 @@ export type SearchMailResponses = {
 export type SearchMailResponse = SearchMailResponses[keyof SearchMailResponses];
 
 export type CreateMailActionData = {
-    body?: never;
+    body: CreateMailActions;
     headers: {
         'Idempotency-Key': string;
     };
@@ -617,10 +635,12 @@ export type CreateMailActionError = CreateMailActionErrors[keyof CreateMailActio
 
 export type CreateMailActionResponses = {
     /**
-     * Action accepted
+     * Actions accepted, including any per-target partial failures
      */
-    202: unknown;
+    202: MailActionBatch;
 };
+
+export type CreateMailActionResponse = CreateMailActionResponses[keyof CreateMailActionResponses];
 
 export type SaveDraftData = {
     body?: never;

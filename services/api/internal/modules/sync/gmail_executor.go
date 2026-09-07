@@ -18,6 +18,7 @@ type GmailProvider interface {
 	Catalog(context.Context, mail.SyncCursor) (mail.CatalogPage, error)
 	Changes(context.Context, mail.SyncCursor) (mail.ChangePage, error)
 	Backfill(context.Context, mail.SyncCursor, *time.Time, *time.Time, int) (mail.ChangePage, error)
+	Apply(context.Context, mail.RemoteAction) error
 }
 
 type GmailProviderResolver interface {

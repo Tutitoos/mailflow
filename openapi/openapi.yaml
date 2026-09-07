@@ -246,8 +246,17 @@ paths:
       operationId: createMailAction
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMailActions" }
       responses:
-        "202": { description: Action accepted }
+        "202":
+          description: Actions accepted, including any per-target partial failures
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailActionBatch" }
         default: { $ref: "#/components/responses/Problem" }
   /drafts:
     post:
@@ -506,6 +515,37 @@ components:
         hasAttachment: { type: boolean }
         attachmentCount: { type: integer, minimum: 0 }
         rank: { type: number, format: float, minimum: 0 }
+    CreateMailActions:
+      type: object
+      required: [accountId, kind, targetIds]
+      properties:
+        accountId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [mark_read, mark_unread, star, unstar, mark_important, mark_unimportant, move_to_trash, restore_from_trash, archive, add_label, remove_label]
+        targetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        labelId: { type: string, format: uuid }
+    MailActionBatch:
+      type: object
+      required: [items, partial]
+      properties:
+        partial: { type: boolean }
+        items:
+          type: array
+          items:
+            type: object
+            required: [targetId]
+            properties:
+              targetId: { type: string, format: uuid }
+              actionId: { type: string, format: uuid }
+              status: { type: string, enum: [pending, processing, retry_wait, completed, conflict] }
+              created: { type: boolean }
+              error: { type: string }
     MessageAttachment:
       type: object
       required: [id, position, filename, mediaType, disposition, sizeBytes]

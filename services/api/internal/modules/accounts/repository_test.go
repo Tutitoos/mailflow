@@ -5,49 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"strings"
 	"testing"
 
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
+	"github.com/Tutitoos/mailflow/services/api/internal/testkit"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRepositoryEncryptsAndScopesAccounts(t *testing.T) {
-	databaseURL := os.Getenv("MAILFLOW_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("MAILFLOW_TEST_DATABASE_URL is not set")
-	}
+	databaseURL := testkit.PostgresDatabase(t)
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
 	defer pool.Close()
-	lockConnection, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatalf("open account test lock connection: %v", err)
-	}
-	defer lockConnection.Release()
-	if _, err := lockConnection.Exec(ctx, "select pg_advisory_lock(73412916)"); err != nil {
-		t.Fatalf("acquire account test lock: %v", err)
-	}
-	defer func() {
-		_, _ = lockConnection.Exec(context.Background(), "select pg_advisory_unlock(73412916)")
-	}()
-
-	var databaseName string
-	if err := pool.QueryRow(ctx, "select current_database()").Scan(&databaseName); err != nil {
-		t.Fatalf("read test database name: %v", err)
-	}
-	if !strings.HasSuffix(databaseName, "_test") {
-		t.Fatalf("refusing to reset database %q: test database name must end in _test", databaseName)
-	}
-	resetAccountsSchema(t, ctx, pool)
-	defer resetAccountsSchema(t, ctx, pool)
 	if err := database.Migrate(ctx, databaseURL); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
@@ -137,12 +112,5 @@ func TestRepositoryEncryptsAndScopesAccounts(t *testing.T) {
 	}
 	if _, err := repository.UpdateCapabilities(ctx, userID.String(), first.ID, map[string]bool{"send": true}); !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("disabled account update error = %v", err)
-	}
-}
-
-func resetAccountsSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
-	t.Helper()
-	if _, err := pool.Exec(ctx, "drop schema if exists public cascade; create schema public"); err != nil {
-		t.Fatalf("reset test schema: %v", err)
 	}
 }

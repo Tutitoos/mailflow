@@ -83,6 +83,23 @@ type AuthVerification struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CdnObject struct {
+	ObjectID          string             `json:"object_id"`
+	Namespace         string             `json:"namespace"`
+	AccountID         pgtype.UUID        `json:"account_id"`
+	RecoveryReference pgtype.Text        `json:"recovery_reference"`
+	Filename          pgtype.Text        `json:"filename"`
+	MediaType         string             `json:"media_type"`
+	SizeBytes         int64              `json:"size_bytes"`
+	Etag              string             `json:"etag"`
+	StorageStatus     string             `json:"storage_status"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	StoredAt          pgtype.Timestamptz `json:"stored_at"`
+	LastAccessedAt    pgtype.Timestamptz `json:"last_accessed_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Draft struct {
 	ID                 pgtype.UUID        `json:"id"`
 	AccountID          pgtype.UUID        `json:"account_id"`
@@ -199,18 +216,20 @@ type MessageAddress struct {
 }
 
 type MessageAttachment struct {
-	ID          pgtype.UUID        `json:"id"`
-	MessageID   pgtype.UUID        `json:"message_id"`
-	AccountID   pgtype.UUID        `json:"account_id"`
-	Position    int32              `json:"position"`
-	RemoteID    pgtype.Text        `json:"remote_id"`
-	Filename    pgtype.Text        `json:"filename"`
-	MediaType   string             `json:"media_type"`
-	Disposition string             `json:"disposition"`
-	ContentID   pgtype.Text        `json:"content_id"`
-	SizeBytes   int64              `json:"size_bytes"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	MessageID             pgtype.UUID        `json:"message_id"`
+	AccountID             pgtype.UUID        `json:"account_id"`
+	Position              int32              `json:"position"`
+	RemoteID              pgtype.Text        `json:"remote_id"`
+	Filename              pgtype.Text        `json:"filename"`
+	MediaType             string             `json:"media_type"`
+	Disposition           string             `json:"disposition"`
+	ContentID             pgtype.Text        `json:"content_id"`
+	SizeBytes             int64              `json:"size_bytes"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	CachedObjectID        pgtype.Text        `json:"cached_object_id"`
+	CachedObjectNamespace pgtype.Text        `json:"cached_object_namespace"`
 }
 
 type MessageLabel struct {

@@ -120,13 +120,39 @@ paths:
   /attachments/{attachmentId}:
     get:
       operationId: downloadAttachment
+      description: Streams an authenticated cached attachment. Expired entries return a recovery-required problem so the provider can be queried again.
       parameters:
         - name: attachmentId
           in: path
           required: true
           schema: { type: string, format: uuid }
+        - name: Range
+          in: header
+          schema: { type: string, example: bytes=0-1023 }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
       responses:
-        "200": { description: Attachment stream }
+        "200":
+          description: Complete attachment stream
+          headers:
+            Accept-Ranges: { schema: { type: string, const: bytes } }
+            ETag: { schema: { type: string } }
+            Content-Disposition: { schema: { type: string } }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "206":
+          description: Requested single byte range
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "304": { description: Cached representation is unchanged }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "416": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
         default: { $ref: "#/components/responses/Problem" }
   /translations/{locale}:
     get:

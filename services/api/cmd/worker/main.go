@@ -10,7 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/queue"
 	redis "github.com/redis/go-redis/v9"
@@ -18,6 +22,11 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	runtimeConfig, err := config.Load()
+	if err != nil {
+		logger.Error("worker configuration failed", "event", "worker.config_invalid", "error", err)
+		os.Exit(1)
+	}
 	if err := privileges.Drop(); err != nil {
 		logger.Error("privilege drop failed", "event", "security.privilege_drop_failed", "error", err)
 		os.Exit(1)
@@ -62,6 +71,44 @@ func main() {
 		os.Exit(1)
 	}
 	registry := metrics.NewRegistry()
+	var cleanupDone chan struct{}
+	if runtimeConfig.DatabaseURL != "" {
+		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
+		if err != nil {
+			logger.Error("CDN cleanup database unavailable", "event", "cdn.cleanup_unavailable", "error", err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+		cdnStore, err := cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
+		if err != nil {
+			logger.Error("CDN cleanup storage unavailable", "event", "cdn.cleanup_unavailable", "error", err)
+			os.Exit(1)
+		}
+		cdnService, err := cdn.NewService(cdnStore, dbgen.New(pool), cdn.DefaultRetention)
+		if err != nil {
+			logger.Error("CDN cleanup service unavailable", "event", "cdn.cleanup_unavailable", "error", err)
+			os.Exit(1)
+		}
+		cleanupInterval, err := durationFromEnv("MAILFLOW_CDN_CLEANUP_INTERVAL", 24*time.Hour)
+		if err != nil {
+			logger.Error("worker configuration failed", "event", "worker.config_invalid", "error", err)
+			os.Exit(1)
+		}
+		cleanupDone = make(chan struct{})
+		go func() {
+			defer close(cleanupDone)
+			_ = cdnService.RunCleanupLoop(ctx, cleanupInterval, func(result cdn.CleanupResult, cleanupErr error) {
+				if errors.Is(cleanupErr, context.Canceled) {
+					return
+				}
+				if cleanupErr != nil {
+					logger.Error("CDN cleanup failed", "event", "cdn.cleanup_failed", "error", cleanupErr)
+					return
+				}
+				logger.Info("CDN cleanup completed", "event", "cdn.cleanup_completed", "expired", result.Expired, "orphans", result.Orphans)
+			})
+		}()
+	}
 	observer := queue.ObserverFunc(func(event queue.Event) {
 		if err := registry.Add("mailflow_queue_jobs_total", 1, map[string]string{"operation": event.Operation, "result": event.Result, "service": "worker"}); err != nil {
 			logger.Error("queue metric rejected", "event", "metrics.rejected", "error", err)
@@ -69,8 +116,13 @@ func main() {
 	})
 	runner := queue.NewRunner(store, map[string]queue.Handler{}, observer, queue.RunnerConfig{HandleTimeout: handleTimeout, ShutdownGrace: shutdownGrace})
 	logger.Info("worker ready", "event", "worker.ready", "consumer", consumer)
-	if err := runner.Run(ctx); err != nil {
-		logger.Error("worker failed", "event", "worker.failed", "error", err)
+	runErr := runner.Run(ctx)
+	stop()
+	if cleanupDone != nil {
+		<-cleanupDone
+	}
+	if runErr != nil {
+		logger.Error("worker failed", "event", "worker.failed", "error", runErr)
 		os.Exit(1)
 	}
 	logger.Info("worker stopped", "event", "worker.stopped")

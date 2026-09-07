@@ -306,6 +306,10 @@ export type SendMessageResponses = {
 
 export type DownloadAttachmentData = {
     body?: never;
+    headers?: {
+        Range?: string;
+        'If-None-Match'?: string;
+    };
     path: {
         attachmentId: string;
     };
@@ -317,6 +321,26 @@ export type DownloadAttachmentErrors = {
     /**
      * RFC 9457 problem details
      */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    404: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    409: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    416: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+    /**
+     * RFC 9457 problem details
+     */
     default: Problem;
 };
 
@@ -324,10 +348,16 @@ export type DownloadAttachmentError = DownloadAttachmentErrors[keyof DownloadAtt
 
 export type DownloadAttachmentResponses = {
     /**
-     * Attachment stream
+     * Complete attachment stream
      */
-    200: unknown;
+    200: Blob | File;
+    /**
+     * Requested single byte range
+     */
+    206: Blob | File;
 };
+
+export type DownloadAttachmentResponse = DownloadAttachmentResponses[keyof DownloadAttachmentResponses];
 
 export type GetTranslationsData = {
     body?: never;

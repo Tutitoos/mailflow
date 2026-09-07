@@ -420,3 +420,33 @@ func TestDraftMigrationCreatesRelationsAndRollsBackCleanly(t *testing.T) {
 		}
 	}
 }
+
+func TestCDNMigrationCreatesMetadataAndRollsBackCleanly(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply CDN migration: %v", err)
+	}
+	var tableExists, columnExists bool
+	if err := database.QueryRowContext(ctx, `select to_regclass('cdn_objects') is not null`).Scan(&tableExists); err != nil || !tableExists {
+		t.Fatalf("CDN metadata table exists = %v, error = %v", tableExists, err)
+	}
+	if err := database.QueryRowContext(ctx, `select exists(select 1 from information_schema.columns where table_name='message_attachments' and column_name='cached_object_id')`).Scan(&columnExists); err != nil || !columnExists {
+		t.Fatalf("attachment cache column exists = %v, error = %v", columnExists, err)
+	}
+	if err := goose.DownToContext(ctx, database, ".", 11); err != nil {
+		t.Fatalf("roll back CDN migration: %v", err)
+	}
+	if err := database.QueryRowContext(ctx, `select to_regclass('cdn_objects') is not null`).Scan(&tableExists); err != nil || tableExists {
+		t.Fatalf("rolled-back CDN table exists = %v, error = %v", tableExists, err)
+	}
+}

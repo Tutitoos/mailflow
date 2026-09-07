@@ -193,15 +193,17 @@ El worker consume una cola Redis Streams versionada con entrega **at least once*
 
 ## CDN local
 
-El módulo `cdn` servirá los archivos desde un volumen persistente local.
+El módulo `cdn` sirve los archivos desde el volumen persistente local `/data/cdn`. PostgreSQL conserva metadatos owner-scoped, el hash ETag, la caducidad y la referencia opaca necesaria para volver a descargar el adjunto desde su proveedor.
 
 - Rutas internas no derivadas de nombres aportados por usuarios.
 - Escrituras atómicas.
 - Validación de MIME y tamaño.
 - Protección contra path traversal.
 - Entrega autenticada por defecto.
-- Firmas temporales para descargas puntuales.
 - Soporte de `Range`, `ETag` y `Content-Disposition`.
+- Retención renovable de 30 días; el worker marca el blob como ausente y borra el archivo caducado, pero conserva su referencia de recuperación.
+- Limpieza diaria de metadatos huérfanos con un periodo de gracia. Las consultas de limpieza quedan limitadas al namespace `attachments` y nunca alcanzan objetos Sentry.
+- `MAILFLOW_CDN_ROOT` y `MAILFLOW_CDN_MAX_BYTES` fijan la raíz absoluta y el límite por archivo.
 - Sin R2, S3, MinIO ni almacenamiento distribuido.
 
 ## Métricas, logs y Sentry

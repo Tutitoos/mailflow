@@ -170,7 +170,7 @@ func (q *Queries) ListAddressesForMessages(ctx context.Context, arg ListAddresse
 }
 
 const listAttachmentsForMessages = `-- name: ListAttachmentsForMessages :many
-SELECT message_attachments.id, message_attachments.message_id, message_attachments.account_id, message_attachments.position, message_attachments.remote_id, message_attachments.filename, message_attachments.media_type, message_attachments.disposition, message_attachments.content_id, message_attachments.size_bytes, message_attachments.created_at, message_attachments.updated_at
+SELECT message_attachments.id, message_attachments.message_id, message_attachments.account_id, message_attachments.position, message_attachments.remote_id, message_attachments.filename, message_attachments.media_type, message_attachments.disposition, message_attachments.content_id, message_attachments.size_bytes, message_attachments.created_at, message_attachments.updated_at, message_attachments.cached_object_id, message_attachments.cached_object_namespace
 FROM message_attachments
 JOIN accounts ON accounts.id = message_attachments.account_id
 WHERE message_attachments.message_id = ANY($1::uuid[])
@@ -207,6 +207,8 @@ func (q *Queries) ListAttachmentsForMessages(ctx context.Context, arg ListAttach
 			&i.SizeBytes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CachedObjectID,
+			&i.CachedObjectNamespace,
 		); err != nil {
 			return nil, err
 		}
@@ -820,7 +822,7 @@ ON CONFLICT (message_id, position) DO UPDATE SET
   content_id = EXCLUDED.content_id,
   size_bytes = EXCLUDED.size_bytes,
   updated_at = now()
-RETURNING id, message_id, account_id, position, remote_id, filename, media_type, disposition, content_id, size_bytes, created_at, updated_at
+RETURNING id, message_id, account_id, position, remote_id, filename, media_type, disposition, content_id, size_bytes, created_at, updated_at, cached_object_id, cached_object_namespace
 `
 
 type UpsertMessageAttachmentParams struct {
@@ -863,6 +865,8 @@ func (q *Queries) UpsertMessageAttachment(ctx context.Context, arg UpsertMessage
 		&i.SizeBytes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CachedObjectID,
+		&i.CachedObjectNamespace,
 	)
 	return i, err
 }

@@ -22,6 +22,7 @@ import (
 type Dependencies struct {
 	Accounts      AccountLister
 	Admin         *admin.Service
+	Attachments   AttachmentReader
 	AuthAudience  string
 	AuthIssuer    string
 	AuthJWKSURL   string
@@ -113,6 +114,7 @@ func New(deps Dependencies) *fiber.App {
 		}
 		return c.JSON(fiber.Map{"items": items})
 	})
+	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })
 	adminRoutes.Get("/metrics", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"items": deps.Admin.Metrics()}) })

@@ -6,6 +6,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
@@ -16,6 +17,7 @@ import (
 
 type Options struct {
 	Accounts      *accounts.Service
+	Attachments   *cdn.Service
 	AuthAudience  string
 	AuthIssuer    string
 	AuthJWKSURL   string
@@ -35,6 +37,7 @@ func Build(version string, options ...Options) *fiber.App {
 	}
 	return httpapi.New(httpapi.Dependencies{
 		Accounts:      runtimeOptions.Accounts,
+		Attachments:   runtimeOptions.Attachments,
 		Admin:         admin.NewService(version, registry),
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,

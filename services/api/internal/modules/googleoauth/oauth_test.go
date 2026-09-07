@@ -96,8 +96,8 @@ func TestOAuthRequiresPKCEAndSingleUseState(t *testing.T) {
 	}
 	parsed, _ := url.Parse(started.AuthorizationURL)
 	state := parsed.Query().Get("state")
-	account, err := service.Callback(context.Background(), state, "code")
-	if err != nil || account.RemoteID != "google-subject" || accountStore.connected.Provider != accounts.ProviderGoogle {
+	account, ownerID, err := service.CallbackWithOwner(context.Background(), state, "code")
+	if err != nil || ownerID != "0199ed3b-c950-7000-8000-000000000001" || account.RemoteID != "google-subject" || accountStore.connected.Provider != accounts.ProviderGoogle {
 		t.Fatalf("callback = %+v, %v", account, err)
 	}
 	if _, err := service.Callback(context.Background(), state, "code"); !errors.Is(err, ErrInvalidState) {

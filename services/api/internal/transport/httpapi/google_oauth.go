@@ -6,17 +6,24 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/gofiber/fiber/v3"
 )
 
-func googleOAuthCallback(service *googleoauth.Service) fiber.Handler {
+func googleOAuthCallback(service *googleoauth.Service, syncer SyncRequester) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil || !service.Configured() {
 			return oauthProblem(googleoauth.ErrNotConfigured)
 		}
-		_, err := service.Callback(c.Context(), c.Query("state"), c.Query("code"))
+		account, userID, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"))
 		if err != nil {
 			return oauthProblem(err)
+		}
+		if syncer == nil {
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected&sync=pending")
+		}
+		if _, err := syncer.StartInitial(c.Context(), userID, account.ID); err != nil && !errors.Is(err, mailflowsync.ErrRunExists) {
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected&sync=pending")
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected")
 	}

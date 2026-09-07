@@ -21,7 +21,11 @@ type SyncPage struct {
 }
 
 type PageExecutor interface {
-	FetchPage(context.Context, Run) (SyncPage, error)
+	FetchPage(context.Context, string, Run) (SyncPage, error)
+}
+
+type ActivityTracker interface {
+	Active(context.Context, string, string) bool
 }
 
 type JobEnqueuer interface {
@@ -48,7 +52,12 @@ type Orchestrator struct {
 	executor PageExecutor
 	events   EventPublisher
 	metrics  MetricSink
+	activity ActivityTracker
 	now      func() time.Time
+}
+
+func (orchestrator *Orchestrator) SetActivityTracker(activity ActivityTracker) {
+	orchestrator.activity = activity
 }
 
 type runJobPayload struct {
@@ -144,8 +153,18 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 	if err != nil {
 		return syncJobError{code: "sync_start_failed"}
 	}
-	page, err := orchestrator.executor.FetchPage(ctx, run)
+	page, err := orchestrator.executor.FetchPage(ctx, payload.UserID, run)
 	if err != nil {
+		if errors.Is(err, ErrRemoteCursorInvalid) {
+			_, _ = orchestrator.runs.CancelRun(ctx, payload.UserID, payload.AccountID, payload.RunID, orchestrator.now())
+			_, startErr := orchestrator.StartInitial(ctx, payload.UserID, payload.AccountID)
+			orchestrator.observe(run.Phase, "resync")
+			orchestrator.publish(payload.UserID, run, "resync_required")
+			if startErr != nil && !errors.Is(startErr, ErrRunExists) {
+				return syncJobError{code: "sync_recovery_failed"}
+			}
+			return nil
+		}
 		orchestrator.requeue(payload)
 		orchestrator.observe(run.Phase, "retry")
 		orchestrator.publish(payload.UserID, run, "queued")
@@ -177,19 +196,20 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 func (orchestrator *Orchestrator) scheduleSuccessor(ctx context.Context, user string, completed Run) error {
 	phase := RunPhase("")
 	scheduled := orchestrator.now()
-	checkpoint := json.RawMessage(`{}`)
+	checkpoint := append(json.RawMessage(nil), completed.Checkpoint...)
 	switch completed.Phase {
 	case PhaseRecent:
 		phase = PhaseHistorical
-		if completed.WindowStart != nil {
-			checkpoint, _ = json.Marshal(map[string]string{"before": completed.WindowStart.UTC().Format(time.RFC3339Nano)})
-		}
 	case PhaseHistorical:
 		phase = PhaseIncremental
 	case PhaseIncremental:
-		phase, scheduled = PhaseIncremental, scheduled.Add(2*time.Minute)
+		interval := ActivePollInterval
+		if orchestrator.activity != nil && !orchestrator.activity.Active(ctx, user, completed.AccountID) {
+			interval = IdlePollInterval
+		}
+		phase, scheduled = PhaseIncremental, scheduled.Add(interval)
 	case PhaseReconcile:
-		phase, scheduled = PhaseReconcile, scheduled.Add(ReconciliationPeriod)
+		phase, scheduled, checkpoint = PhaseReconcile, scheduled.Add(ReconciliationPeriod), json.RawMessage(`{}`)
 	}
 	if phase == "" {
 		return nil
@@ -200,6 +220,15 @@ func (orchestrator *Orchestrator) scheduleSuccessor(ctx context.Context, user st
 	}
 	if err != nil {
 		return syncJobError{code: "sync_schedule_failed"}
+	}
+	if completed.Phase == PhaseHistorical {
+		_, reconcileErr := orchestrator.runs.CreateRun(ctx, CreateRunInput{
+			UserID: user, AccountID: completed.AccountID, Phase: PhaseReconcile,
+			Checkpoint: json.RawMessage(`{}`), ScheduledFor: orchestrator.now().Add(ReconciliationPeriod),
+		})
+		if reconcileErr != nil && !errors.Is(reconcileErr, ErrRunExists) {
+			return syncJobError{code: "sync_schedule_failed"}
+		}
 	}
 	if !scheduled.After(orchestrator.now()) {
 		return orchestrator.enqueue(ctx, user, next)

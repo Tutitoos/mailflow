@@ -65,7 +65,7 @@ type recordingExecutor struct {
 	pageCalls map[RunPhase]int
 }
 
-func (executor *recordingExecutor) FetchPage(_ context.Context, run Run) (SyncPage, error) {
+func (executor *recordingExecutor) FetchPage(_ context.Context, _ string, run Run) (SyncPage, error) {
 	if executor.failOnce {
 		executor.failOnce = false
 		return SyncPage{}, errors.New("synthetic provider failure")
@@ -84,6 +84,10 @@ func (executor *recordingExecutor) FetchPage(_ context.Context, run Run) (SyncPa
 }
 
 type recordingEvents struct{ payloads []json.RawMessage }
+
+type staticActivity bool
+
+func (activity staticActivity) Active(context.Context, string, string) bool { return bool(activity) }
 
 func (publisher *recordingEvents) Publish(_ context.Context, _ string, eventType string, payload json.RawMessage) (events.Envelope, error) {
 	if eventType != "sync.progress" {
@@ -141,12 +145,67 @@ func TestOrchestratorPrioritizesRecentMailAndIgnoresDuplicateDelivery(t *testing
 	if err != nil || incremental.Phase != PhaseIncremental {
 		t.Fatalf("incremental run = %+v, %v", incremental, err)
 	}
+	orchestrator.SetActivityTracker(staticActivity(false))
+	if err := orchestrator.Handle(context.Background(), incrementalJob); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := repository.DueRuns(context.Background(), now.Add(ActivePollInterval), 10); err != nil || len(due) != 0 {
+		t.Fatalf("idle poll ran too early: due=%d error=%v", len(due), err)
+	}
+	if due, err := repository.DueRuns(context.Background(), now.Add(IdlePollInterval), 10); err != nil || len(due) != 1 || due[0].Run.Phase != PhaseIncremental {
+		t.Fatalf("idle poll schedule: due=%+v error=%v", due, err)
+	}
+	daily, err := repository.DueRuns(context.Background(), now.Add(ReconciliationPeriod), 10)
+	if err != nil || len(daily) != 2 || (daily[0].Run.Phase != PhaseReconcile && daily[1].Run.Phase != PhaseReconcile) {
+		t.Fatalf("daily reconciliation schedule: due=%+v error=%v", daily, err)
+	}
 	var effects int
-	if err := pool.QueryRow(context.Background(), `select count(*) from sync_run_effects`).Scan(&effects); err != nil || effects != 3 {
+	if err := pool.QueryRow(context.Background(), `select count(*) from sync_run_effects`).Scan(&effects); err != nil || effects != 4 {
 		t.Fatalf("committed effects = %d, %v", effects, err)
 	}
-	if len(publisher.payloads) != 3 || len(registry.Snapshot()) == 0 {
+	if len(publisher.payloads) != 4 || len(registry.Snapshot()) == 0 {
 		t.Fatalf("observability events=%d metrics=%d", len(publisher.payloads), len(registry.Snapshot()))
+	}
+}
+
+type expiredHistoryExecutor struct{}
+
+func (expiredHistoryExecutor) FetchPage(context.Context, string, Run) (SyncPage, error) {
+	return SyncPage{}, ErrRemoteCursorInvalid
+}
+
+func TestOrchestratorReplacesExpiredIncrementalHistoryWithBoundedRecentRecovery(t *testing.T) {
+	_, pool, userID, accountID := cursorFixture(t)
+	repository := NewRunRepository(pool)
+	jobs, leases := &fakeSyncQueue{}, &fakeLeases{}
+	orchestrator, err := NewOrchestrator(repository, jobs, leases, expiredHistoryExecutor{}, nil, metrics.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 7, 17, 0, 0, 0, time.UTC)
+	orchestrator.now = func() time.Time { return now }
+	run, err := repository.CreateRun(context.Background(), CreateRunInput{UserID: userID, AccountID: accountID, Phase: PhaseIncremental, Checkpoint: json.RawMessage(`{"history":{"kind":"google_history","value":"e30="}}`), ScheduledFor: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := orchestrator.enqueue(context.Background(), userID, run); err != nil {
+		t.Fatal(err)
+	}
+	if err := orchestrator.Handle(context.Background(), jobs.pop(t)); err != nil {
+		t.Fatalf("expired history recovery = %v", err)
+	}
+	cancelled, err := repository.GetRun(context.Background(), userID, accountID, run.ID)
+	if err != nil || cancelled.State != RunCancelled {
+		t.Fatalf("expired run = %+v, %v", cancelled, err)
+	}
+	recoveryJob := jobs.pop(t)
+	var payload runJobPayload
+	if json.Unmarshal(recoveryJob.Payload, &payload) != nil {
+		t.Fatal("recovery job payload is invalid")
+	}
+	recovery, err := repository.GetRun(context.Background(), userID, accountID, payload.RunID)
+	if err != nil || recovery.Phase != PhaseRecent || recovery.WindowStart == nil {
+		t.Fatalf("recovery run = %+v, %v", recovery, err)
 	}
 }
 

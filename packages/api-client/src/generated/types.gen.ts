@@ -24,6 +24,11 @@ export type Account = {
     updatedAt: string;
 };
 
+export type SyncRunAccepted = {
+    status: 'queued' | 'already_queued';
+    runId?: string;
+};
+
 export type EventEnvelope = {
     version: 1;
     cursor: string;
@@ -147,10 +152,12 @@ export type SynchronizeAccountError = SynchronizeAccountErrors[keyof Synchronize
 
 export type SynchronizeAccountResponses = {
     /**
-     * Synchronization queued
+     * Synchronization queued or already pending
      */
-    202: unknown;
+    202: SyncRunAccepted;
 };
+
+export type SynchronizeAccountResponse = SynchronizeAccountResponses[keyof SynchronizeAccountResponses];
 
 export type RefreshGoogleAccountData = {
     body?: never;

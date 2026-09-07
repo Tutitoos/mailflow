@@ -25,15 +25,18 @@ const (
 
 	RecentWindow         = 90 * 24 * time.Hour
 	ReconciliationPeriod = 24 * time.Hour
+	ActivePollInterval   = 2 * time.Minute
+	IdlePollInterval     = 10 * time.Minute
 	SyncExecuteJobKind   = "sync.execute"
 	DefaultSyncRunBatch  = 100
 )
 
 var (
-	ErrInvalidRun  = errors.New("invalid sync run")
-	ErrRunNotFound = errors.New("sync run not found")
-	ErrRunExists   = errors.New("active sync run already exists")
-	ErrRunStale    = errors.New("sync run delivery is stale")
+	ErrInvalidRun          = errors.New("invalid sync run")
+	ErrRunNotFound         = errors.New("sync run not found")
+	ErrRunExists           = errors.New("active sync run already exists")
+	ErrRunStale            = errors.New("sync run delivery is stale")
+	ErrRemoteCursorInvalid = errors.New("remote sync cursor is invalid")
 )
 
 type Run struct {
@@ -88,4 +91,5 @@ type RunStore interface {
 	RequeueRun(context.Context, string, string, string, int64, time.Time) error
 	CancelRun(context.Context, string, string, string, time.Time) (Run, error)
 	DueRuns(context.Context, time.Time, int) ([]DueRun, error)
+	ExpediteReconciliation(context.Context, string, string, time.Time) (Run, error)
 }

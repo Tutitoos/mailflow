@@ -11,6 +11,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
 	"github.com/Tutitoos/mailflow/services/api/internal/transport/httpapi"
 	"github.com/gofiber/fiber/v3"
@@ -28,6 +29,7 @@ type Options struct {
 	Readiness     func(context.Context) error
 	SentryEnabled bool
 	Shutdown      context.Context
+	Sync          *mailflowsync.Scheduler
 }
 
 func Build(version string, options ...Options) *fiber.App {
@@ -52,5 +54,6 @@ func Build(version string, options ...Options) *fiber.App {
 		Translations:  translations.NewCatalog(),
 		CaptureSentry: runtimeOptions.SentryEnabled,
 		Shutdown:      runtimeOptions.Shutdown,
+		Sync:          runtimeOptions.Sync,
 	})
 }

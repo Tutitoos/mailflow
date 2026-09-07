@@ -117,36 +117,42 @@ func (service *Service) Start(ctx context.Context, userID string, reconsent bool
 }
 
 func (service *Service) Callback(ctx context.Context, state, code string) (accounts.Account, error) {
+	account, _, err := service.CallbackWithOwner(ctx, state, code)
+	return account, err
+}
+
+func (service *Service) CallbackWithOwner(ctx context.Context, state, code string) (accounts.Account, string, error) {
 	if !service.Configured() {
-		return accounts.Account{}, ErrNotConfigured
+		return accounts.Account{}, "", ErrNotConfigured
 	}
 	if state == "" || len(state) > 256 || code == "" || len(code) > 4096 {
-		return accounts.Account{}, ErrInvalidState
+		return accounts.Account{}, "", ErrInvalidState
 	}
 	transaction, err := service.states.Consume(ctx, state)
 	if err != nil {
-		return accounts.Account{}, ErrInvalidState
+		return accounts.Account{}, "", ErrInvalidState
 	}
 	token, err := service.provider.Exchange(ctx, code, transaction.CodeVerifier)
 	if err != nil {
-		return accounts.Account{}, ErrProvider
+		return accounts.Account{}, "", ErrProvider
 	}
 	if token.AccessToken == "" || token.RefreshToken == "" {
-		return accounts.Account{}, ErrInvalidToken
+		return accounts.Account{}, "", ErrInvalidToken
 	}
 	identity, err := service.provider.Identity(ctx, token.AccessToken)
 	if err != nil || identity.Subject == "" || identity.Email == "" {
-		return accounts.Account{}, ErrProvider
+		return accounts.Account{}, "", ErrProvider
 	}
 	encoded, err := json.Marshal(token)
 	if err != nil {
-		return accounts.Account{}, ErrInvalidToken
+		return accounts.Account{}, "", ErrInvalidToken
 	}
-	return service.accounts.Connect(ctx, accounts.CreateInput{
+	account, err := service.accounts.Connect(ctx, accounts.CreateInput{
 		UserID: transaction.UserID, Provider: accounts.ProviderGoogle, RemoteID: identity.Subject,
 		DisplayName: identity.Email, Credentials: encoded,
 		Capabilities: map[string]bool{"drafts": true, "labels": true, "search": true, "send": true},
 	})
+	return account, transaction.UserID, err
 }
 
 func (service *Service) Refresh(ctx context.Context, userID, accountID string) (accounts.Account, error) {

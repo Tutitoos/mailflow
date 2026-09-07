@@ -121,6 +121,48 @@ func (q *Queries) CreateSyncRun(ctx context.Context, arg CreateSyncRunParams) (S
 	return i, err
 }
 
+const expediteSyncReconciliation = `-- name: ExpediteSyncReconciliation :one
+UPDATE sync_runs
+SET scheduled_for = CASE WHEN state = 'queued' THEN $1 ELSE scheduled_for END,
+    updated_at = $1
+FROM accounts
+WHERE sync_runs.account_id = $2
+  AND sync_runs.phase = 'reconcile'
+  AND sync_runs.state IN ('queued', 'running')
+  AND accounts.id = sync_runs.account_id
+  AND accounts.user_id = $3
+RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at
+`
+
+type ExpediteSyncReconciliationParams struct {
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+}
+
+func (q *Queries) ExpediteSyncReconciliation(ctx context.Context, arg ExpediteSyncReconciliationParams) (SyncRun, error) {
+	row := q.db.QueryRow(ctx, expediteSyncReconciliation, arg.RequestedAt, arg.AccountID, arg.UserID)
+	var i SyncRun
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Phase,
+		&i.State,
+		&i.Checkpoint,
+		&i.Version,
+		&i.WindowStart,
+		&i.AppliedCount,
+		&i.CancelRequested,
+		&i.ScheduledFor,
+		&i.StartedAt,
+		&i.LastSuccessAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getSyncRunByOwner = `-- name: GetSyncRunByOwner :one
 SELECT sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at FROM sync_runs
 JOIN accounts ON accounts.id = sync_runs.account_id

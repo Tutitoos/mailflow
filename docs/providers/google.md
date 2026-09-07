@@ -20,3 +20,11 @@ The Gmail adapter keeps every `message.id` and `threadId` inside its Mailflow ac
 Initial pages use Gmail message-list page tokens and incremental pages use History IDs plus page tokens. Message payloads pass through Mailflow's bounded MIME normalizer and HTML sanitizer before reaching the domain. Attachment IDs are resolved from the full Gmail payload and their bytes remain on-demand.
 
 Provider responses are reduced to four stable error kinds: `authorization`, `quota`, `transient`, and `permanent`. Retry hints are retained as a duration, while response bodies and Google error messages are discarded so they cannot enter logs, events, or API errors.
+
+## Synchronization lifecycle
+
+Completing OAuth queues a durable initial run. Mailflow snapshots the Gmail History ID, synchronizes the newest 90 days first, then continues backward through the older mailbox before entering incremental History polling. Every provider page and its checkpoint commit in one PostgreSQL transaction; repeated queue delivery therefore updates the same account-scoped records instead of duplicating them.
+
+Incremental polling runs every two minutes while the client is active and every ten minutes while idle. A manual `POST /api/v1/accounts/{accountId}/sync` request starts an immediate reconciliation and requires an `Idempotency-Key`. A full recent-window reconciliation is scheduled every 24 hours after the historical pass completes.
+
+History pages include additions, label changes, and deletions. Label changes reload the canonical message state; deletions soft-delete the local message and refresh its thread summary. A `404` from the History endpoint marks only that incremental run as expired and queues one bounded recent-window recovery from a fresh History snapshot. Progress is published through the resumable `sync.progress` event stream without message metadata or provider credentials.

@@ -20,10 +20,16 @@ type SyncCursor struct {
 }
 
 type RemoteMessage struct {
-	RemoteID string
-	ThreadID string
-	SentAt   time.Time
-	Content  NormalizedMessageContent
+	RemoteID    string
+	ThreadID    string
+	SentAt      time.Time
+	IsRead      bool
+	IsStarred   bool
+	IsImportant bool
+	Category    Category
+	InTrash     bool
+	LabelIDs    []string
+	Content     NormalizedMessageContent
 }
 
 type ProviderProfile struct {
@@ -58,9 +64,10 @@ type CatalogPage struct {
 }
 
 type ChangePage struct {
-	Messages   []RemoteMessage
-	NextCursor SyncCursor
-	HasMore    bool
+	Messages         []RemoteMessage
+	DeletedRemoteIDs []string
+	NextCursor       SyncCursor
+	HasMore          bool
 }
 
 type RemoteAction struct {
@@ -81,7 +88,7 @@ type Provider interface {
 	Changes(ctx context.Context, cursor SyncCursor) (ChangePage, error)
 	Profile(ctx context.Context) (ProviderProfile, error)
 	Catalog(ctx context.Context, cursor SyncCursor) (CatalogPage, error)
-	Backfill(ctx context.Context, cursor SyncCursor, before time.Time, limit int) (ChangePage, error)
+	Backfill(ctx context.Context, cursor SyncCursor, after, before *time.Time, limit int) (ChangePage, error)
 	Apply(ctx context.Context, action RemoteAction) error
 	SaveDraft(ctx context.Context, draft OutgoingMessage) (string, error)
 	Send(ctx context.Context, message OutgoingMessage) (string, error)

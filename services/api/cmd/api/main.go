@@ -15,14 +15,17 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/privileges"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/queue"
 	getsentry "github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v3"
+	"github.com/jackc/pgx/v5/pgxpool"
 	redis "github.com/redis/go-redis/v9"
 )
 
@@ -74,6 +77,7 @@ func main() {
 	options.AuthIssuer = runtimeConfig.AuthIssuer
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	var accountService *accounts.Service
+	var databasePool *pgxpool.Pool
 	if runtimeConfig.DatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := database.Migrate(ctx, runtimeConfig.DatabaseURL); err != nil {
@@ -88,6 +92,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer pool.Close()
+		databasePool = pool
 		vault, err := platformcrypto.NewVault(runtimeConfig.MasterKey)
 		if err != nil {
 			logger.Error("account vault configuration failed", "event", "config.invalid", "error", err)
@@ -128,6 +133,21 @@ func main() {
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	if redisClient != nil && accountService != nil {
 		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleoauth.NewClient(googleConfig, nil), accountService)
+		queueConfig := queue.DefaultConfig()
+		if prefix := os.Getenv("MAILFLOW_QUEUE_PREFIX"); prefix != "" {
+			queueConfig.Prefix = prefix
+		}
+		queueStore, queueErr := queue.NewRedisStore(context.Background(), redisClient, queueConfig)
+		if queueErr != nil {
+			logger.Error("sync queue configuration failed", "event", "sync.unavailable", "error", queueErr)
+			os.Exit(1)
+		}
+		options.Sync, queueErr = mailflowsync.NewScheduler(mailflowsync.NewRunRepository(databasePool), queueStore)
+		if queueErr != nil {
+			logger.Error("sync scheduler configuration failed", "event", "sync.unavailable", "error", queueErr)
+			os.Exit(1)
+		}
+		options.Sync.SetActivityTracker(mailflowsync.NewRedisActivityTracker(redisClient, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

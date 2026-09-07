@@ -38,6 +38,16 @@ func (repository *RunRepository) CreateRun(ctx context.Context, input CreateRunI
 		WindowStart: optionalTime(input.WindowStart), ScheduledFor: runTimestamp(scheduled), AccountID: accountID, UserID: userID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
+		account, accountErr := dbgen.New(repository.pool).GetAccountByUser(ctx, dbgen.GetAccountByUserParams{ID: accountID, UserID: userID})
+		if errors.Is(accountErr, pgx.ErrNoRows) {
+			return Run{}, ErrRunNotFound
+		}
+		if accountErr != nil {
+			return Run{}, fmt.Errorf("authorize sync run: %w", accountErr)
+		}
+		if account.DisabledAt.Valid {
+			return Run{}, ErrRunNotFound
+		}
 		return Run{}, ErrRunExists
 	}
 	if err != nil {
@@ -163,6 +173,21 @@ func (repository *RunRepository) DueRuns(ctx context.Context, now time.Time, lim
 		result = append(result, DueRun{UserID: uuid.UUID(row.UserID.Bytes).String(), Run: mapDueRun(row)})
 	}
 	return result, nil
+}
+
+func (repository *RunRepository) ExpediteReconciliation(ctx context.Context, user, account string, now time.Time) (Run, error) {
+	userID, accountID, err := cursorIDs(user, account)
+	if err != nil {
+		return Run{}, ErrInvalidRun
+	}
+	row, err := dbgen.New(repository.pool).ExpediteSyncReconciliation(ctx, dbgen.ExpediteSyncReconciliationParams{RequestedAt: runTimestamp(now), AccountID: accountID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrRunNotFound
+	}
+	if err != nil {
+		return Run{}, fmt.Errorf("expedite reconciliation: %w", err)
+	}
+	return mapRun(row), nil
 }
 
 func validRunPhase(phase RunPhase, window *time.Time) bool {

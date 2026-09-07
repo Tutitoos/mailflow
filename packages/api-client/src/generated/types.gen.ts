@@ -156,6 +156,7 @@ export type DraftWrite = {
         displayName?: string;
         address: string;
     }>;
+    attachments: Array<DraftAttachment>;
     mode: 'new' | 'reply' | 'forward';
     sourceMessageId?: string;
 };
@@ -167,9 +168,7 @@ export type Draft = {
     bodyText: string;
     bodyHtml: string;
     recipients: Array<MessageAddress>;
-    attachments: Array<{
-        [key: string]: unknown;
-    }>;
+    attachments: Array<DraftAttachment>;
     mode: 'new' | 'reply' | 'forward';
     sourceMessageId?: string | null;
     localRevision: number;
@@ -186,6 +185,13 @@ export type Delivery = {
     draftId: string;
     status: 'prepared' | 'sending' | 'sent' | 'ambiguous';
     remoteId?: string | null;
+};
+
+export type DraftAttachment = {
+    objectId: string;
+    filename: string | null;
+    mediaType: string;
+    sizeBytes: number;
 };
 
 export type MessageAttachment = {
@@ -856,6 +862,50 @@ export type SendMessageResponses = {
 
 export type SendMessageResponse = SendMessageResponses[keyof SendMessageResponses];
 
+export type UploadDraftAttachmentData = {
+    body: {
+        accountId: string;
+        file: Blob | File;
+    };
+    path?: never;
+    query?: never;
+    url: '/attachments';
+};
+
+export type UploadDraftAttachmentErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    404: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    413: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type UploadDraftAttachmentError = UploadDraftAttachmentErrors[keyof UploadDraftAttachmentErrors];
+
+export type UploadDraftAttachmentResponses = {
+    /**
+     * Attachment stored for use by a draft
+     */
+    201: DraftAttachment;
+};
+
+export type UploadDraftAttachmentResponse = UploadDraftAttachmentResponses[keyof UploadDraftAttachmentResponses];
+
 export type DownloadAttachmentData = {
     body?: never;
     headers?: {
@@ -878,10 +928,6 @@ export type DownloadAttachmentErrors = {
      * RFC 9457 problem details
      */
     404: Problem;
-    /**
-     * RFC 9457 problem details
-     */
-    409: Problem;
     /**
      * RFC 9457 problem details
      */

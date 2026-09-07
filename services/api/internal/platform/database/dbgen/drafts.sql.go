@@ -131,32 +131,43 @@ func (q *Queries) CreateDraft(ctx context.Context, arg CreateDraftParams) (Draft
 	return i, err
 }
 
-const createDraftAttachment = `-- name: CreateDraftAttachment :exec
+const createDraftAttachment = `-- name: CreateDraftAttachment :execrows
 INSERT INTO draft_attachments (draft_id, account_id, position, object_id, filename, media_type, size_bytes)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+SELECT $1, $2, $3, cdn_objects.object_id,
+       $4, $5, $6
+FROM cdn_objects
+WHERE cdn_objects.object_id = $7
+  AND cdn_objects.namespace = 'attachments'
+  AND cdn_objects.account_id = $2
+  AND cdn_objects.storage_status = 'cached'
+  AND cdn_objects.media_type = $5
+  AND cdn_objects.size_bytes = $6
 `
 
 type CreateDraftAttachmentParams struct {
 	DraftID   pgtype.UUID `json:"draft_id"`
 	AccountID pgtype.UUID `json:"account_id"`
 	Position  int32       `json:"position"`
-	ObjectID  string      `json:"object_id"`
 	Filename  pgtype.Text `json:"filename"`
 	MediaType string      `json:"media_type"`
 	SizeBytes int64       `json:"size_bytes"`
+	ObjectID  string      `json:"object_id"`
 }
 
-func (q *Queries) CreateDraftAttachment(ctx context.Context, arg CreateDraftAttachmentParams) error {
-	_, err := q.db.Exec(ctx, createDraftAttachment,
+func (q *Queries) CreateDraftAttachment(ctx context.Context, arg CreateDraftAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createDraftAttachment,
 		arg.DraftID,
 		arg.AccountID,
 		arg.Position,
-		arg.ObjectID,
 		arg.Filename,
 		arg.MediaType,
 		arg.SizeBytes,
+		arg.ObjectID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const createDraftRecipient = `-- name: CreateDraftRecipient :exec
@@ -297,7 +308,7 @@ func (q *Queries) GetDraftByOwner(ctx context.Context, arg GetDraftByOwnerParams
 }
 
 const listDraftAttachments = `-- name: ListDraftAttachments :many
-SELECT draft_id, account_id, position, object_id, filename, media_type, size_bytes FROM draft_attachments
+SELECT draft_id, account_id, position, object_id, filename, media_type, size_bytes, object_namespace FROM draft_attachments
 WHERE draft_id = $1 AND account_id = $2
 ORDER BY position
 `
@@ -324,6 +335,7 @@ func (q *Queries) ListDraftAttachments(ctx context.Context, arg ListDraftAttachm
 			&i.Filename,
 			&i.MediaType,
 			&i.SizeBytes,
+			&i.ObjectNamespace,
 		); err != nil {
 			return nil, err
 		}

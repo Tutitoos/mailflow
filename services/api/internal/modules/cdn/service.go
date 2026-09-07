@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -18,9 +19,10 @@ import (
 )
 
 var (
-	ErrAttachmentNotFound = errors.New("attachment not found")
-	ErrAttachmentMissing  = errors.New("attachment cache entry needs provider recovery")
-	ErrInvalidAttachment  = errors.New("invalid attachment")
+	ErrAttachmentNotFound    = errors.New("attachment not found")
+	ErrAttachmentMissing     = errors.New("attachment cache entry needs provider recovery")
+	ErrAttachmentUnavailable = errors.New("attachment provider is unavailable")
+	ErrInvalidAttachment     = errors.New("invalid attachment")
 )
 
 const (
@@ -57,18 +59,34 @@ type CleanupResult struct {
 
 type CleanupObserver func(CleanupResult, error)
 
+type AttachmentProvider interface {
+	DownloadAttachment(context.Context, string, string) (io.ReadCloser, error)
+}
+
+type AttachmentProviderResolver interface {
+	ResolveAttachmentProvider(context.Context, string, string) (AttachmentProvider, error)
+}
+
 type Service struct {
 	store     *Store
 	queries   *dbgen.Queries
 	retention time.Duration
+	resolver  AttachmentProviderResolver
+	locks     sync.Map
 }
 
-func NewService(store *Store, queries *dbgen.Queries, retention time.Duration) (*Service, error) {
+func NewService(store *Store, queries *dbgen.Queries, retention time.Duration, resolvers ...AttachmentProviderResolver) (*Service, error) {
 	if store == nil || queries == nil || retention <= 0 {
 		return nil, errors.New("CDN service requires storage, database, and positive retention")
 	}
-	return &Service{store: store, queries: queries, retention: retention}, nil
+	var resolver AttachmentProviderResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
+	return &Service{store: store, queries: queries, retention: retention, resolver: resolver}, nil
 }
+
+func (service *Service) MaxAttachmentBytes() int64 { return service.store.maxBytes }
 
 func (service *Service) PutAttachment(ctx context.Context, input PutAttachmentInput) (Attachment, error) {
 	userID, accountID, err := scopedIDs(input.UserID, input.AccountID)
@@ -135,11 +153,98 @@ func (service *Service) OpenAttachment(ctx context.Context, user, object string,
 	if err != nil {
 		return Attachment{}, nil, fmt.Errorf("open attachment: %w", err)
 	}
-	if err := service.queries.TouchAttachmentObject(ctx, dbgen.TouchAttachmentObjectParams{AccessedAt: timestamp(now.UTC()), ObjectID: objectID}); err != nil {
+	if err := service.queries.TouchAttachmentObject(ctx, dbgen.TouchAttachmentObjectParams{AccessedAt: timestamp(now.UTC()), ExpiresAt: timestamp(now.UTC().Add(service.retention)), ObjectID: objectID}); err != nil {
 		_ = file.Close()
 		return Attachment{}, nil, fmt.Errorf("touch attachment: %w", err)
 	}
 	return attachment, file, nil
+}
+
+// OpenMessageAttachment keeps the stable domain attachment ID at the HTTP
+// boundary while transparently filling or renewing its local cache object.
+func (service *Service) OpenMessageAttachment(ctx context.Context, user, attachmentID string, now time.Time) (Attachment, *os.File, error) {
+	userID, err := parseID(user)
+	domainID, attachmentErr := parseID(attachmentID)
+	if err != nil || attachmentErr != nil {
+		return Attachment{}, nil, ErrAttachmentNotFound
+	}
+	row, err := service.queries.GetMessageAttachmentForUser(ctx, dbgen.GetMessageAttachmentForUserParams{AttachmentID: domainID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Attachment{}, nil, ErrAttachmentNotFound
+	}
+	if err != nil {
+		return Attachment{}, nil, fmt.Errorf("authorize message attachment: %w", err)
+	}
+	if row.CachedObjectID.Valid {
+		cached, file, openErr := service.OpenAttachment(ctx, user, row.CachedObjectID.String, now)
+		if openErr == nil || !errors.Is(openErr, ErrAttachmentMissing) {
+			return cached, file, openErr
+		}
+	}
+
+	lockValue, _ := service.locks.LoadOrStore(uuid.UUID(domainID.Bytes).String(), &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	row, err = service.queries.GetMessageAttachmentForUser(ctx, dbgen.GetMessageAttachmentForUserParams{AttachmentID: domainID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Attachment{}, nil, ErrAttachmentNotFound
+	}
+	if err != nil {
+		return Attachment{}, nil, fmt.Errorf("authorize message attachment: %w", err)
+	}
+	if row.CachedObjectID.Valid {
+		cached, file, openErr := service.OpenAttachment(ctx, user, row.CachedObjectID.String, now)
+		if openErr == nil || !errors.Is(openErr, ErrAttachmentMissing) {
+			return cached, file, openErr
+		}
+	}
+	if service.resolver == nil || row.Provider != "google" || !row.RemoteID.Valid || row.MessageRemoteID == "" || row.SizeBytes > service.store.maxBytes {
+		return Attachment{}, nil, ErrAttachmentUnavailable
+	}
+	accountID := uuid.UUID(row.AccountID.Bytes).String()
+	provider, err := service.resolver.ResolveAttachmentProvider(ctx, user, accountID)
+	if err != nil {
+		return Attachment{}, nil, ErrAttachmentUnavailable
+	}
+	remote, err := provider.DownloadAttachment(ctx, row.MessageRemoteID, row.RemoteID.String)
+	if err != nil {
+		return Attachment{}, nil, ErrAttachmentUnavailable
+	}
+	defer remote.Close()
+	filename := ""
+	if row.Filename.Valid {
+		filename = row.Filename.String
+	}
+	stored, err := service.PutAttachment(ctx, PutAttachmentInput{
+		UserID: user, AccountID: accountID,
+		RecoveryReference: row.MessageRemoteID + ":" + row.RemoteID.String,
+		Filename:          filename, MediaType: row.MediaType,
+		Source: &contextReader{ctx: ctx, source: remote}, Now: now,
+	})
+	if err != nil {
+		return Attachment{}, nil, err
+	}
+	linked, err := service.queries.LinkMessageAttachmentObject(ctx, dbgen.LinkMessageAttachmentObjectParams{ObjectID: pgtype.Text{String: stored.ObjectID, Valid: true}, AttachmentID: domainID, UserID: userID})
+	if err != nil || linked != 1 {
+		_ = service.store.Remove("attachments", stored.ObjectID)
+		return Attachment{}, nil, ErrAttachmentNotFound
+	}
+	return service.OpenAttachment(ctx, user, stored.ObjectID, now)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (reader *contextReader) Read(destination []byte) (int, error) {
+	select {
+	case <-reader.ctx.Done():
+		return 0, reader.ctx.Err()
+	default:
+		return reader.source.Read(destination)
+	}
 }
 
 func (service *Service) Cleanup(ctx context.Context, now time.Time) (CleanupResult, error) {

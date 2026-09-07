@@ -7,3 +7,5 @@ Draft updates use `expectedRevision`. A stale update returns `draft_conflict` an
 Every `POST /api/v1/send` requires an `Idempotency-Key`. The API records the draft, content hash, and key before the Gmail request. A repeated key returns the existing delivery and never invokes Gmail again. If the process cannot prove whether Gmail accepted a request, the delivery becomes `ambiguous`; clients must ask the user to inspect Sent mail instead of retrying automatically.
 
 Reply drafts retain their owner-scoped source message and Gmail thread. Forward drafts retain source context for recovery but create a new provider thread. Discard is always explicit; closing a composer is a save operation, not deletion.
+
+Attachments are uploaded to the owner account's local CDN namespace with visible progress and cancellation. A draft stores only opaque object references, and send-time authorization revalidates their account, MIME type, size, and availability before constructing `multipart/mixed`.

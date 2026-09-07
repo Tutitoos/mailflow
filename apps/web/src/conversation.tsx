@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
+  Download,
   Forward,
   ImageOff,
   Mail,
@@ -11,14 +12,16 @@ import {
   Reply,
   Tag,
   Trash2,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
 import type { ComposeContext } from "./composer";
 import { type Locale, translate } from "./i18n";
 import {
   type ConversationMessage,
   type ConversationPage,
+  downloadMessageAttachment,
   loadConversationPage,
   type MailActionKind,
 } from "./mailflow-api";
@@ -45,6 +48,75 @@ function readableBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MessageAttachmentCard({
+  attachment,
+  locale,
+}: {
+  attachment: ConversationMessage["attachments"][number];
+  locale: Locale;
+}) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [failed, setFailed] = useState(false);
+  const controller = useRef<AbortController | null>(null);
+  const download = async () => {
+    const current = new AbortController();
+    controller.current = current;
+    setFailed(false);
+    setProgress({ loaded: 0, total: attachment.sizeBytes });
+    try {
+      const blob = await downloadMessageAttachment(
+        attachment.id,
+        (loaded, total) => setProgress({ loaded, total }),
+        current.signal,
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = attachment.filename || "attachment";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      if (!current.signal.aborted) setFailed(true);
+    } finally {
+      if (controller.current === current) controller.current = null;
+      setProgress(null);
+    }
+  };
+  return (
+    <li className="attachment-card">
+      <Paperclip size={18} />
+      <span>
+        <strong>{attachment.filename || t("attachment")}</strong>
+        <small>
+          {attachment.mediaType} · {readableBytes(attachment.sizeBytes)}
+        </small>
+        {progress && (
+          <progress
+            value={progress.loaded}
+            max={Math.max(progress.total, 1)}
+            aria-label={t("downloadAttachment")}
+          />
+        )}
+        {failed && <small role="alert">{t("attachmentFailed")}</small>}
+      </span>
+      {controller.current ? (
+        <Button
+          size="icon"
+          aria-label={t("cancelDownload")}
+          onClick={() => controller.current?.abort()}
+        >
+          <X size={15} />
+        </Button>
+      ) : (
+        <Button size="icon" aria-label={t("downloadAttachment")} onClick={() => void download()}>
+          <Download size={16} />
+        </Button>
+      )}
+    </li>
+  );
 }
 
 function MessageCard({
@@ -114,15 +186,11 @@ function MessageCard({
           {message.attachments.length > 0 && (
             <ul className="conversation-attachments" aria-label={t("attachments")}>
               {message.attachments.map((attachment) => (
-                <li className="attachment-card" key={attachment.id}>
-                  <Paperclip size={18} />
-                  <span>
-                    <strong>{attachment.filename || t("attachment")}</strong>
-                    <small>
-                      {attachment.mediaType} · {readableBytes(attachment.sizeBytes)}
-                    </small>
-                  </span>
-                </li>
+                <MessageAttachmentCard
+                  key={attachment.id}
+                  attachment={attachment}
+                  locale={locale}
+                />
               ))}
             </ul>
           )}

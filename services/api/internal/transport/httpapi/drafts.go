@@ -17,14 +17,22 @@ type draftRecipientRequest struct {
 }
 
 type draftContentRequest struct {
-	AccountID        string                  `json:"accountId"`
-	ExpectedRevision int64                   `json:"expectedRevision,omitempty"`
-	Subject          string                  `json:"subject"`
-	BodyText         string                  `json:"bodyText"`
-	BodyHTML         string                  `json:"bodyHtml"`
-	Recipients       []draftRecipientRequest `json:"recipients"`
-	Mode             mail.ComposeMode        `json:"mode"`
-	SourceMessageID  string                  `json:"sourceMessageId,omitempty"`
+	AccountID        string                   `json:"accountId"`
+	ExpectedRevision int64                    `json:"expectedRevision,omitempty"`
+	Subject          string                   `json:"subject"`
+	BodyText         string                   `json:"bodyText"`
+	BodyHTML         string                   `json:"bodyHtml"`
+	Recipients       []draftRecipientRequest  `json:"recipients"`
+	Attachments      []draftAttachmentRequest `json:"attachments"`
+	Mode             mail.ComposeMode         `json:"mode"`
+	SourceMessageID  string                   `json:"sourceMessageId,omitempty"`
+}
+
+type draftAttachmentRequest struct {
+	ObjectID  string `json:"objectId"`
+	Filename  string `json:"filename,omitempty"`
+	MediaType string `json:"mediaType"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 type draftAccountRequest struct {
@@ -161,7 +169,11 @@ func (request draftContentRequest) content() mail.DraftContentInput {
 	for _, recipient := range request.Recipients {
 		recipients = append(recipients, mail.MessageAddressInput{Role: recipient.Role, DisplayName: recipient.DisplayName, Address: recipient.Address})
 	}
-	return mail.DraftContentInput{Subject: request.Subject, BodyText: request.BodyText, BodyHTML: request.BodyHTML, Recipients: recipients, Mode: request.Mode, SourceMessageID: request.SourceMessageID}
+	attachments := make([]mail.DraftAttachmentInput, 0, len(request.Attachments))
+	for _, attachment := range request.Attachments {
+		attachments = append(attachments, mail.DraftAttachmentInput{ObjectID: attachment.ObjectID, Filename: attachment.Filename, MediaType: attachment.MediaType, SizeBytes: attachment.SizeBytes})
+	}
+	return mail.DraftContentInput{Subject: request.Subject, BodyText: request.BodyText, BodyHTML: request.BodyHTML, Recipients: recipients, Attachments: attachments, Mode: request.Mode, SourceMessageID: request.SourceMessageID}
 }
 
 func mapDraftError(err error) error {

@@ -171,6 +171,7 @@ describe("Mailflow API client", () => {
       bodyText: "Hello",
       bodyHtml: "<p>Hello</p>",
       recipients: [{ role: "to", address: "recipient@example.test" }],
+      attachments: [],
       mode: "new",
       localRevision: 1,
       syncedRevision: 0,

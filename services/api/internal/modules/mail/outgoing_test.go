@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
+	"github.com/Tutitoos/mailflow/services/api/internal/platform/database/dbgen"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -88,6 +90,45 @@ func TestAmbiguousDeliveryCannotBeRepeated(t *testing.T) {
 	second, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, draft.LocalRevision, "send-fixture-key-0002")
 	if err != nil || second.ID != first.ID || provider.sends != 1 {
 		t.Fatalf("repeated ambiguous=%+v sends=%d error=%v", second, provider.sends, err)
+	}
+}
+
+func TestDeliveryIncludesOnlyOwnerScopedCachedAttachments(t *testing.T) {
+	repository, pool, userID, accountID := draftFixture(t)
+	store, err := cdn.NewStore(t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects, err := cdn.NewService(store, dbgen.New(pool), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := objects.PutAttachment(context.Background(), cdn.PutAttachmentInput{
+		UserID: userID, AccountID: accountID, Filename: "fixture.txt", MediaType: "text/plain",
+		Source: strings.NewReader("mailflow"), Now: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := repository.CreateDraft(context.Background(), CreateDraftInput{
+		UserID: userID, AccountID: accountID, Now: time.Now().UTC(),
+		Content: DraftContentInput{
+			Subject: "Attachment", BodyText: "Body", BodyHTML: "<p>Body</p>", Mode: ComposeNew,
+			Recipients:  []MessageAddressInput{{Role: AddressTo, Address: "recipient@example.test"}},
+			Attachments: []DraftAttachmentInput{{ObjectID: object.ObjectID, Filename: "fixture.txt", MediaType: object.MediaType, SizeBytes: object.SizeBytes}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &outgoingTestProvider{}
+	service, err := NewDeliveryService(pool, repository, outgoingTestResolver{provider}, nil, objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, draft.LocalRevision, "send-attachment-key-001")
+	if err != nil || delivery.Status != DeliverySent || !strings.Contains(provider.last, "multipart/mixed") || !strings.Contains(provider.last, "filename=fixture.txt") || !strings.Contains(provider.last, "bWFpbGZsb3c=") {
+		t.Fatalf("attachment delivery=%+v payload=%q error=%v", delivery, provider.last, err)
 	}
 }
 

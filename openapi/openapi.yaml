@@ -368,10 +368,35 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Delivery" }
         default: { $ref: "#/components/responses/Problem" }
+  /attachments:
+    post:
+      operationId: uploadDraftAttachment
+      description: Stores one owner-scoped composer attachment within the installation limit.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [accountId, file]
+              properties:
+                accountId: { type: string, format: uuid }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Attachment stored for use by a draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftAttachment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /attachments/{attachmentId}:
     get:
       operationId: downloadAttachment
-      description: Streams an authenticated cached attachment. Expired entries return a recovery-required problem so the provider can be queried again.
+      description: Streams an authenticated message attachment, recovering an absent or expired Gmail cache entry without changing the attachment ID.
       parameters:
         - name: attachmentId
           in: path
@@ -401,7 +426,6 @@ paths:
         "304": { description: Cached representation is unchanged }
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
-        "409": { $ref: "#/components/responses/Problem" }
         "416": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
         default: { $ref: "#/components/responses/Problem" }
@@ -645,7 +669,7 @@ components:
               error: { type: string }
     DraftWrite:
       type: object
-      required: [accountId, subject, bodyText, bodyHtml, recipients, mode]
+      required: [accountId, subject, bodyText, bodyHtml, recipients, attachments, mode]
       properties:
         accountId: { type: string, format: uuid }
         expectedRevision: { type: integer, minimum: 1 }
@@ -662,6 +686,10 @@ components:
               role: { type: string, enum: [to, cc, bcc] }
               displayName: { type: string, maxLength: 256 }
               address: { type: string, format: email, maxLength: 1024 }
+        attachments:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/DraftAttachment" }
         mode: { type: string, enum: [new, reply, forward] }
         sourceMessageId: { type: string, format: uuid }
     Draft:
@@ -678,7 +706,7 @@ components:
           items: { $ref: "#/components/schemas/MessageAddress" }
         attachments:
           type: array
-          items: { type: object, additionalProperties: true }
+          items: { $ref: "#/components/schemas/DraftAttachment" }
         mode: { type: string, enum: [new, reply, forward] }
         sourceMessageId: { type: [string, "null"], format: uuid }
         localRevision: { type: integer, minimum: 1 }
@@ -696,6 +724,14 @@ components:
         draftId: { type: string, format: uuid }
         status: { type: string, enum: [prepared, sending, sent, ambiguous] }
         remoteId: { type: [string, "null"] }
+    DraftAttachment:
+      type: object
+      required: [objectId, filename, mediaType, sizeBytes]
+      properties:
+        objectId: { type: string, pattern: "^[0-9a-f]{32}$" }
+        filename: { type: [string, "null"], maxLength: 1024 }
+        mediaType: { type: string, maxLength: 255 }
+        sizeBytes: { type: integer, minimum: 0 }
     MessageAttachment:
       type: object
       required: [id, position, filename, mediaType, disposition, sizeBytes]

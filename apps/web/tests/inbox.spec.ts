@@ -35,7 +35,10 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   const actionRequests: Array<{ key: string | null; body: unknown }> = [];
   const draftRequests: Array<{ method: string; url: string; body: unknown }> = [];
   const sendRequests: Array<{ key: string | null; body: unknown }> = [];
+  let attachmentDownloads = 0;
+  let attachmentUploads = 0;
   let draftRevision = 1;
+  let draftAttachments: Array<Record<string, unknown>> = [];
   const draftResponse = () => ({
     id: "50000000-0000-7000-8000-000000000001",
     accountId: account.id,
@@ -43,7 +46,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     bodyText: "Safe browser body",
     bodyHtml: "<p>Safe browser body</p>",
     recipients: [{ role: "to", position: 0, displayName: null, address: "recipient@example.test" }],
-    attachments: [],
+    attachments: draftAttachments,
     mode: "new",
     sourceMessageId: null,
     localRevision: draftRevision,
@@ -132,7 +135,16 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
                 address: "sender-0@example.test",
               },
             ],
-            attachments: [],
+            attachments: [
+              {
+                id: "70000000-0000-7000-8000-000000000001",
+                position: 0,
+                filename: "fixture.txt",
+                mediaType: "text/plain",
+                disposition: "attachment",
+                sizeBytes: 8,
+              },
+            ],
           },
         ],
         nextCursor: null,
@@ -188,6 +200,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await page.route("**/api/v1/drafts**", async (route) => {
     const request = route.request();
     const body = request.postData() ? request.postDataJSON() : null;
+    if (Array.isArray(body?.attachments)) draftAttachments = body.attachments;
     draftRequests.push({ method: request.method(), url: request.url(), body });
     if (request.method() === "PUT") draftRevision += 1;
     if (request.url().endsWith("/checkpoint")) {
@@ -198,6 +211,26 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     return route.fulfill({
       status: request.method() === "POST" ? 201 : 200,
       json: draftResponse(),
+    });
+  });
+  await page.route("**/api/v1/attachments", async (route) => {
+    attachmentUploads += 1;
+    return route.fulfill({
+      status: 201,
+      json: {
+        objectId: "abcdef0123456789abcdef0123456789",
+        filename: "upload.txt",
+        mediaType: "text/plain",
+        sizeBytes: 8,
+      },
+    });
+  });
+  await page.route("**/api/v1/attachments/*", async (route) => {
+    attachmentDownloads += 1;
+    return route.fulfill({
+      status: 200,
+      body: "mailflow",
+      headers: { "content-type": "text/plain", "content-length": "8" },
     });
   });
   await page.route("**/api/v1/send", async (route) => {
@@ -244,6 +277,8 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   expect(remoteImageRequests).toBe(0);
   await page.getByRole("button", { name: "Display remote images" }).click();
   await expect.poll(() => remoteImageRequests).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Download attachment" }).click();
+  await expect.poll(() => attachmentDownloads).toBe(1);
   await page.getByRole("button", { name: "Reply", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Recipients" })).toHaveValue(
     "sender-0@example.test",
@@ -294,6 +329,13 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await page.getByRole("textbox", { name: "Recipients" }).fill("recipient@example.test");
   await page.getByRole("textbox", { name: "Subject" }).fill("Browser draft");
   await page.getByRole("textbox", { name: "Write a message" }).fill("Safe browser body");
+  await page.locator('.compose-panel input[type="file"]').setInputFiles({
+    name: "upload.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("mailflow"),
+  });
+  await expect(page.getByText("upload.txt", { exact: true })).toBeVisible();
+  await expect.poll(() => attachmentUploads).toBe(1);
   const composerAccessibility = await new AxeBuilder({ page }).include(".compose-panel").analyze();
   expect(
     composerAccessibility.violations.filter(
@@ -302,6 +344,14 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   ).toEqual([]);
   await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 5_000 });
   expect(draftRequests.some((request) => request.method === "POST")).toBe(true);
+  expect(
+    draftRequests.some(
+      (request) =>
+        Array.isArray((request.body as { attachments?: unknown })?.attachments) &&
+        (request.body as { attachments: Array<{ objectId?: string }> }).attachments[0]?.objectId ===
+          "abcdef0123456789abcdef0123456789",
+    ),
+  ).toBe(true);
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("region", { name: "New message" })).toHaveCount(0);
   expect(draftRequests.some((request) => request.url.endsWith("/checkpoint"))).toBe(true);

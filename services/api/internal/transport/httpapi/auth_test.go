@@ -224,7 +224,7 @@ func authenticatedAppWithAccounts(jwksURL string, users authbridge.UserResolver,
 	return authenticatedAppWithDependencies(jwksURL, users, accountLister, nil)
 }
 
-func authenticatedAppWithDependencies(jwksURL string, users authbridge.UserResolver, accountLister httpapi.AccountLister, attachments httpapi.AttachmentReader) *fiber.App {
+func authenticatedAppWithDependencies(jwksURL string, users authbridge.UserResolver, accountLister httpapi.AccountLister, attachments httpapi.AttachmentService) *fiber.App {
 	registry := metrics.NewRegistry()
 	return httpapi.New(httpapi.Dependencies{
 		Accounts: accountLister, Attachments: attachments, Admin: admin.NewService("test", registry), AuthAudience: testAudience,

@@ -19,6 +19,8 @@ The Gmail adapter keeps every `message.id` and `threadId` inside its Mailflow ac
 
 Initial pages use Gmail message-list page tokens and incremental pages use History IDs plus page tokens. Message payloads pass through Mailflow's bounded MIME normalizer and HTML sanitizer before reaching the domain. Attachment IDs are resolved from the full Gmail payload and their bytes remain on-demand.
 
+The authenticated attachment endpoint uses that stable domain ID to recover a missing or expired Gmail part into the local CDN. Concurrent requests share one recovery operation, cache hits do not call Gmail, and cancellation propagates through the provider request and atomic write.
+
 Provider responses are reduced to four stable error kinds: `authorization`, `quota`, `transient`, and `permanent`. Retry hints are retained as a duration, while response bodies and Google error messages are discarded so they cannot enter logs, events, or API errors.
 
 ## Synchronization lifecycle

@@ -33,6 +33,23 @@ func (q *Queries) DeleteSentryCDNObject(ctx context.Context, objectID string) er
 	return err
 }
 
+const getSentryProjectByArtifactToken = `-- name: GetSentryProjectByArtifactToken :one
+SELECT component, enabled FROM sentry_projects
+WHERE artifact_token_hash = $1 AND enabled = true
+`
+
+type GetSentryProjectByArtifactTokenRow struct {
+	Component string `json:"component"`
+	Enabled   bool   `json:"enabled"`
+}
+
+func (q *Queries) GetSentryProjectByArtifactToken(ctx context.Context, artifactTokenHash pgtype.Text) (GetSentryProjectByArtifactTokenRow, error) {
+	row := q.db.QueryRow(ctx, getSentryProjectByArtifactToken, artifactTokenHash)
+	var i GetSentryProjectByArtifactTokenRow
+	err := row.Scan(&i.Component, &i.Enabled)
+	return i, err
+}
+
 const getSentryProjectByKey = `-- name: GetSentryProjectByKey :one
 SELECT component, public_key, enabled FROM sentry_projects
 WHERE public_key = $1 AND enabled = true
@@ -201,21 +218,28 @@ func (q *Queries) SentryStoredBytes(ctx context.Context) (int64, error) {
 }
 
 const upsertSentryProject = `-- name: UpsertSentryProject :exec
-INSERT INTO sentry_projects (component, public_key, updated_at)
-VALUES ($1, $2, $3)
+INSERT INTO sentry_projects (component, public_key, artifact_token_hash, updated_at)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (component) DO UPDATE SET
   public_key = EXCLUDED.public_key,
+  artifact_token_hash = EXCLUDED.artifact_token_hash,
   enabled = true,
   updated_at = EXCLUDED.updated_at
 `
 
 type UpsertSentryProjectParams struct {
-	Component string             `json:"component"`
-	PublicKey string             `json:"public_key"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Component         string             `json:"component"`
+	PublicKey         string             `json:"public_key"`
+	ArtifactTokenHash pgtype.Text        `json:"artifact_token_hash"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) UpsertSentryProject(ctx context.Context, arg UpsertSentryProjectParams) error {
-	_, err := q.db.Exec(ctx, upsertSentryProject, arg.Component, arg.PublicKey, arg.UpdatedAt)
+	_, err := q.db.Exec(ctx, upsertSentryProject,
+		arg.Component,
+		arg.PublicKey,
+		arg.ArtifactTokenHash,
+		arg.UpdatedAt,
+	)
 	return err
 }

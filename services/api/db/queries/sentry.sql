@@ -1,14 +1,19 @@
 -- name: UpsertSentryProject :exec
-INSERT INTO sentry_projects (component, public_key, updated_at)
-VALUES (sqlc.arg(component), sqlc.arg(public_key), sqlc.arg(updated_at))
+INSERT INTO sentry_projects (component, public_key, artifact_token_hash, updated_at)
+VALUES (sqlc.arg(component), sqlc.arg(public_key), sqlc.arg(artifact_token_hash), sqlc.arg(updated_at))
 ON CONFLICT (component) DO UPDATE SET
   public_key = EXCLUDED.public_key,
+  artifact_token_hash = EXCLUDED.artifact_token_hash,
   enabled = true,
   updated_at = EXCLUDED.updated_at;
 
 -- name: GetSentryProjectByKey :one
 SELECT component, public_key, enabled FROM sentry_projects
 WHERE public_key = sqlc.arg(public_key) AND enabled = true;
+
+-- name: GetSentryProjectByArtifactToken :one
+SELECT component, enabled FROM sentry_projects
+WHERE artifact_token_hash = sqlc.arg(artifact_token_hash) AND enabled = true;
 
 -- name: InsertSentryEvent :one
 INSERT INTO sentry_events (

@@ -8,19 +8,24 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 type parsedEnvelope struct {
-	eventID     string
-	eventType   string
-	environment string
-	release     string
-	level       string
-	sdkName     string
-	items       []parsedItem
+	eventID      string
+	eventType    string
+	environment  string
+	release      string
+	level        string
+	sdkName      string
+	groupingSeed string
+	issueTitle   string
+	stack        []normalizedFrame
+	items        []parsedItem
 }
 
 type parsedItem struct {
@@ -52,20 +57,52 @@ type eventMetadata struct {
 	SDK         struct {
 		Name string `json:"name"`
 	} `json:"sdk"`
-	Exception struct {
-		Values []json.RawMessage `json:"values"`
+	Fingerprint []string `json:"fingerprint"`
+	Exception   struct {
+		Values []exceptionValue `json:"values"`
 	} `json:"exception"`
+	Stacktrace  stacktrace `json:"stacktrace"`
 	Breadcrumbs struct {
 		Values []json.RawMessage `json:"values"`
 	} `json:"breadcrumbs"`
 	Spans []json.RawMessage `json:"spans"`
 }
 
+type exceptionValue struct {
+	Type       string     `json:"type"`
+	Stacktrace stacktrace `json:"stacktrace"`
+}
+
+type stacktrace struct {
+	Frames []rawFrame `json:"frames"`
+}
+
+type rawFrame struct {
+	Module      string `json:"module"`
+	Function    string `json:"function"`
+	Filename    string `json:"filename"`
+	Absolute    string `json:"abs_path"`
+	Line        int64  `json:"lineno"`
+	Column      int64  `json:"colno"`
+	Instruction string `json:"instruction_addr"`
+}
+
+type normalizedFrame struct {
+	Module      string `json:"module,omitempty"`
+	Function    string `json:"function,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	Line        int64  `json:"line,omitempty"`
+	Column      int64  `json:"column,omitempty"`
+	Instruction string `json:"instruction,omitempty"`
+}
+
 var sensitiveMetadataPattern = regexp.MustCompile(`(?i)([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})`)
 
 var (
-	releasePattern = regexp.MustCompile(`^(?:v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?|[0-9a-f]{7,64})$`)
-	sdkPattern     = regexp.MustCompile(`^sentry\.[a-z0-9._-]{1,120}$`)
+	releasePattern      = regexp.MustCompile(`^(?:v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?|[0-9a-f]{7,64})$`)
+	sdkPattern          = regexp.MustCompile(`^sentry\.[a-z0-9._-]{1,120}$`)
+	symbolPattern       = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_.$:+<>-]{0,159}$`)
+	safeFilenamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,159}$`)
 )
 
 func parseRequest(request Request) (parsedEnvelope, error) {
@@ -218,6 +255,88 @@ func applyMetadata(parsed *parsedEnvelope, metadata eventMetadata) {
 	if parsed.sdkName == "" {
 		parsed.sdkName = safeSDKName(metadata.SDK.Name)
 	}
+	applyGrouping(parsed, metadata)
+}
+
+func applyGrouping(parsed *parsedEnvelope, metadata eventMetadata) {
+	if parsed.groupingSeed != "" {
+		return
+	}
+	if len(metadata.Fingerprint) > 0 {
+		encoded, _ := json.Marshal(metadata.Fingerprint)
+		parsed.groupingSeed = "custom:" + digest(encoded)
+		parsed.issueTitle = "Custom error group"
+	}
+	frames := metadata.Stacktrace.Frames
+	exceptionTypes := make([]string, 0, len(metadata.Exception.Values))
+	for _, exception := range metadata.Exception.Values {
+		if safe := safeSymbol(exception.Type); safe != "" {
+			exceptionTypes = append(exceptionTypes, safe)
+			if parsed.issueTitle == "" {
+				parsed.issueTitle = safe
+			}
+		}
+		frames = append(frames, exception.Stacktrace.Frames...)
+	}
+	for _, frame := range frames {
+		if len(parsed.stack) >= 128 {
+			break
+		}
+		if normalized, ok := normalizeFrame(frame); ok {
+			parsed.stack = append(parsed.stack, normalized)
+		}
+	}
+	if parsed.groupingSeed == "" && (len(exceptionTypes) > 0 || len(parsed.stack) > 0) {
+		canonical, _ := json.Marshal(struct {
+			Types  []string          `json:"types"`
+			Frames []normalizedFrame `json:"frames"`
+		}{Types: exceptionTypes, Frames: parsed.stack})
+		parsed.groupingSeed = "stack:" + digest(canonical)
+	}
+	if parsed.issueTitle == "" && parsed.groupingSeed != "" {
+		parsed.issueTitle = "Error event"
+	}
+}
+
+func normalizeFrame(frame rawFrame) (normalizedFrame, bool) {
+	filename := frame.Filename
+	if filename == "" {
+		filename = frame.Absolute
+	}
+	filename = path.Base(strings.ReplaceAll(filename, "\\", "/"))
+	if !safeFilenamePattern.MatchString(filename) {
+		filename = ""
+	}
+	normalized := normalizedFrame{
+		Module: safeSymbol(frame.Module), Function: safeSymbol(frame.Function), Filename: filename,
+		Line: boundedPosition(frame.Line), Column: boundedPosition(frame.Column), Instruction: safeInstruction(frame.Instruction),
+	}
+	return normalized, normalized.Module != "" || normalized.Function != "" || normalized.Filename != "" || normalized.Instruction != ""
+}
+
+func safeSymbol(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 160 || !symbolPattern.MatchString(value) || sensitiveMetadataPattern.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
+func boundedPosition(value int64) int64 {
+	if value < 0 || value > 100_000_000 {
+		return 0
+	}
+	return value
+}
+
+func safeInstruction(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if strings.HasPrefix(value, "0x") {
+		if _, err := strconv.ParseUint(strings.TrimPrefix(value, "0x"), 16, 64); err == nil {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeEventID(value string) string {

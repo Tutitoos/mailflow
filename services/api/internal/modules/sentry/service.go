@@ -21,20 +21,22 @@ import (
 )
 
 var (
-	ErrEnvelopeTooLarge = errors.New("sentry envelope exceeds the configured limit")
-	ErrInvalidEnvelope  = errors.New("invalid sentry envelope")
-	ErrUnauthenticated  = errors.New("invalid sentry project key")
-	ErrRateLimited      = errors.New("sentry ingestion rate exceeded")
-	ErrStorageQuota     = errors.New("sentry storage quota exceeded")
-	ErrUnavailable      = errors.New("sentry ingestion unavailable")
-	ErrDuplicate        = errors.New("sentry event already received")
-	eventIDPattern      = regexp.MustCompile(`^[0-9a-f]{32}$`)
-	keyPattern          = regexp.MustCompile(`(?i)(?:^|[, ]+)sentry_key=([0-9a-f]{32})(?:[, ]|$)`)
+	ErrEnvelopeTooLarge  = errors.New("sentry envelope exceeds the configured limit")
+	ErrInvalidEnvelope   = errors.New("invalid sentry envelope")
+	ErrUnauthenticated   = errors.New("invalid sentry project key")
+	ErrRateLimited       = errors.New("sentry ingestion rate exceeded")
+	ErrStorageQuota      = errors.New("sentry storage quota exceeded")
+	ErrUnavailable       = errors.New("sentry ingestion unavailable")
+	ErrDuplicate         = errors.New("sentry event already received")
+	eventIDPattern       = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	artifactTokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	keyPattern           = regexp.MustCompile(`(?i)(?:^|[, ]+)sentry_key=([0-9a-f]{32})(?:[, ]|$)`)
 )
 
 const (
 	DefaultMaxEnvelopeBytes = 5 << 20
 	DefaultStorageQuota     = 1 << 30
+	DefaultArtifactQuota    = 2 << 30
 	DefaultRatePerMinute    = 120
 	DefaultRetention        = 30 * 24 * time.Hour
 	largePayloadThreshold   = 64 << 10
@@ -61,19 +63,21 @@ type Request struct {
 }
 
 type Project struct {
-	Component string
-	PublicKey string
+	Component     string
+	PublicKey     string
+	ArtifactToken string
 }
 
 type Config struct {
 	MaxEnvelopeBytes int
 	StorageQuota     int64
+	ArtifactQuota    int64
 	RatePerMinute    int
 	Retention        time.Duration
 }
 
 func DefaultConfig() Config {
-	return Config{MaxEnvelopeBytes: DefaultMaxEnvelopeBytes, StorageQuota: DefaultStorageQuota, RatePerMinute: DefaultRatePerMinute, Retention: DefaultRetention}
+	return Config{MaxEnvelopeBytes: DefaultMaxEnvelopeBytes, StorageQuota: DefaultStorageQuota, ArtifactQuota: DefaultArtifactQuota, RatePerMinute: DefaultRatePerMinute, Retention: DefaultRetention}
 }
 
 func DerivedProjects(masterKey []byte) ([]Project, error) {
@@ -83,9 +87,11 @@ func DerivedProjects(masterKey []byte) ([]Project, error) {
 	components := []string{"api", "web", "desktop", "ios"}
 	projects := make([]Project, 0, len(components))
 	for _, component := range components {
-		mac := hmac.New(sha256.New, masterKey)
-		_, _ = mac.Write([]byte("mailflow:sentry:" + component))
-		projects = append(projects, Project{Component: component, PublicKey: hex.EncodeToString(mac.Sum(nil)[:16])})
+		publicMAC := hmac.New(sha256.New, masterKey)
+		_, _ = publicMAC.Write([]byte("mailflow:sentry:dsn:" + component))
+		artifactMAC := hmac.New(sha256.New, masterKey)
+		_, _ = artifactMAC.Write([]byte("mailflow:sentry:artifact:" + component))
+		projects = append(projects, Project{Component: component, PublicKey: hex.EncodeToString(publicMAC.Sum(nil)[:16]), ArtifactToken: hex.EncodeToString(artifactMAC.Sum(nil))})
 	}
 	return projects, nil
 }
@@ -95,6 +101,7 @@ type Service struct {
 	pool    *pgxpool.Pool
 	queries *dbgen.Queries
 	cdn     *cdn.Store
+	jobs    JobEnqueuer
 	mu      sync.Mutex
 	rates   map[string]rateWindow
 }
@@ -111,7 +118,7 @@ func NewService(maxEnvelopeBytes int) *Service {
 }
 
 func NewPersistentService(pool *pgxpool.Pool, store *cdn.Store, config Config) (*Service, error) {
-	if pool == nil || store == nil || config.MaxEnvelopeBytes <= 0 || config.StorageQuota <= 0 || config.RatePerMinute <= 0 || config.Retention <= 0 {
+	if pool == nil || store == nil || config.MaxEnvelopeBytes <= 0 || config.StorageQuota <= 0 || config.ArtifactQuota <= 0 || config.RatePerMinute <= 0 || config.Retention <= 0 {
 		return nil, errors.New("sentry ingestion requires bounded database and CDN storage")
 	}
 	return &Service{config: config, pool: pool, queries: dbgen.New(pool), cdn: store, rates: make(map[string]rateWindow)}, nil
@@ -124,10 +131,11 @@ func (service *Service) ConfigureProjects(ctx context.Context, projects []Projec
 	for _, project := range projects {
 		component := strings.ToLower(strings.TrimSpace(project.Component))
 		key := strings.ToLower(strings.TrimSpace(project.PublicKey))
-		if !validComponent(component) || !eventIDPattern.MatchString(key) {
+		artifactToken := strings.ToLower(strings.TrimSpace(project.ArtifactToken))
+		if !validComponent(component) || !eventIDPattern.MatchString(key) || !artifactTokenPattern.MatchString(artifactToken) {
 			return ErrInvalidEnvelope
 		}
-		if err := service.queries.UpsertSentryProject(ctx, dbgen.UpsertSentryProjectParams{Component: component, PublicKey: key, UpdatedAt: timestamp(now)}); err != nil {
+		if err := service.queries.UpsertSentryProject(ctx, dbgen.UpsertSentryProjectParams{Component: component, PublicKey: key, ArtifactTokenHash: optionalText(digest([]byte(artifactToken))), UpdatedAt: timestamp(now)}); err != nil {
 			return fmt.Errorf("configure sentry project: %w", err)
 		}
 	}
@@ -177,6 +185,22 @@ func (service *Service) Cleanup(ctx context.Context, now time.Time) (int64, erro
 		return 0, nil
 	}
 	expiredBefore := timestamp(now.UTC().Add(-service.config.Retention))
+	artifacts, err := service.queries.ListExpiredSentryArtifacts(ctx, expiredBefore)
+	if err != nil {
+		return 0, fmt.Errorf("list expired sentry artifacts: %w", err)
+	}
+	deletedArtifacts, err := service.queries.DeleteExpiredSentryArtifacts(ctx, expiredBefore)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired sentry artifacts: %w", err)
+	}
+	for _, objectID := range artifacts {
+		if err := service.queries.DeleteSentryCDNObject(ctx, objectID); err != nil {
+			return deletedArtifacts, fmt.Errorf("delete expired sentry artifact metadata: %w", err)
+		}
+		if err := service.cdn.Remove("sentry", objectID); err != nil {
+			return deletedArtifacts, err
+		}
+	}
 	objects, err := service.queries.ListExpiredSentryObjects(ctx, expiredBefore)
 	if err != nil {
 		return 0, fmt.Errorf("list expired sentry objects: %w", err)
@@ -196,7 +220,7 @@ func (service *Service) Cleanup(ctx context.Context, now time.Time) (int64, erro
 			return deleted, err
 		}
 	}
-	return deleted, nil
+	return deleted + deletedArtifacts, nil
 }
 
 func (service *Service) Run(ctx context.Context) error {

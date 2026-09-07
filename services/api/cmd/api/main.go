@@ -238,6 +238,9 @@ func main() {
 			logger.Error("sync queue configuration failed", "event", "sync.unavailable", "error", queueErr)
 			os.Exit(1)
 		}
+		if options.Sentry != nil {
+			options.Sentry.SetQueue(queueStore)
+		}
 		options.Sync, queueErr = mailflowsync.NewScheduler(mailflowsync.NewRunRepository(databasePool), queueStore)
 		if queueErr != nil {
 			logger.Error("sync scheduler configuration failed", "event", "sync.unavailable", "error", queueErr)

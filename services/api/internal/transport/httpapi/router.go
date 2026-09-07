@@ -91,6 +91,9 @@ type DraftService interface {
 
 func New(deps Dependencies) *fiber.App {
 	bodyLimit := fiber.DefaultBodyLimit
+	if deps.Sentry != nil && bodyLimit < mailflowsentry.MaxArtifactBytes+(1<<20) {
+		bodyLimit = mailflowsentry.MaxArtifactBytes + (1 << 20)
+	}
 	if deps.Attachments != nil {
 		const multipartOverhead = 1 << 20
 		maxInt := int64(^uint(0) >> 1)
@@ -113,6 +116,8 @@ func New(deps Dependencies) *fiber.App {
 
 	app.Post("/sentry/api/1/envelope/", sentryIngest(deps.Sentry, deps.Metrics))
 	app.Post("/sentry/api/1/store/", sentryIngest(deps.Sentry, deps.Metrics))
+	app.Post("/api/0/organizations/mailflow/releases/", createSentryRelease(deps.Sentry))
+	app.Post("/api/0/projects/mailflow/:component/releases/:version/files/", uploadSentryArtifact(deps.Sentry))
 	if deps.CaptureSentry {
 		app.Use(fibersentry.New(fibersentry.Config{Repanic: true, WaitForDelivery: false}))
 	}
@@ -204,6 +209,8 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Get("/logs", adminLogs(deps.Logs))
 	adminRoutes.Get("/logs/debug", logDebugStatus(deps.Logs))
 	adminRoutes.Put("/logs/debug", setLogDebug(deps.Logs))
+	adminRoutes.Get("/sentry", adminSentryIssues(deps.Sentry))
+	adminRoutes.Put("/sentry/:issueId", setAdminSentryIssueStatus(deps.Sentry))
 
 	return app
 }

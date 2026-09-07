@@ -94,6 +94,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: mailflow
       POSTGRES_DB: mailflow
+      REDIS_ADDRESS: redis:6379
     secrets: [master_key, postgres_password]
     labels:
       - traefik.enable=true

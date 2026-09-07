@@ -26,10 +26,12 @@ type Dependencies struct {
 	AuthIssuer    string
 	AuthJWKSURL   string
 	CurrentUsers  authbridge.UserResolver
+	Events        EventStream
 	Readiness     func(context.Context) error
 	Sentry        *mailflowsentry.Service
 	Translations  *translations.Catalog
 	CaptureSentry bool
+	Shutdown      context.Context
 }
 
 type AccountLister interface {
@@ -74,7 +76,7 @@ func New(deps Dependencies) *fiber.App {
 		if deps.AuthAudience == "" || deps.AuthIssuer == "" || deps.CurrentUsers == nil {
 			panic("authenticated API requires audience, issuer, and current-user resolver")
 		}
-		v1.Use(jwtware.New(jwtware.Config{
+		v1.Use(websocketBearer, jwtware.New(jwtware.Config{
 			Claims:     &jwt.RegisteredClaims{},
 			JWKSetURLs: []string{deps.AuthJWKSURL},
 			ParserOptions: []jwt.ParserOption{
@@ -96,6 +98,7 @@ func New(deps Dependencies) *fiber.App {
 		}
 		return c.JSON(user)
 	})
+	v1.Get("/events", eventEndpoint(deps.Events, deps.Shutdown, deps.AuthIssuer))
 	v1.Get("/accounts", func(c fiber.Ctx) error {
 		user, ok := authbridge.UserFromContext(c.Context())
 		if !ok {

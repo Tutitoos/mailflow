@@ -46,6 +46,21 @@ paths:
       responses:
         "202": { description: Synchronization queued }
         default: { $ref: "#/components/responses/Problem" }
+  /events:
+    get:
+      operationId: streamEvents
+      description: Upgrade to an authenticated WebSocket. Reconnect with the last acknowledged cursor to replay missed events.
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            pattern: "^[0-9]+-[0-9]+$"
+      responses:
+        "101": { description: WebSocket event stream using EventEnvelope messages }
+        "401": { $ref: "#/components/responses/Problem" }
+        "426": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /threads:
     get:
       operationId: listThreads
@@ -194,6 +209,17 @@ components:
         disabledAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    EventEnvelope:
+      type: object
+      required: [version, cursor, type, timestamp, payload]
+      properties:
+        version: { type: integer, const: 1 }
+        cursor: { type: string, pattern: "^[0-9]+-[0-9]+$" }
+        type:
+          type: string
+          enum: [mail.changed, sync.progress, draft.changed, admin.alert, system.status, system.resync_required]
+        timestamp: { type: string, format: date-time }
+        payload: { type: object, additionalProperties: true }
     ThreadPage:
       type: object
       required: [items]

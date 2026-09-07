@@ -88,6 +88,7 @@ services/api/
   internal/modules/
     authbridge/
     accounts/
+    events/
     mail/
     sync/
     cdn/
@@ -118,6 +119,8 @@ Cada módulo será propietario de su lógica y sus tablas. La comunicación sín
 - Errores Problem Details con código estable y `requestId`.
 - `Idempotency-Key` para envíos y acciones repetibles.
 - UUIDv7 para identificadores propios.
+
+El contrato WebSocket versionado, su replay Redis y el comportamiento de reconexión se detallan en [Eventos en tiempo real](events.md).
 
 ## Autenticación
 

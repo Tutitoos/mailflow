@@ -15,6 +15,7 @@ type Config struct {
 	Address      string
 	DatabaseURL  string
 	MasterKey    []byte
+	RedisAddress string
 }
 
 func Load() (Config, error) {
@@ -23,6 +24,7 @@ func Load() (Config, error) {
 		AuthIssuer:   os.Getenv("MAILFLOW_AUTH_ISSUER"),
 		Address:      valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
 		AuthJWKSURL:  os.Getenv("AUTH_JWKS_URL"),
+		RedisAddress: os.Getenv("REDIS_ADDRESS"),
 	}
 	if config.AuthJWKSURL != "" && config.AuthIssuer == "" {
 		return Config{}, fmt.Errorf("MAILFLOW_AUTH_ISSUER is required when AUTH_JWKS_URL is configured")

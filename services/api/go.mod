@@ -3,9 +3,12 @@ module github.com/Tutitoos/mailflow/services/api
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
+	github.com/fasthttp/websocket v1.5.12
 	github.com/getsentry/sentry-go v0.49.0
 	github.com/gofiber/contrib/v3/jwt v1.2.2
 	github.com/gofiber/contrib/v3/sentry v1.1.10
+	github.com/gofiber/contrib/v3/websocket v1.2.4
 	github.com/gofiber/fiber/v3 v3.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -27,7 +30,6 @@ require (
 	github.com/andybalholm/brotli v1.2.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/cubicdaiya/gonp v1.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -73,6 +75,7 @@ require (
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/riza-io/grpc-go v0.2.0 // indirect
+	github.com/savsgio/gotils v0.0.0-20250924091648-bce9a52d7761 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect

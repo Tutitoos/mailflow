@@ -7,6 +7,9 @@ export default defineConfig({
   server: {
     port: 4310,
     strictPort: true,
+    proxy: {
+      "/api/auth": "http://127.0.0.1:3001",
+    },
   },
   preview: {
     port: 4311,

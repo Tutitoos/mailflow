@@ -2,6 +2,12 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 test("mail shell and admin remain operable", async ({ page }) => {
+  await page.route("**/api/auth/setup/status", (route) =>
+    route.fulfill({ json: { configured: true } }),
+  );
+  await page.route("**/api/auth/get-session", (route) =>
+    route.fulfill({ json: { user: { id: "test-owner" } } }),
+  );
   await page.goto("/");
   await expect(page.getByRole("banner")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Mailboxes" })).toHaveCount(1);

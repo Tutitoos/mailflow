@@ -36,6 +36,14 @@ export const auth = betterAuth({
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
+    additionalFields: {
+      locale: {
+        type: "string",
+        required: false,
+        defaultValue: "en",
+        fieldName: "locale",
+      },
+    },
   },
   session: {
     modelName: "auth_sessions",

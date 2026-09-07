@@ -44,7 +44,7 @@ import { type Locale, type TranslationKey, translate } from "./i18n";
 
 type Translator = (key: TranslationKey) => string;
 
-function Brand() {
+export function Brand() {
   return (
     <div className="brand">
       <div className="brand-mark" aria-hidden="true">
@@ -518,8 +518,8 @@ function ContextRail({ t }: { t: Translator }) {
   );
 }
 
-export function MailPage() {
-  const [locale, setLocale] = useState<Locale>("en");
+export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
+  const [locale, setLocale] = useState<Locale>(initialLocale);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category>("primary");
   const [selected, setSelected] = useState<Set<string>>(new Set());

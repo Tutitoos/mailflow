@@ -4,27 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/Tutitoos/mailflow/services/api/internal/platform/ids"
-	redis "github.com/redis/go-redis/v9"
+	"github.com/Tutitoos/mailflow/services/api/internal/testkit"
 )
 
 func TestRedisQueueLifecycle(t *testing.T) {
-	address := os.Getenv("MAILFLOW_TEST_REDIS_ADDRESS")
-	if address == "" {
-		t.Skip("MAILFLOW_TEST_REDIS_ADDRESS is not set")
-	}
-	client := redis.NewClient(&redis.Options{Addr: address})
-	t.Cleanup(func() { _ = client.Close() })
-	prefix, err := ids.New()
-	if err != nil {
-		t.Fatal(err)
-	}
+	client, prefix := testkit.Redis(t)
 	config := DefaultConfig()
-	config.Prefix = "mailflow-test:" + prefix
+	config.Prefix = prefix
 	config.Consumer = "worker-one"
 	config.ClaimTimeout = 25 * time.Millisecond
 	config.ReadBlock = 10 * time.Millisecond
@@ -34,12 +23,6 @@ func TestRedisQueueLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		keys, _ := client.Keys(context.Background(), config.Prefix+":*").Result()
-		if len(keys) > 0 {
-			_ = client.Del(context.Background(), keys...).Err()
-		}
-	})
 
 	job, created, err := store.Enqueue(context.Background(), "test.deliver", json.RawMessage(`{"message":"safe fixture"}`), EnqueueOptions{IdempotencyKey: "same-request", MaxAttempts: 2})
 	if err != nil || !created {
@@ -105,26 +88,14 @@ func assertStats(t *testing.T, store *RedisStore, want Stats) {
 }
 
 func TestExpiredClaimIsRecoveredByAnotherConsumer(t *testing.T) {
-	address := os.Getenv("MAILFLOW_TEST_REDIS_ADDRESS")
-	if address == "" {
-		t.Skip("MAILFLOW_TEST_REDIS_ADDRESS is not set")
-	}
-	client := redis.NewClient(&redis.Options{Addr: address})
-	t.Cleanup(func() { _ = client.Close() })
-	prefix, _ := ids.New()
+	client, prefix := testkit.Redis(t)
 	config := DefaultConfig()
-	config.Prefix, config.Consumer = "mailflow-test:"+prefix, "crashed-worker"
+	config.Prefix, config.Consumer = prefix, "crashed-worker"
 	config.ClaimTimeout, config.ReadBlock = 20*time.Millisecond, 10*time.Millisecond
 	first, err := NewRedisStore(context.Background(), client, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		keys, _ := client.Keys(context.Background(), config.Prefix+":*").Result()
-		if len(keys) > 0 {
-			_ = client.Del(context.Background(), keys...).Err()
-		}
-	})
 	job, _, err := first.Enqueue(context.Background(), "test.recover", json.RawMessage(`{}`), EnqueueOptions{})
 	if err != nil {
 		t.Fatal(err)

@@ -72,7 +72,8 @@ jobs:
       - run: go mod download
       - run: go tool sqlc generate
       - run: git diff --exit-code -- internal/platform/database/dbgen
-      - run: go test -race ./...
+      - run: ./scripts/test-integration.sh
+        working-directory: .
       - run: go vet ./...
       - run: go run ./cmd/api --migrate
       - uses: oven-sh/setup-bun@v2

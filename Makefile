@@ -1,4 +1,4 @@
-.PHONY: check e2e dev api worker compose-config
+.PHONY: check integration e2e dev api worker compose-config
 
 check:
 	bun run lint
@@ -10,6 +10,9 @@ check:
 	cd services/api && go test -race ./... && go vet ./...
 	cd apps/desktop/src-tauri && cargo check
 	./scripts/repos-lock.sh validate
+
+integration:
+	./scripts/test-integration.sh
 
 e2e:
 	bun run --cwd apps/web test:e2e

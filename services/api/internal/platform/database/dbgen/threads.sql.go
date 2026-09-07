@@ -219,7 +219,7 @@ func (q *Queries) ListAttachmentsForMessages(ctx context.Context, arg ListAttach
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
+SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at, messages.search_vector
 FROM messages
 JOIN threads ON threads.id = messages.thread_id AND threads.account_id = messages.account_id
 JOIN accounts ON accounts.id = messages.account_id
@@ -274,7 +274,6 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.BodyText,
 			&i.BodyHtmlSanitized,
 			&i.SentAt,
-			&i.SearchVector,
 			&i.AccountID,
 			&i.IsRead,
 			&i.IsStarred,
@@ -284,6 +283,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.UpdatedAt,
 			&i.InReplyTo,
 			&i.ContentUpdatedAt,
+			&i.SearchVector,
 		); err != nil {
 			return nil, err
 		}
@@ -296,7 +296,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesFirstPage = `-- name: ListMessagesFirstPage :many
-SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
+SELECT messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at, messages.search_vector
 FROM messages
 JOIN threads ON threads.id = messages.thread_id AND threads.account_id = messages.account_id
 JOIN accounts ON accounts.id = messages.account_id
@@ -340,7 +340,6 @@ func (q *Queries) ListMessagesFirstPage(ctx context.Context, arg ListMessagesFir
 			&i.BodyText,
 			&i.BodyHtmlSanitized,
 			&i.SentAt,
-			&i.SearchVector,
 			&i.AccountID,
 			&i.IsRead,
 			&i.IsStarred,
@@ -350,6 +349,7 @@ func (q *Queries) ListMessagesFirstPage(ctx context.Context, arg ListMessagesFir
 			&i.UpdatedAt,
 			&i.InReplyTo,
 			&i.ContentUpdatedAt,
+			&i.SearchVector,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +558,7 @@ WHERE messages.id = $5
   AND messages.account_id = $7
   AND accounts.id = messages.account_id
   AND accounts.user_id = $8
-RETURNING messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.search_vector, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at
+RETURNING messages.id, messages.thread_id, messages.remote_id, messages.message_id, messages.references_header, messages.sender, messages.recipients, messages.subject, messages.body_text, messages.body_html_sanitized, messages.sent_at, messages.account_id, messages.is_read, messages.is_starred, messages.is_important, messages.deleted_at, messages.created_at, messages.updated_at, messages.in_reply_to, messages.content_updated_at, messages.search_vector
 `
 
 type UpdateMessageStateParams struct {
@@ -596,7 +596,6 @@ func (q *Queries) UpdateMessageState(ctx context.Context, arg UpdateMessageState
 		&i.BodyText,
 		&i.BodyHtmlSanitized,
 		&i.SentAt,
-		&i.SearchVector,
 		&i.AccountID,
 		&i.IsRead,
 		&i.IsStarred,
@@ -606,6 +605,7 @@ func (q *Queries) UpdateMessageState(ctx context.Context, arg UpdateMessageState
 		&i.UpdatedAt,
 		&i.InReplyTo,
 		&i.ContentUpdatedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }
@@ -739,7 +739,7 @@ ON CONFLICT (account_id, remote_id) DO UPDATE SET
   is_important = EXCLUDED.is_important,
   deleted_at = EXCLUDED.deleted_at,
   updated_at = now()
-RETURNING id, thread_id, remote_id, message_id, references_header, sender, recipients, subject, body_text, body_html_sanitized, sent_at, search_vector, account_id, is_read, is_starred, is_important, deleted_at, created_at, updated_at, in_reply_to, content_updated_at
+RETURNING id, thread_id, remote_id, message_id, references_header, sender, recipients, subject, body_text, body_html_sanitized, sent_at, account_id, is_read, is_starred, is_important, deleted_at, created_at, updated_at, in_reply_to, content_updated_at, search_vector
 `
 
 type UpsertMessageParams struct {
@@ -793,7 +793,6 @@ func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) (M
 		&i.BodyText,
 		&i.BodyHtmlSanitized,
 		&i.SentAt,
-		&i.SearchVector,
 		&i.AccountID,
 		&i.IsRead,
 		&i.IsStarred,
@@ -803,6 +802,7 @@ func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) (M
 		&i.UpdatedAt,
 		&i.InReplyTo,
 		&i.ContentUpdatedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }

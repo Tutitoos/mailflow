@@ -162,4 +162,5 @@ type ThreadMessageRepository interface {
 	ListMessages(context.Context, string, string, string, *MessageCursor, int) (MessagePage, error)
 	ApplyThreadState(context.Context, string, string, string, StatePatch) (Thread, error)
 	ApplyMessageState(context.Context, string, string, string, string, StatePatch) (Message, error)
+	SearchMessages(context.Context, string, string, SearchQuery, *SearchCursor, int) (SearchPage, error)
 }

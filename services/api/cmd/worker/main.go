@@ -14,6 +14,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
@@ -27,7 +28,12 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logPipeline, err := logs.NewPipeline(os.Stdout, "worker", "runtime")
+	if err != nil {
+		panic(err)
+	}
+	logger := slog.New(logPipeline)
+	slog.SetDefault(logger)
 	runtimeConfig, err := config.Load()
 	if err != nil {
 		logger.Error("worker configuration failed", "event", "worker.config_invalid", "error", err)
@@ -82,6 +88,7 @@ func main() {
 	var schedulerDone chan struct{}
 	var actionDone chan struct{}
 	var metricsDone chan struct{}
+	var logsDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -95,6 +102,14 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		logStore, err := logs.NewStore(pool)
+		if err != nil {
+			logger.Error("log persistence unavailable", "event", "logs.persistence_unavailable")
+			os.Exit(1)
+		}
+		logPipeline.Attach(logStore)
+		logsDone = make(chan struct{})
+		go func() { defer close(logsDone); _ = logPipeline.Run(ctx) }()
 		metricService := metrics.NewService(registry, pool, "worker")
 		metricsDone = make(chan struct{})
 		go func() {
@@ -132,6 +147,14 @@ func main() {
 			logger.Error("sync event store configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
+		logPipeline.SetStream(func(streamContext context.Context, entry logs.Entry) error {
+			var ownerID string
+			if err := pool.QueryRow(streamContext, `select id::text from users order by created_at limit 1`).Scan(&ownerID); err != nil {
+				return err
+			}
+			_, err := eventStore.Publish(streamContext, ownerID, "admin.log", logs.StreamPayload(entry))
+			return err
+		})
 		orchestrator, err := mailflowsync.NewOrchestrator(mailflowsync.NewRunRepository(pool), store, leases, executor, eventStore, registry)
 		if err != nil {
 			logger.Error("sync orchestrator configuration failed", "event", "sync.unavailable", "error", err)
@@ -244,6 +267,9 @@ func main() {
 	}
 	if metricsDone != nil {
 		<-metricsDone
+	}
+	if logsDone != nil {
+		<-logsDone
 	}
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)

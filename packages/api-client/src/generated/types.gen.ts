@@ -32,7 +32,7 @@ export type SyncRunAccepted = {
 export type EventEnvelope = {
     version: 1;
     cursor: string;
-    type: 'mail.changed' | 'sync.progress' | 'draft.changed' | 'admin.alert' | 'system.status' | 'system.resync_required';
+    type: 'mail.changed' | 'sync.progress' | 'draft.changed' | 'admin.alert' | 'admin.log' | 'system.status' | 'system.resync_required';
     timestamp: string;
     payload: {
         [key: string]: unknown;
@@ -215,6 +215,29 @@ export type MetricSeriesPoint = {
     p50?: number;
     p95?: number;
     p99?: number;
+};
+
+export type LogEntryPage = {
+    items: Array<LogEntry>;
+    dropped: number;
+};
+
+export type LogEntry = {
+    id: number;
+    occurredAt: string;
+    service: string;
+    module: string;
+    level: 'debug' | 'info' | 'warning' | 'error';
+    event: string;
+    requestId?: string;
+    attributes?: {
+        [key: string]: unknown;
+    };
+};
+
+export type LogDebugStatus = {
+    enabled: boolean;
+    enabledUntil: string | null;
 };
 
 export type MessageAttachment = {
@@ -1048,16 +1071,96 @@ export type GetAdminMetricsResponse = GetAdminMetricsResponses[keyof GetAdminMet
 export type GetAdminLogsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        from?: string;
+        until?: string;
+        service?: string;
+        module?: string;
+        level?: 'debug' | 'info' | 'warning' | 'error';
+        event?: string;
+        requestId?: string;
+        limit?: number;
+    };
     url: '/admin/logs';
 };
 
+export type GetAdminLogsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminLogsError = GetAdminLogsErrors[keyof GetAdminLogsErrors];
+
 export type GetAdminLogsResponses = {
     /**
-     * Redacted structured logs
+     * Filtered redacted operational logs
      */
-    200: unknown;
+    200: LogEntryPage;
 };
+
+export type GetAdminLogsResponse = GetAdminLogsResponses[keyof GetAdminLogsResponses];
+
+export type GetAdminLogDebugData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/logs/debug';
+};
+
+export type GetAdminLogDebugErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminLogDebugError = GetAdminLogDebugErrors[keyof GetAdminLogDebugErrors];
+
+export type GetAdminLogDebugResponses = {
+    /**
+     * Current temporary debug lease
+     */
+    200: LogDebugStatus;
+};
+
+export type GetAdminLogDebugResponse = GetAdminLogDebugResponses[keyof GetAdminLogDebugResponses];
+
+export type SetAdminLogDebugData = {
+    body: {
+        durationSeconds: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/admin/logs/debug';
+};
+
+export type SetAdminLogDebugErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type SetAdminLogDebugError = SetAdminLogDebugErrors[keyof SetAdminLogDebugErrors];
+
+export type SetAdminLogDebugResponses = {
+    /**
+     * Updated temporary debug lease; zero disables debug
+     */
+    200: LogDebugStatus;
+};
+
+export type SetAdminLogDebugResponse = SetAdminLogDebugResponses[keyof SetAdminLogDebugResponses];
 
 export type GetSentryIssuesData = {
     body?: never;

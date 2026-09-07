@@ -47,11 +47,15 @@ func Build(version string, options ...Options) *fiber.App {
 	if len(options) > 0 {
 		runtimeOptions = options[0]
 	}
+	var attachmentService httpapi.AttachmentService
+	if runtimeOptions.Attachments != nil {
+		attachmentService = runtimeOptions.Attachments
+	}
 	return httpapi.New(httpapi.Dependencies{
 		Accounts:      runtimeOptions.Accounts,
 		Actions:       runtimeOptions.Actions,
 		ActionState:   runtimeOptions.ActionState,
-		Attachments:   runtimeOptions.Attachments,
+		Attachments:   attachmentService,
 		Admin:         admin.NewService(version, registry),
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,

@@ -65,9 +65,17 @@ ORDER BY CASE role WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, position;
 -- name: DeleteDraftAttachments :exec
 DELETE FROM draft_attachments WHERE draft_id = sqlc.arg(draft_id) AND account_id = sqlc.arg(account_id);
 
--- name: CreateDraftAttachment :exec
+-- name: CreateDraftAttachment :execrows
 INSERT INTO draft_attachments (draft_id, account_id, position, object_id, filename, media_type, size_bytes)
-VALUES (sqlc.arg(draft_id), sqlc.arg(account_id), sqlc.arg(position), sqlc.arg(object_id), sqlc.narg(filename), sqlc.arg(media_type), sqlc.arg(size_bytes));
+SELECT sqlc.arg(draft_id), sqlc.arg(account_id), sqlc.arg(position), cdn_objects.object_id,
+       sqlc.narg(filename), sqlc.arg(media_type), sqlc.arg(size_bytes)
+FROM cdn_objects
+WHERE cdn_objects.object_id = sqlc.arg(object_id)
+  AND cdn_objects.namespace = 'attachments'
+  AND cdn_objects.account_id = sqlc.arg(account_id)
+  AND cdn_objects.storage_status = 'cached'
+  AND cdn_objects.media_type = sqlc.arg(media_type)
+  AND cdn_objects.size_bytes = sqlc.arg(size_bytes);
 
 -- name: ListDraftAttachments :many
 SELECT * FROM draft_attachments

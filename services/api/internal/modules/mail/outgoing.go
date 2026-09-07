@@ -4,17 +4,23 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"io"
 	"mime"
 	"mime/multipart"
 	stdmail "net/mail"
 	"net/textproto"
+	"os"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type DeliveryStatus string
@@ -48,19 +54,28 @@ type OutgoingProviderResolver interface {
 	ResolveOutgoingProvider(context.Context, string, string) (OutgoingProvider, error)
 }
 
+type OutgoingAttachmentStore interface {
+	OpenAttachment(context.Context, string, string, time.Time) (cdn.Attachment, *os.File, error)
+}
+
 type DeliveryService struct {
 	pool      *pgxpool.Pool
 	drafts    DraftRepository
 	providers OutgoingProviderResolver
 	publisher ActionEventPublisher
+	objects   OutgoingAttachmentStore
 	locks     sync.Map
 }
 
-func NewDeliveryService(pool *pgxpool.Pool, drafts DraftRepository, providers OutgoingProviderResolver, publisher ActionEventPublisher) (*DeliveryService, error) {
+func NewDeliveryService(pool *pgxpool.Pool, drafts DraftRepository, providers OutgoingProviderResolver, publisher ActionEventPublisher, objects ...OutgoingAttachmentStore) (*DeliveryService, error) {
 	if pool == nil || drafts == nil || providers == nil {
 		return nil, errors.New("mail delivery configuration is invalid")
 	}
-	return &DeliveryService{pool: pool, drafts: drafts, providers: providers, publisher: publisher}, nil
+	var objectStore OutgoingAttachmentStore
+	if len(objects) > 0 {
+		objectStore = objects[0]
+	}
+	return &DeliveryService{pool: pool, drafts: drafts, providers: providers, publisher: publisher, objects: objectStore}, nil
 }
 
 func (service *DeliveryService) SaveDraft(ctx context.Context, input CreateDraftInput) (Draft, error) {
@@ -207,7 +222,11 @@ where messages.id = $1 and messages.account_id = $2 and accounts.user_id = $3`, 
 			return nil, "", err
 		}
 	}
-	raw, err := buildOutgoingMIME(draft, context)
+	attachments, err := service.loadAttachments(ctx, user, draft)
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := buildOutgoingMIME(draft, context, attachments)
 	threadID := ""
 	if draft.Mode == ComposeReply {
 		threadID = context.threadID
@@ -221,7 +240,62 @@ type outgoingContext struct {
 	references []string
 }
 
-func buildOutgoingMIME(draft Draft, source outgoingContext) ([]byte, error) {
+type outgoingAttachment struct {
+	filename  string
+	mediaType string
+	content   []byte
+}
+
+const maxOutgoingAttachmentBytes = 20 << 20
+
+func (service *DeliveryService) loadAttachments(ctx context.Context, user string, draft Draft) ([]outgoingAttachment, error) {
+	if len(draft.Attachments) == 0 {
+		return nil, nil
+	}
+	if service.objects == nil {
+		return nil, ErrDraftConflict
+	}
+	result := make([]outgoingAttachment, 0, len(draft.Attachments))
+	total := int64(0)
+	for _, attachment := range draft.Attachments {
+		metadata, file, err := service.objects.OpenAttachment(ctx, user, attachment.ObjectID, time.Now().UTC())
+		if err != nil {
+			return nil, ErrDraftConflict
+		}
+		if metadata.AccountID != draft.AccountID || metadata.SizeBytes != attachment.SizeBytes || metadata.MediaType != attachment.MediaType || total+metadata.SizeBytes > maxOutgoingAttachmentBytes {
+			_ = file.Close()
+			return nil, ErrInvalidDraft
+		}
+		content, readErr := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, source: file}, metadata.SizeBytes+1))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || int64(len(content)) != metadata.SizeBytes {
+			return nil, ErrDraftConflict
+		}
+		total += metadata.SizeBytes
+		filename := "attachment"
+		if attachment.Filename != nil {
+			filename = *attachment.Filename
+		}
+		result = append(result, outgoingAttachment{filename: filename, mediaType: metadata.MediaType, content: content})
+	}
+	return result, nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (reader *contextReader) Read(destination []byte) (int, error) {
+	select {
+	case <-reader.ctx.Done():
+		return 0, reader.ctx.Err()
+	default:
+		return reader.source.Read(destination)
+	}
+}
+
+func buildOutgoingMIME(draft Draft, source outgoingContext, attachments []outgoingAttachment) ([]byte, error) {
 	var output bytes.Buffer
 	writeHeader := func(name, value string) {
 		if value != "" {
@@ -254,33 +328,92 @@ func buildOutgoingMIME(draft Draft, source outgoingContext) ([]byte, error) {
 		writeHeader("References", strings.Join(references, " "))
 	}
 	writeHeader("MIME-Version", "1.0")
-	if draft.BodyHTML == "" {
-		writeHeader("Content-Type", `text/plain; charset="UTF-8"`)
-		writeHeader("Content-Transfer-Encoding", "8bit")
-		output.WriteString("\r\n")
-		output.WriteString(strings.ReplaceAll(draft.BodyText, "\n", "\r\n"))
+	if len(attachments) == 0 {
+		if err := writeOutgoingBody(&output, draft, true); err != nil {
+			return nil, err
+		}
 		return output.Bytes(), nil
 	}
-	writer := multipart.NewWriter(&output)
-	if err := writer.SetBoundary("mailflow-alternative"); err != nil {
+	writeHeader("Content-Type", `multipart/mixed; boundary="mailflow-mixed"`)
+	output.WriteString("\r\n")
+	mixed := multipart.NewWriter(&output)
+	if err := mixed.SetBoundary("mailflow-mixed"); err != nil {
 		return nil, ErrInvalidDraft
 	}
-	writeHeader("Content-Type", `multipart/alternative; boundary="mailflow-alternative"`)
-	output.WriteString("\r\n")
+	bodyHeader := textproto.MIMEHeader{}
+	if draft.BodyHTML == "" {
+		bodyHeader.Set("Content-Type", `text/plain; charset="UTF-8"`)
+		bodyHeader.Set("Content-Transfer-Encoding", "8bit")
+	} else {
+		bodyHeader.Set("Content-Type", `multipart/alternative; boundary="mailflow-alternative"`)
+	}
+	bodyWriter, err := mixed.CreatePart(bodyHeader)
+	if err != nil {
+		return nil, ErrInvalidDraft
+	}
+	if err := writeOutgoingBody(bodyWriter, draft, false); err != nil {
+		return nil, err
+	}
+	for _, attachment := range attachments {
+		header := textproto.MIMEHeader{}
+		header.Set("Content-Type", mime.FormatMediaType(attachment.mediaType, map[string]string{"name": attachment.filename}))
+		header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": attachment.filename}))
+		header.Set("Content-Transfer-Encoding", "base64")
+		part, err := mixed.CreatePart(header)
+		if err != nil {
+			return nil, ErrInvalidDraft
+		}
+		if err := writeBase64MIME(part, attachment.content); err != nil {
+			return nil, ErrInvalidDraft
+		}
+	}
+	if err := mixed.Close(); err != nil {
+		return nil, ErrInvalidDraft
+	}
+	return output.Bytes(), nil
+}
+
+func writeBase64MIME(destination io.Writer, content []byte) error {
+	encoded := base64.StdEncoding.EncodeToString(content)
+	for len(encoded) > 0 {
+		width := min(76, len(encoded))
+		if _, err := io.WriteString(destination, encoded[:width]+"\r\n"); err != nil {
+			return err
+		}
+		encoded = encoded[width:]
+	}
+	return nil
+}
+
+func writeOutgoingBody(destination io.Writer, draft Draft, includeHeaders bool) error {
+	if draft.BodyHTML == "" {
+		if includeHeaders {
+			_, _ = io.WriteString(destination, "Content-Type: text/plain; charset=\"UTF-8\"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
+		}
+		_, _ = io.WriteString(destination, strings.ReplaceAll(draft.BodyText, "\n", "\r\n"))
+		return nil
+	}
+	if includeHeaders {
+		_, _ = io.WriteString(destination, "Content-Type: multipart/alternative; boundary=\"mailflow-alternative\"\r\n\r\n")
+	}
+	writer := multipart.NewWriter(destination)
+	if err := writer.SetBoundary("mailflow-alternative"); err != nil {
+		return ErrInvalidDraft
+	}
 	for _, part := range []struct{ mediaType, body string }{{"text/plain", draft.BodyText}, {"text/html", draft.BodyHTML}} {
 		header := textproto.MIMEHeader{}
 		header.Set("Content-Type", part.mediaType+`; charset="UTF-8"`)
 		header.Set("Content-Transfer-Encoding", "8bit")
 		partWriter, err := writer.CreatePart(header)
 		if err != nil {
-			return nil, ErrInvalidDraft
+			return ErrInvalidDraft
 		}
 		_, _ = partWriter.Write([]byte(strings.ReplaceAll(part.body, "\n", "\r\n")))
 	}
 	if err := writer.Close(); err != nil {
-		return nil, ErrInvalidDraft
+		return ErrInvalidDraft
 	}
-	return output.Bytes(), nil
+	return nil
 }
 
 func (service *DeliveryService) prepareDelivery(ctx context.Context, user string, draft Draft, key string, hash []byte) (Delivery, bool, error) {

@@ -743,6 +743,8 @@ select:focus-visible {
 }
 .attachment-card span {
   display: grid;
+  min-width: 0;
+  flex: 1;
   gap: 3px;
 }
 .attachment-card small {
@@ -904,6 +906,10 @@ select:focus-visible {
   padding: 0 8px 0 15px;
   background: #151515;
 }
+.compose-panel > footer {
+  min-height: 54px;
+  order: 2;
+}
 .compose-panel > header > div,
 .compose-panel > footer > div {
   display: flex;
@@ -979,6 +985,50 @@ select:focus-visible {
 .compose-format {
   display: flex;
   margin-left: 6px;
+}
+.compose-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.compose-attachments {
+  order: 1;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+.compose-attachments li {
+  min-width: 180px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #111;
+}
+.compose-attachments span,
+.compose-attachments small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compose-attachments small,
+.compose-attachments progress {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 10px;
+}
+.compose-attachments button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 .admin-shell {
   min-height: 100vh;

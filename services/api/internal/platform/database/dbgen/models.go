@@ -121,13 +121,14 @@ type Draft struct {
 }
 
 type DraftAttachment struct {
-	DraftID   pgtype.UUID `json:"draft_id"`
-	AccountID pgtype.UUID `json:"account_id"`
-	Position  int32       `json:"position"`
-	ObjectID  string      `json:"object_id"`
-	Filename  pgtype.Text `json:"filename"`
-	MediaType string      `json:"media_type"`
-	SizeBytes int64       `json:"size_bytes"`
+	DraftID         pgtype.UUID `json:"draft_id"`
+	AccountID       pgtype.UUID `json:"account_id"`
+	Position        int32       `json:"position"`
+	ObjectID        string      `json:"object_id"`
+	Filename        pgtype.Text `json:"filename"`
+	MediaType       string      `json:"media_type"`
+	SizeBytes       int64       `json:"size_bytes"`
+	ObjectNamespace pgtype.Text `json:"object_namespace"`
 }
 
 type DraftRecipient struct {

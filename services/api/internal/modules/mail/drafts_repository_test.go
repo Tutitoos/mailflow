@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"strings"
 	stdsync "sync"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestDraftSchedulingAndAttachmentValidation(t *testing.T) {
 	if err != nil || !schedule.LocalSaveAt.Equal(now.Add(2*time.Second)) || !schedule.RemoteCheckpointAt.Equal(now.Add(15*time.Second)) {
 		t.Fatalf("draft schedule = %+v, %v", schedule, err)
 	}
-	repository, _, userID, accountID := draftFixture(t)
+	repository, pool, userID, accountID := draftFixture(t)
 	_, err = repository.CreateDraft(context.Background(), CreateDraftInput{
 		UserID: userID, AccountID: accountID, Now: now,
 		Content: DraftContentInput{Attachments: []DraftAttachmentInput{{ObjectID: "../../private", MediaType: "text/plain"}}},
@@ -154,12 +155,24 @@ func TestDraftSchedulingAndAttachmentValidation(t *testing.T) {
 	_, err = repository.CreateDraft(context.Background(), CreateDraftInput{
 		UserID: userID, AccountID: accountID, Now: now,
 		Content: DraftContentInput{
-			Mode: ComposeNew,
+			Mode:       ComposeNew,
 			Recipients: []MessageAddressInput{{Role: AddressTo, Address: "not-an-email"}},
 		},
 	})
 	if !errors.Is(err, ErrInvalidDraft) {
 		t.Fatalf("invalid recipient address error = %v", err)
+	}
+	otherAccountID := uuid.NewString()
+	if _, err := pool.Exec(context.Background(), `insert into accounts (id,user_id,provider,remote_id,display_name,encrypted_credentials,credential_nonce,capabilities) values ($1,$2,'google',$3,'Other',$4,$5,'{}')`, otherAccountID, userID, otherAccountID, []byte{1}, []byte{2}); err != nil {
+		t.Fatal(err)
+	}
+	foreignObject := "abcdef0123456789abcdef0123456789"
+	if _, err := pool.Exec(context.Background(), `insert into cdn_objects (object_id,namespace,account_id,media_type,size_bytes,etag,storage_status,expires_at) values ($1,'attachments',$2,'text/plain',5,$3,'cached',now() + interval '1 day')`, foreignObject, otherAccountID, strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = repository.CreateDraft(context.Background(), CreateDraftInput{UserID: userID, AccountID: accountID, Now: now, Content: DraftContentInput{Attachments: []DraftAttachmentInput{{ObjectID: foreignObject, MediaType: "text/plain", SizeBytes: 5}}}})
+	if !errors.Is(err, ErrInvalidDraft) {
+		t.Fatalf("cross-account attachment error = %v", err)
 	}
 }
 
@@ -167,7 +180,7 @@ func createDraftFixture(t *testing.T, repository *DraftRepositoryStore, userID, 
 	t.Helper()
 	draft, err := repository.CreateDraft(context.Background(), CreateDraftInput{
 		UserID: userID, AccountID: accountID, Now: time.Now().UTC(),
-		Content: DraftContentInput{Subject: "Initial", BodyText: "Initial", BodyHTML: "<p>Initial</p>", Recipients: []MessageAddressInput{{Role: AddressTo, Address: "recipient@example.test"}}, Attachments: []DraftAttachmentInput{{ObjectID: "abcdef0123456789abcdef0123456789", MediaType: "text/plain", SizeBytes: 5}}},
+		Content: DraftContentInput{Subject: "Initial", BodyText: "Initial", BodyHTML: "<p>Initial</p>", Recipients: []MessageAddressInput{{Role: AddressTo, Address: "recipient@example.test"}}},
 	})
 	if err != nil {
 		t.Fatalf("create draft fixture: %v", err)
@@ -194,6 +207,9 @@ func draftFixture(t *testing.T) (*DraftRepositoryStore, *pgxpool.Pool, string, s
 	}
 	if _, err := pool.Exec(ctx, `insert into accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities) values ($1, $2, 'google', 'draft-owner', 'Personal', $3, $4, '{}')`, accountID, userID, []byte{1}, []byte{2}); err != nil {
 		t.Fatalf("create draft account: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `insert into cdn_objects (object_id, namespace, account_id, filename, media_type, size_bytes, etag, storage_status, expires_at) values ('0123456789abcdef0123456789abcdef', 'attachments', $1, 'note.txt', 'text/plain', 12, $2, 'cached', now() + interval '1 day')`, accountID, strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("create draft attachment object: %v", err)
 	}
 	return NewDraftRepository(pool), pool, userID.String(), accountID.String()
 }

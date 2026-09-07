@@ -27,7 +27,7 @@ type Dependencies struct {
 	Actions       *mail.PendingActionService
 	ActionState   mail.ActionStateStore
 	Admin         *admin.Service
-	Attachments   AttachmentReader
+	Attachments   AttachmentService
 	AuthAudience  string
 	AuthIssuer    string
 	AuthJWKSURL   string
@@ -84,8 +84,17 @@ type DraftService interface {
 }
 
 func New(deps Dependencies) *fiber.App {
+	bodyLimit := fiber.DefaultBodyLimit
+	if deps.Attachments != nil {
+		const multipartOverhead = 1 << 20
+		maxInt := int64(^uint(0) >> 1)
+		if maximum := deps.Attachments.MaxAttachmentBytes(); maximum > 0 && maximum <= maxInt-multipartOverhead {
+			bodyLimit = int(maximum + multipartOverhead)
+		}
+	}
 	app := fiber.New(fiber.Config{
 		AppName:             "Mailflow API",
+		BodyLimit:           bodyLimit,
 		PassLocalsToContext: true,
 		ReadTimeout:         15 * time.Second,
 		WriteTimeout:        30 * time.Second,
@@ -178,6 +187,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Post("/accounts/:accountId/refresh", googleOAuthRefresh(deps.GoogleOAuth))
 	v1.Post("/accounts/:accountId/sync", synchronizeAccount(deps.Sync))
 	v1.Delete("/accounts/:accountId", googleOAuthDisconnect(deps.GoogleOAuth))
+	v1.Post("/attachments", attachmentUpload(deps.Attachments))
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")
 	adminRoutes.Get("/status", func(c fiber.Ctx) error { return c.JSON(deps.Admin.Status()) })

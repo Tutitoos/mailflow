@@ -14,19 +14,21 @@ import {
   FORMAT_TEXT_COMMAND,
   type LexicalEditor,
 } from "lexical";
-import { Bold, Italic, Minus, Send, Square, Trash2, Underline, X } from "lucide-react";
+import { Bold, Italic, Minus, Paperclip, Send, Square, Trash2, Underline, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
 import { type Locale, translate } from "./i18n";
 import {
   checkpointDraft,
   createDraft,
+  type DraftAttachment,
   type DraftContent,
   discardDraft,
   loadDraft,
   type MailDraft,
   sendDraft,
   updateDraft,
+  uploadDraftAttachment,
 } from "./mailflow-api";
 
 export type ComposeContext = {
@@ -127,12 +129,18 @@ export function ComposePanel({
     "editing" | "saving" | "saved" | "sending" | "conflict" | "ambiguous"
   >("editing");
   const [editor, setEditor] = useState<LexicalEditor | null>(null);
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [upload, setUpload] = useState<{ name: string; loaded: number; total: number } | null>(
+    null,
+  );
+  const uploadController = useRef<AbortController | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const saveInFlight = useRef<Promise<MailDraft> | null>(null);
   const sendKey = useRef<string | null>(null);
   const recovered = useRef(false);
   const editVersion = useRef(0);
-  const latest = useRef({ to, cc, bcc, subject, editorContent, draft, dirty });
-  latest.current = { to, cc, bcc, subject, editorContent, draft, dirty };
+  const latest = useRef({ to, cc, bcc, subject, editorContent, attachments, draft, dirty });
+  latest.current = { to, cc, bcc, subject, editorContent, attachments, draft, dirty };
 
   const markDirty = useCallback(() => {
     editVersion.current += 1;
@@ -153,6 +161,7 @@ export function ComposePanel({
         ...parseRecipients(latest.current.cc, "cc"),
         ...parseRecipients(latest.current.bcc, "bcc"),
       ],
+      attachments: latest.current.attachments,
       mode: context.mode,
       ...(context.sourceMessageId ? { sourceMessageId: context.sourceMessageId } : {}),
     }),
@@ -246,6 +255,7 @@ export function ComposePanel({
         );
         setShowCopies(saved.recipients.some((item) => item.role !== "to"));
         setSubject(saved.subject);
+        setAttachments(saved.attachments);
         setEditorContent({ text: saved.bodyText, html: saved.bodyHtml });
         editor.update(() => {
           const root = $getRoot();
@@ -272,7 +282,7 @@ export function ComposePanel({
       DRAFT_LOCAL_SAVE_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [to, cc, bcc, subject, editorContent, saveLocal]);
+  }, [to, cc, bcc, subject, editorContent, attachments, saveLocal]);
 
   useEffect(() => {
     const interval = window.setInterval(
@@ -305,6 +315,10 @@ export function ComposePanel({
   );
 
   const requestClose = async () => {
+    if (uploadController.current) {
+      setStatus("conflict");
+      return;
+    }
     try {
       await checkpoint();
       onClose();
@@ -315,6 +329,7 @@ export function ComposePanel({
 
   const discard = async () => {
     try {
+      uploadController.current?.abort();
       if (latest.current.draft) await discardDraft(accountId, latest.current.draft.id);
       localStorage.removeItem(recoveryKey(accountId));
       onClose();
@@ -324,6 +339,7 @@ export function ComposePanel({
   };
 
   const send = async () => {
+    if (uploadController.current) return;
     try {
       setStatus("sending");
       const saved = await saveLocal();
@@ -339,6 +355,29 @@ export function ComposePanel({
       }
     } catch {
       setStatus("conflict");
+    }
+  };
+
+  const uploadFile = async (file: File) => {
+    if (uploadController.current) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setUpload({ name: file.name, loaded: 0, total: file.size });
+    try {
+      const stored = await uploadDraftAttachment(
+        accountId,
+        file,
+        (loaded, total) => setUpload({ name: file.name, loaded, total }),
+        controller.signal,
+      );
+      setAttachments((current) => [...current, stored]);
+      markDirty();
+    } catch {
+      if (!controller.signal.aborted) setStatus("conflict");
+    } finally {
+      if (uploadController.current === controller) uploadController.current = null;
+      setUpload(null);
+      if (fileInput.current) fileInput.current.value = "";
     }
   };
 
@@ -473,11 +512,68 @@ export function ComposePanel({
                 <Send size={16} /> {t("send")}
               </Button>
               <FormatToolbar editor={editor} />
+              <input
+                ref={fileInput}
+                className="compose-file-input"
+                type="file"
+                aria-label={t("addAttachment")}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadFile(file);
+                }}
+              />
+              <Button
+                size="icon"
+                aria-label={t("addAttachment")}
+                disabled={upload !== null}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip size={16} />
+              </Button>
             </div>
             <Button size="icon" aria-label={t("discardDraft")} onClick={() => void discard()}>
               <Trash2 size={17} />
             </Button>
           </footer>
+          {(attachments.length > 0 || upload) && (
+            <ul className="compose-attachments" aria-label={t("attachments")}>
+              {attachments.map((attachment) => (
+                <li key={attachment.objectId}>
+                  <span>{attachment.filename || t("attachment")}</span>
+                  <small>{attachment.mediaType}</small>
+                  <Button
+                    size="icon"
+                    aria-label={t("removeAttachment")}
+                    onClick={() => {
+                      setAttachments((current) =>
+                        current.filter((item) => item.objectId !== attachment.objectId),
+                      );
+                      markDirty();
+                    }}
+                  >
+                    <X size={14} />
+                  </Button>
+                </li>
+              ))}
+              {upload && (
+                <li>
+                  <span>{upload.name}</span>
+                  <progress
+                    value={upload.loaded}
+                    max={Math.max(upload.total, 1)}
+                    aria-label={t("uploadProgress")}
+                  />
+                  <Button
+                    size="icon"
+                    aria-label={t("cancelUpload")}
+                    onClick={() => uploadController.current?.abort()}
+                  >
+                    <X size={14} />
+                  </Button>
+                </li>
+              )}
+            </ul>
+          )}
         </>
       )}
     </section>

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +53,9 @@ func (*fakeGmailProvider) SaveDraft(context.Context, mail.OutgoingMessage) (stri
 }
 func (*fakeGmailProvider) Send(context.Context, mail.OutgoingMessage) (string, error) {
 	return "message", nil
+}
+func (*fakeGmailProvider) DownloadAttachment(context.Context, string, string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("attachment")), nil
 }
 
 type fakeGmailWriter struct {

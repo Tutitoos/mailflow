@@ -129,6 +129,13 @@ export type DraftRecipient = {
   address: string;
 };
 
+export type DraftAttachment = {
+  objectId: string;
+  filename: string | null;
+  mediaType: string;
+  sizeBytes: number;
+};
+
 export type DraftContent = {
   accountId: string;
   expectedRevision?: number;
@@ -136,6 +143,7 @@ export type DraftContent = {
   bodyText: string;
   bodyHtml: string;
   recipients: DraftRecipient[];
+  attachments: DraftAttachment[];
   mode: "new" | "reply" | "forward";
   sourceMessageId?: string;
 };
@@ -339,6 +347,86 @@ export async function sendDraft(
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ accountId, draftId, expectedRevision }),
+  });
+}
+
+export async function uploadDraftAttachment(
+  accountId: string,
+  file: File,
+  onProgress: (loaded: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<DraftAttachment> {
+  const token = await accessToken(signal);
+  if (signal.aborted) throw new APIError("attachment_upload_cancelled");
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const fail = (code: string) => reject(new APIError(code));
+    request.open("POST", "/api/v1/attachments");
+    request.setRequestHeader("authorization", `Bearer ${token}`);
+    request.upload.addEventListener("progress", (event) =>
+      onProgress(event.loaded, event.lengthComputable ? event.total : file.size),
+    );
+    request.addEventListener("load", () => {
+      if (request.status < 200 || request.status >= 300) {
+        try {
+          const payload = JSON.parse(request.responseText) as { code?: unknown };
+          fail(typeof payload.code === "string" ? payload.code : "attachment_upload_failed");
+        } catch {
+          fail("attachment_upload_failed");
+        }
+        return;
+      }
+      try {
+        resolve(JSON.parse(request.responseText) as DraftAttachment);
+      } catch {
+        fail("attachment_upload_failed");
+      }
+    });
+    request.addEventListener("error", () => fail("attachment_upload_failed"));
+    request.addEventListener("abort", () => fail("attachment_upload_cancelled"));
+    signal.addEventListener("abort", () => request.abort(), { once: true });
+    const body = new FormData();
+    body.set("accountId", accountId);
+    body.set("file", file);
+    request.send(body);
+  });
+}
+
+export async function downloadMessageAttachment(
+  attachmentId: string,
+  onProgress: (loaded: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const token = await accessToken(signal);
+  const response = await fetch(`/api/v1/attachments/${encodeURIComponent(attachmentId)}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { authorization: `Bearer ${token}` },
+    signal,
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { code?: unknown } | null;
+    throw new APIError(
+      typeof payload?.code === "string" ? payload.code : "attachment_download_failed",
+    );
+  }
+  const total = Number(response.headers.get("content-length") ?? 0);
+  if (!response.body) return response.blob();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      const copy = new Uint8Array(value);
+      chunks.push(copy);
+      loaded += copy.byteLength;
+      onProgress(loaded, total || loaded);
+    }
+  }
+  return new Blob(chunks, {
+    type: response.headers.get("content-type") ?? "application/octet-stream",
   });
 }
 

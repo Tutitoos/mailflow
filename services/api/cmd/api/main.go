@@ -79,6 +79,9 @@ func main() {
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	var accountService *accounts.Service
 	var databasePool *pgxpool.Pool
+	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
+	googleClient := googleoauth.NewClient(googleConfig, nil)
+	var gmailResolver *mailflowsync.GmailAccountResolver
 	if runtimeConfig.DatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := database.Migrate(ctx, runtimeConfig.DatabaseURL); err != nil {
@@ -100,12 +103,23 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
+		normalizer, normalizerErr := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+		if normalizerErr != nil {
+			logger.Error("mail content configuration failed", "event", "mail.content_unavailable")
+			os.Exit(1)
+		}
+		gmailResolver, err = mailflowsync.NewGmailAccountResolver(accountService, googleClient, nil, normalizer)
+		if err != nil {
+			logger.Error("Gmail provider configuration failed", "event", "mail.provider_unavailable")
+			os.Exit(1)
+		}
 		cdnStore, err := cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
 		if err != nil {
 			logger.Error("CDN storage configuration failed", "event", "cdn.storage_unavailable", "error", err)
 			os.Exit(1)
 		}
-		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention)
+		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention, gmailAttachmentProviderResolver{gmailResolver})
 		if err != nil {
 			logger.Error("CDN service configuration failed", "event", "cdn.service_unavailable", "error", err)
 			os.Exit(1)
@@ -118,7 +132,6 @@ func main() {
 		options.Search = options.Inbox
 		options.ActionState = options.Inbox
 		options.Mailboxes = mail.NewMailboxLabelRepository(queries)
-		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
 		options.Accounts = accountService
 	}
 	var redisClient *redis.Client
@@ -139,21 +152,10 @@ func main() {
 			options.Actions = mail.NewPendingActionService(mail.NewPendingActionRepository(databasePool), store)
 		}
 	}
-	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	if redisClient != nil && accountService != nil {
-		googleClient := googleoauth.NewClient(googleConfig, nil)
 		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleClient, accountService)
-		normalizer, normalizerErr := mail.NewNormalizer(mail.DefaultMIMEPolicy())
-		if normalizerErr != nil {
-			logger.Error("mail composer configuration failed", "event", "mail.composer_unavailable")
-			os.Exit(1)
-		}
-		resolver, resolverErr := mailflowsync.NewGmailAccountResolver(accountService, googleClient, nil, normalizer)
-		if resolverErr != nil {
-			logger.Error("Gmail delivery configuration failed", "event", "mail.delivery_unavailable")
-			os.Exit(1)
-		}
-		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), gmailOutgoingProviderResolver{resolver}, options.Events)
+		var resolverErr error
+		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), gmailOutgoingProviderResolver{gmailResolver}, options.Events, options.Attachments)
 		if resolverErr != nil {
 			logger.Error("mail delivery configuration failed", "event", "mail.delivery_unavailable")
 			os.Exit(1)
@@ -195,5 +197,13 @@ type gmailOutgoingProviderResolver struct {
 }
 
 func (resolver gmailOutgoingProviderResolver) ResolveOutgoingProvider(ctx context.Context, userID, accountID string) (mail.OutgoingProvider, error) {
+	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
+}
+
+type gmailAttachmentProviderResolver struct {
+	resolver *mailflowsync.GmailAccountResolver
+}
+
+func (resolver gmailAttachmentProviderResolver) ResolveAttachmentProvider(ctx context.Context, userID, accountID string) (cdn.AttachmentProvider, error) {
 	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
 }

@@ -16,11 +16,62 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-type AttachmentReader interface {
-	OpenAttachment(context.Context, string, string, time.Time) (cdn.Attachment, *os.File, error)
+type AttachmentService interface {
+	MaxAttachmentBytes() int64
+	OpenMessageAttachment(context.Context, string, string, time.Time) (cdn.Attachment, *os.File, error)
+	PutAttachment(context.Context, cdn.PutAttachmentInput) (cdn.Attachment, error)
 }
 
-func attachmentDownload(service AttachmentReader) fiber.Handler {
+func attachmentUpload(service AttachmentService) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		user, ok := authbridge.UserFromContext(c.Context())
+		if !ok {
+			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
+		}
+		if service == nil {
+			return attachmentUnavailable()
+		}
+		accountID := strings.TrimSpace(c.FormValue("accountId"))
+		header, err := c.FormFile("file")
+		if err != nil || accountID == "" || header.Size < 0 {
+			return invalidAttachment()
+		}
+		if header.Size > service.MaxAttachmentBytes() {
+			return newProblem(fiber.StatusRequestEntityTooLarge, "attachment_too_large", "Attachment too large", "The attachment exceeds this installation's configured limit.")
+		}
+		file, err := header.Open()
+		if err != nil {
+			return attachmentUnavailable()
+		}
+		defer file.Close()
+		mediaType := header.Header.Get("Content-Type")
+		if mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		attachment, err := service.PutAttachment(c.Context(), cdn.PutAttachmentInput{
+			UserID: user.ID, AccountID: accountID, Filename: header.Filename,
+			MediaType: mediaType, Source: file, Now: time.Now().UTC(),
+		})
+		if errors.Is(err, cdn.ErrObjectTooLarge) {
+			return newProblem(fiber.StatusRequestEntityTooLarge, "attachment_too_large", "Attachment too large", "The attachment exceeds this installation's configured limit.")
+		}
+		if errors.Is(err, cdn.ErrInvalidAttachment) || errors.Is(err, cdn.ErrInvalidMediaType) || errors.Is(err, cdn.ErrMediaTypeMismatch) {
+			return invalidAttachment()
+		}
+		if errors.Is(err, cdn.ErrAttachmentNotFound) {
+			return newProblem(fiber.StatusNotFound, "account_not_found", "Account not found", "The account does not exist or is not available to this user.")
+		}
+		if err != nil {
+			return attachmentUnavailable()
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"objectId": attachment.ObjectID, "filename": attachment.Filename,
+			"mediaType": attachment.MediaType, "sizeBytes": attachment.SizeBytes,
+		})
+	}
+}
+
+func attachmentDownload(service AttachmentService) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		user, ok := authbridge.UserFromContext(c.Context())
 		if !ok {
@@ -29,12 +80,18 @@ func attachmentDownload(service AttachmentReader) fiber.Handler {
 		if service == nil {
 			return newProblem(fiber.StatusServiceUnavailable, "attachments_unavailable", "Attachments unavailable", "Attachment storage is temporarily unavailable.")
 		}
-		attachment, file, err := service.OpenAttachment(c.Context(), user.ID, c.Params("attachmentId"), time.Now().UTC())
+		attachment, file, err := service.OpenMessageAttachment(c.Context(), user.ID, c.Params("attachmentId"), time.Now().UTC())
 		if errors.Is(err, cdn.ErrAttachmentNotFound) {
 			return newProblem(fiber.StatusNotFound, "attachment_not_found", "Attachment not found", "The attachment does not exist or is not available to this user.")
 		}
 		if errors.Is(err, cdn.ErrAttachmentMissing) {
 			return newProblem(fiber.StatusConflict, "attachment_recovery_required", "Attachment unavailable", "The cached attachment must be recovered from its provider.")
+		}
+		if errors.Is(err, cdn.ErrAttachmentUnavailable) {
+			return attachmentUnavailable()
+		}
+		if errors.Is(err, cdn.ErrObjectTooLarge) {
+			return newProblem(fiber.StatusRequestEntityTooLarge, "attachment_too_large", "Attachment too large", "The attachment exceeds this installation's configured limit.")
 		}
 		if err != nil {
 			return newProblem(fiber.StatusInternalServerError, "attachment_failed", "Attachment unavailable", "The attachment could not be opened.")
@@ -75,6 +132,14 @@ func attachmentDownload(service AttachmentReader) fiber.Handler {
 		}
 		return nil
 	}
+}
+
+func invalidAttachment() error {
+	return newProblem(fiber.StatusBadRequest, "invalid_attachment", "Invalid attachment", "The attachment metadata or content is invalid.")
+}
+
+func attachmentUnavailable() error {
+	return newProblem(fiber.StatusServiceUnavailable, "attachments_unavailable", "Attachments unavailable", "Attachment storage is temporarily unavailable.")
 }
 
 type closingSectionReader struct {

@@ -67,12 +67,98 @@ func (q *Queries) GetAttachmentObjectForUser(ctx context.Context, arg GetAttachm
 	return i, err
 }
 
+const getMessageAttachmentForUser = `-- name: GetMessageAttachmentForUser :one
+SELECT message_attachments.id, message_attachments.account_id,
+       message_attachments.remote_id, message_attachments.filename,
+       message_attachments.media_type, message_attachments.size_bytes,
+       message_attachments.cached_object_id,
+       messages.remote_id AS message_remote_id,
+       accounts.provider
+FROM message_attachments
+JOIN messages ON messages.id = message_attachments.message_id
+  AND messages.account_id = message_attachments.account_id
+JOIN accounts ON accounts.id = message_attachments.account_id
+WHERE message_attachments.id = $1
+  AND accounts.user_id = $2
+`
+
+type GetMessageAttachmentForUserParams struct {
+	AttachmentID pgtype.UUID `json:"attachment_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+type GetMessageAttachmentForUserRow struct {
+	ID              pgtype.UUID `json:"id"`
+	AccountID       pgtype.UUID `json:"account_id"`
+	RemoteID        pgtype.Text `json:"remote_id"`
+	Filename        pgtype.Text `json:"filename"`
+	MediaType       string      `json:"media_type"`
+	SizeBytes       int64       `json:"size_bytes"`
+	CachedObjectID  pgtype.Text `json:"cached_object_id"`
+	MessageRemoteID string      `json:"message_remote_id"`
+	Provider        string      `json:"provider"`
+}
+
+func (q *Queries) GetMessageAttachmentForUser(ctx context.Context, arg GetMessageAttachmentForUserParams) (GetMessageAttachmentForUserRow, error) {
+	row := q.db.QueryRow(ctx, getMessageAttachmentForUser, arg.AttachmentID, arg.UserID)
+	var i GetMessageAttachmentForUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.RemoteID,
+		&i.Filename,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.CachedObjectID,
+		&i.MessageRemoteID,
+		&i.Provider,
+	)
+	return i, err
+}
+
+const linkMessageAttachmentObject = `-- name: LinkMessageAttachmentObject :execrows
+UPDATE message_attachments
+SET cached_object_id = $1, updated_at = now()
+FROM accounts
+WHERE message_attachments.id = $2
+  AND accounts.id = message_attachments.account_id
+  AND accounts.user_id = $3
+  AND EXISTS (
+    SELECT 1 FROM cdn_objects
+    WHERE cdn_objects.object_id = $1
+      AND cdn_objects.namespace = 'attachments'
+      AND cdn_objects.account_id = message_attachments.account_id
+      AND cdn_objects.storage_status = 'cached'
+  )
+`
+
+type LinkMessageAttachmentObjectParams struct {
+	ObjectID     pgtype.Text `json:"object_id"`
+	AttachmentID pgtype.UUID `json:"attachment_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) LinkMessageAttachmentObject(ctx context.Context, arg LinkMessageAttachmentObjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, linkMessageAttachmentObject, arg.ObjectID, arg.AttachmentID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listExpiredCachedAttachmentObjects = `-- name: ListExpiredCachedAttachmentObjects :many
 SELECT object_id, namespace, account_id, recovery_reference, filename, media_type, size_bytes, etag, storage_status, expires_at, stored_at, last_accessed_at, created_at, updated_at FROM cdn_objects
 WHERE namespace = 'attachments'
   AND storage_status = 'cached'
   AND expires_at IS NOT NULL
   AND expires_at <= $1
+  AND NOT EXISTS (
+    SELECT 1 FROM draft_attachments
+    JOIN drafts ON drafts.id = draft_attachments.draft_id
+      AND drafts.account_id = draft_attachments.account_id
+    WHERE draft_attachments.object_id = cdn_objects.object_id
+      AND drafts.sync_status <> 'discarded'
+  )
 ORDER BY expires_at, object_id
 LIMIT $2
 `
@@ -190,17 +276,18 @@ func (q *Queries) MarkAttachmentObjectMissing(ctx context.Context, arg MarkAttac
 
 const touchAttachmentObject = `-- name: TouchAttachmentObject :exec
 UPDATE cdn_objects
-SET last_accessed_at = $1, updated_at = $1
-WHERE object_id = $2 AND namespace = 'attachments' AND storage_status = 'cached'
+SET last_accessed_at = $1, expires_at = $2, updated_at = $1
+WHERE object_id = $3 AND namespace = 'attachments' AND storage_status = 'cached'
 `
 
 type TouchAttachmentObjectParams struct {
 	AccessedAt pgtype.Timestamptz `json:"accessed_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	ObjectID   string             `json:"object_id"`
 }
 
 func (q *Queries) TouchAttachmentObject(ctx context.Context, arg TouchAttachmentObjectParams) error {
-	_, err := q.db.Exec(ctx, touchAttachmentObject, arg.AccessedAt, arg.ObjectID)
+	_, err := q.db.Exec(ctx, touchAttachmentObject, arg.AccessedAt, arg.ExpiresAt, arg.ObjectID)
 	return err
 }
 

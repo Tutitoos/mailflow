@@ -260,11 +260,15 @@ func replaceDraftRelations(ctx context.Context, queries *dbgen.Queries, draftID,
 		return fmt.Errorf("replace draft attachments: %w", err)
 	}
 	for position, attachment := range content.Attachments {
-		if err := queries.CreateDraftAttachment(ctx, dbgen.CreateDraftAttachmentParams{
+		created, err := queries.CreateDraftAttachment(ctx, dbgen.CreateDraftAttachmentParams{
 			DraftID: draftID, AccountID: accountID, Position: int32(position), ObjectID: attachment.ObjectID,
 			Filename: optionalText(attachment.Filename), MediaType: strings.ToLower(strings.TrimSpace(attachment.MediaType)), SizeBytes: attachment.SizeBytes,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("create draft attachment: %w", err)
+		}
+		if created != 1 {
+			return ErrInvalidDraft
 		}
 	}
 	return nil

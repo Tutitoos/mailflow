@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/gmail"
@@ -21,6 +22,7 @@ type GmailProvider interface {
 	Apply(context.Context, mail.RemoteAction) error
 	SaveDraft(context.Context, mail.OutgoingMessage) (string, error)
 	Send(context.Context, mail.OutgoingMessage) (string, error)
+	DownloadAttachment(context.Context, string, string) (io.ReadCloser, error)
 }
 
 type GmailProviderResolver interface {

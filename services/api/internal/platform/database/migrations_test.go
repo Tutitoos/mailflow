@@ -63,3 +63,56 @@ func TestAuthIdentityMigrationPreservesFoundationUser(t *testing.T) {
 		t.Fatal("single-user database constraint accepted a second profile")
 	}
 }
+
+func TestMailboxMigrationPreservesExistingUnreadCounters(t *testing.T) {
+	databaseURL := testkit.PostgresDatabase(t)
+	ctx := context.Background()
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	defer database.Close()
+	goose.SetBaseFS(migrations.Files)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("configure migrations: %v", err)
+	}
+	if err := goose.UpToContext(ctx, database, ".", 4); err != nil {
+		t.Fatalf("apply account migrations: %v", err)
+	}
+
+	userID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb727")
+	accountID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb728")
+	mailboxID := uuid.MustParse("019cdd4c-20ec-7d18-b967-8f25172fb729")
+	if _, err := database.ExecContext(ctx, "insert into users (id, email, name) values ($1, $2, $3)", userID, "migration-owner@example.test", "Owner"); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		insert into accounts (
+			id, user_id, provider, remote_id, display_name,
+			encrypted_credentials, credential_nonce, capabilities
+		) values ($1, $2, 'google', 'migration-owner', 'Personal', $3, $4, '{}')
+	`, accountID, userID, []byte{1}, []byte{2}); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		insert into mailboxes (id, account_id, remote_id, name, role, unread_count)
+		values ($1, $2, 'INBOX', 'Inbox', 'inbox', 7)
+	`, mailboxID, accountID); err != nil {
+		t.Fatalf("insert legacy mailbox: %v", err)
+	}
+	if err := goose.UpContext(ctx, database, "."); err != nil {
+		t.Fatalf("apply mailbox migration: %v", err)
+	}
+
+	var remoteName string
+	var total, unread int
+	if err := database.QueryRowContext(ctx, `
+		select remote_name, total_count, unread_count
+		from mailboxes where id = $1
+	`, mailboxID).Scan(&remoteName, &total, &unread); err != nil {
+		t.Fatalf("load migrated mailbox: %v", err)
+	}
+	if remoteName != "Inbox" || total != 7 || unread != 7 {
+		t.Fatalf("migrated mailbox = name %q, total %d, unread %d", remoteName, total, unread)
+	}
+}

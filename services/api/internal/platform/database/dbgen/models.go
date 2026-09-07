@@ -83,6 +83,23 @@ type AuthVerification struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Label struct {
+	ID             pgtype.UUID        `json:"id"`
+	AccountID      pgtype.UUID        `json:"account_id"`
+	RemoteID       pgtype.Text        `json:"remote_id"`
+	RemoteName     string             `json:"remote_name"`
+	LocalName      pgtype.Text        `json:"local_name"`
+	Kind           string             `json:"kind"`
+	Category       pgtype.Text        `json:"category"`
+	Color          pgtype.Text        `json:"color"`
+	TotalCount     int32              `json:"total_count"`
+	UnreadCount    int32              `json:"unread_count"`
+	RemoteRevision pgtype.Text        `json:"remote_revision"`
+	LastSyncedAt   pgtype.Timestamptz `json:"last_synced_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type LogEntry struct {
 	ID         int64              `json:"id"`
 	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
@@ -95,12 +112,19 @@ type LogEntry struct {
 }
 
 type Mailbox struct {
-	ID          pgtype.UUID `json:"id"`
-	AccountID   pgtype.UUID `json:"account_id"`
-	RemoteID    string      `json:"remote_id"`
-	Name        string      `json:"name"`
-	Role        pgtype.Text `json:"role"`
-	UnreadCount int32       `json:"unread_count"`
+	ID             pgtype.UUID        `json:"id"`
+	AccountID      pgtype.UUID        `json:"account_id"`
+	RemoteID       string             `json:"remote_id"`
+	RemoteName     string             `json:"remote_name"`
+	Role           pgtype.Text        `json:"role"`
+	UnreadCount    int32              `json:"unread_count"`
+	LocalName      pgtype.Text        `json:"local_name"`
+	Selectable     bool               `json:"selectable"`
+	TotalCount     int32              `json:"total_count"`
+	RemoteRevision pgtype.Text        `json:"remote_revision"`
+	LastSyncedAt   pgtype.Timestamptz `json:"last_synced_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Message struct {

@@ -170,7 +170,8 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 - PKCE S256 y `state` aleatorio de un solo uso, los mismos límites de callback que Google y scopes delegados fijos `User.Read`, `Mail.ReadWrite` y `Mail.Send`.
 - Mailflow distingue cuentas personales y organizativas por tenant, cifra el refresh token, valida los scopes concedidos y marca como error las cuentas cuyo consentimiento se ha revocado o requiere interacción.
 - Desconectar corta el acceso local sin solicitar el permiso global para revocar todas las sesiones del usuario; la revocación completa del grant queda disponible en Microsoft My Apps.
-- El adaptador Microsoft Graph usa IDs inmutables, `conversationId` por cuenta, MIME sanitizado, categorías no destructivas, paginación opaca validada y errores tipados con `Retry-After`. Su conexión al worker y a los flujos compartidos se completa en las siguientes unidades de la fase.
+- El adaptador Microsoft Graph usa IDs inmutables, `conversationId` por cuenta, MIME sanitizado, categorías no destructivas, paginación opaca validada y errores tipados con `Retry-After`.
+- El worker recorre la jerarquía completa de carpetas, mantiene un `deltaLink` opaco por carpeta, comprueba tombstones contra el ID inmutable y actualiza la topología al cerrar cada ronda Delta. Los flujos compartidos de acciones, drafts y adjuntos se completan en la siguiente unidad de la fase.
 - Delta queries mediante polling adaptativo y reconciliación diaria.
 
 ### iCloud e IMAP
@@ -211,14 +212,14 @@ El worker consume una cola Redis Streams versionada con entrega **at least once*
 PostgreSQL, mediante `sync_runs`, es la fuente durable del progreso de cada sincronización; Redis solo transporta entregas *at least once*. Cada trabajo referencia un `runId` y una versión esperada. Una entrega repetida u obsoleta no vuelve a aplicar cambios.
 
 - La primera sincronización procesa primero los últimos 90 días y, al terminar, encadena el histórico anterior a esa ventana.
-- El histórico completo encadena el modo incremental. Una ejecución incremental completada programa la siguiente comprobación dos minutos después.
+- El histórico completo encadena el modo incremental. Una ejecución incremental completada programa la siguiente comprobación dos minutos después con actividad reciente y diez minutos después en reposo.
 - La reconciliación completa se programa cada 24 horas y utiliza el mismo modelo reanudable.
 - Un lease Redis por cuenta evita llamadas simultáneas al proveedor. La restricción única de PostgreSQL impide además dos ejecuciones activas de la misma fase.
 - Cada página del proveedor se aplica y avanza su checkpoint en una única transacción PostgreSQL. Si el worker cae antes del commit, la página se repite; si cae después, su versión ya no puede volver a aplicarse.
 - Un error recuperable devuelve la ejecución a `queued` sin perder el checkpoint. La cola aplica el backoff y su límite de intentos; la cancelación se comprueba entre páginas.
 - `sync.progress` publica únicamente identificadores internos, fase, estado y contadores. Las métricas usan dimensiones acotadas de fase y resultado, nunca direcciones, asuntos ni IDs de mensajes.
 
-Los adaptadores Google History, Microsoft Delta e IMAP implementarán el ejecutor paginado sobre este orquestador en sus respectivas fases. Sus cursores específicos seguirán almacenándose en `sync_cursors`.
+Google History y Microsoft Delta ya usan ejecutores paginados seleccionados por la cuenta owner-scoped; IMAP se añadirá en su fase. Los checkpoints específicos viajan dentro de `sync_runs.checkpoint`, por lo que la página remota y sus efectos locales se confirman en la misma transacción. `sync_cursors` queda reservado para protocolos que necesiten estado durable independiente del ciclo de runs, como UID/UIDVALIDITY de IMAP.
 
 ## CDN local
 

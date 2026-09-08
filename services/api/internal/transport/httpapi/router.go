@@ -152,7 +152,7 @@ func New(deps Dependencies) *fiber.App {
 		return c.JSON(catalog)
 	})
 	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth, deps.Sync))
-	v1.Get("/oauth/microsoft/callback", microsoftOAuthCallback(deps.MicrosoftOAuth))
+	v1.Get("/oauth/microsoft/callback", microsoftOAuthCallback(deps.MicrosoftOAuth, deps.Sync))
 	if deps.AuthJWKSURL != "" {
 		if deps.AuthAudience == "" || deps.AuthIssuer == "" || deps.CurrentUsers == nil {
 			panic("authenticated API requires audience, issuer, and current-user resolver")

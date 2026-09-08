@@ -18,6 +18,10 @@ type RemotePageWriter struct{}
 func NewRemotePageWriter() *RemotePageWriter { return &RemotePageWriter{} }
 
 func (writer *RemotePageWriter) ApplyGmailPage(ctx context.Context, tx pgx.Tx, user, account string, catalog CatalogPage, page ChangePage) error {
+	return writer.ApplyRemotePage(ctx, tx, user, account, catalog, page)
+}
+
+func (writer *RemotePageWriter) ApplyRemotePage(ctx context.Context, tx pgx.Tx, user, account string, catalog CatalogPage, page ChangePage) error {
 	userID, accountID, err := ownerAccountIDs(user, account)
 	if err != nil {
 		return ErrInvalidMessage

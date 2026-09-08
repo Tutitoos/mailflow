@@ -76,6 +76,41 @@ func TestRedisQueueLifecycle(t *testing.T) {
 	assertStats(t, store, Stats{Dead: 1})
 }
 
+type delayedRetryError struct{ delay time.Duration }
+
+func (failure delayedRetryError) Error() string             { return "provider retry requested" }
+func (failure delayedRetryError) RetryDelay() time.Duration { return failure.delay }
+
+func TestRedisQueueHonorsBoundedProviderRetryDelay(t *testing.T) {
+	client, prefix := testkit.Redis(t)
+	config := DefaultConfig()
+	config.Prefix, config.Consumer = prefix, "rate-limited-worker"
+	config.ReadBlock, config.BaseBackoff, config.MaxBackoff = 5*time.Millisecond, time.Millisecond, 80*time.Millisecond
+	store, err := NewRedisStore(context.Background(), client, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := store.Enqueue(context.Background(), "test.rate_limit", json.RawMessage(`{}`), EnqueueOptions{MaxAttempts: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.Claim(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dead, err := store.Retry(context.Background(), claimed, delayedRetryError{delay: 50 * time.Millisecond}); err != nil || dead {
+		t.Fatalf("delayed retry dead=%v error=%v", dead, err)
+	}
+	if _, err := store.Claim(context.Background()); !errors.Is(err, ErrNoJob) {
+		t.Fatalf("rate-limited job was promoted early: %v", err)
+	}
+	time.Sleep(55 * time.Millisecond)
+	retried, err := store.Claim(context.Background())
+	if err != nil || retried.ID != job.ID || retried.Attempt != 1 {
+		t.Fatalf("delayed job=%+v error=%v", retried, err)
+	}
+}
+
 func assertStats(t *testing.T, store *RedisStore, want Stats) {
 	t.Helper()
 	got, err := store.Stats(context.Background())

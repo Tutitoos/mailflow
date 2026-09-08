@@ -7,17 +7,24 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/gofiber/fiber/v3"
 )
 
-func microsoftOAuthCallback(service *microsoftoauth.Service) fiber.Handler {
+func microsoftOAuthCallback(service *microsoftoauth.Service, syncer SyncRequester) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil || !service.Configured() {
 			return microsoftOAuthProblem(microsoftoauth.ErrNotConfigured)
 		}
-		_, _, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"), c.Query("error"))
+		account, userID, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"), c.Query("error"))
 		if err != nil {
 			return microsoftOAuthProblem(err)
+		}
+		if syncer == nil {
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected&sync=pending")
+		}
+		if _, err := syncer.StartInitial(c.Context(), userID, account.ID); err != nil && !errors.Is(err, mailflowsync.ErrRunExists) {
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected&sync=pending")
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected")
 	}

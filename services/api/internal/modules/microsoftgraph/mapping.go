@@ -7,12 +7,15 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 )
 
-const maxCursorBytes = 16 << 10
+const maxCursorBytes = 44 << 10
 
 type catalogCursor struct {
 	FoldersNext    string                      `json:"foldersNext,omitempty"`
+	FolderQueue    []string                    `json:"folderQueue,omitempty"`
+	FolderSeen     []string                    `json:"folderSeen,omitempty"`
 	CategoriesNext string                      `json:"categoriesNext,omitempty"`
 	FolderRoles    map[string]mail.MailboxRole `json:"folderRoles,omitempty"`
+	FoldersStarted bool                        `json:"foldersStarted"`
 	FoldersDone    bool                        `json:"foldersDone"`
 	CategoriesDone bool                        `json:"categoriesDone"`
 }
@@ -72,10 +75,27 @@ func decodeCatalogCursor(cursor mail.SyncCursor) (catalogCursor, error) {
 		return catalogCursor{}, ErrInvalidCursor
 	}
 	var state catalogCursor
-	if json.Unmarshal(cursor.Value, &state) != nil || (state.FoldersDone && state.FoldersNext != "") || (state.CategoriesDone && state.CategoriesNext != "") || !validFolderRoleCursor(state.FolderRoles) {
+	if json.Unmarshal(cursor.Value, &state) != nil || (state.FoldersDone && (state.FoldersNext != "" || len(state.FolderQueue) != 0)) || (state.CategoriesDone && state.CategoriesNext != "") || !validFolderRoleCursor(state.FolderRoles) || !validFolderIDs(state.FolderQueue, 512) || !validFolderIDs(state.FolderSeen, 512) {
 		return catalogCursor{}, ErrInvalidCursor
 	}
 	return state, nil
+}
+
+func validFolderIDs(values []string, limit int) bool {
+	if len(values) > limit {
+		return false
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value || len(value) > 512 {
+			return false
+		}
+		if _, exists := seen[value]; exists {
+			return false
+		}
+		seen[value] = struct{}{}
+	}
+	return true
 }
 
 func validFolderRoleCursor(roles map[string]mail.MailboxRole) bool {

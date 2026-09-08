@@ -34,4 +34,14 @@ Draft and send contracts use Graph's documented base64 MIME input. Mailflow crea
 
 Provider failures are reduced to `authorization`, `quota`, `transient`, or `permanent`. Machine-readable Graph error codes are accepted only when bounded to a safe character set, `Retry-After` is retained for scheduling, and provider messages or response bodies are never exposed. The repository contract suite uses sanitized Outlook.com and Microsoft 365 fixtures; real-account validation must run manually with protected installation credentials.
 
-Delta execution and recursive folder discovery are intentionally not activated by this provider unit. The next synchronization unit owns `nextLink`/`deltaLink` checkpoints, tombstones, folder traversal, cursor recovery, polling, and reconciliation in the worker.
+## Delta synchronization
+
+The worker starts Microsoft synchronization as soon as the OAuth callback creates or reconnects an account. It commits the recursively paginated folder catalog first, then backfills the latest 90 days before older history. Each completed historical pass transitions to folder-scoped Microsoft Delta.
+
+Mailflow retains the complete opaque `deltaLink` for every folder and follows `nextLink` pages without reconstructing their tokens. At the end of a round it traverses the folder hierarchy again so newly created folders receive their own baseline and removed folders stop polling. A tombstone can also mean that a message moved out of a folder; Mailflow therefore resolves the immutable message ID across the mailbox before deciding whether to upsert its new state or soft-delete it locally.
+
+An HTTP 410, `SyncStateNotFound`, or `ResyncRequired` response cancels only the stale incremental run and starts a bounded recent-first recovery. Other provider failures leave the durable checkpoint unchanged and use the shared queue's bounded exponential retry. `Retry-After` remains available in the typed provider error, while no Graph response message, token, address, subject, or body enters logs, metrics, progress events, or dead letters.
+
+Active accounts poll every two minutes, idle accounts every ten minutes, and a recent reconciliation runs every 24 hours. `sync.progress` reports only internal account/run identifiers, phase, state, and applied counts. Metrics identify the provider as `microsoft` without using account or message identifiers as dimensions.
+
+The automated suite covers recursive folders, repeated checkpoints, `nextLink` and `deltaLink`, moves versus deletions, cursor expiry, throttling, partial-page failure, OAuth-triggered initial sync, adaptive schedules, and reconciliation with sanitized Outlook.com and Microsoft 365 fixtures. A protected real-account check remains manual because repository and CI environments must not contain installation credentials.

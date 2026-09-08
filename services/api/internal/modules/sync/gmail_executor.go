@@ -127,6 +127,7 @@ func (executor *GmailExecutor) FetchPage(ctx context.Context, user string, run R
 		return SyncPage{}, ErrInvalidRun
 	}
 	return SyncPage{
+		Provider:     mail.ProviderGoogle,
 		Checkpoint:   encoded,
 		AppliedCount: int64(len(page.Messages) + len(page.DeletedRemoteIDs)),
 		HasMore:      page.HasMore,

@@ -21,6 +21,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
@@ -145,14 +146,32 @@ func main() {
 			os.Exit(1)
 		}
 		googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
-		resolver, err := mailflowsync.NewGmailAccountResolver(accountService, googleoauth.NewClient(googleConfig, nil), nil, normalizer)
+		gmailResolver, err := mailflowsync.NewGmailAccountResolver(accountService, googleoauth.NewClient(googleConfig, nil), nil, normalizer)
 		if err != nil {
 			logger.Error("Gmail resolver configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
-		executor, err := mailflowsync.NewGmailExecutor(resolver, mail.NewRemotePageWriter())
+		pageWriter := mail.NewRemotePageWriter()
+		gmailExecutor, err := mailflowsync.NewGmailExecutor(gmailResolver, pageWriter)
 		if err != nil {
 			logger.Error("Gmail executor configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		microsoftConfig := microsoftoauth.Config{ClientID: runtimeConfig.MicrosoftOAuthClientID, ClientSecret: runtimeConfig.MicrosoftOAuthClientSecret, RedirectURL: runtimeConfig.MicrosoftOAuthRedirectURL, Authority: runtimeConfig.MicrosoftOAuthAuthority}
+		microsoftOAuth := microsoftoauth.NewService(microsoftConfig, microsoftoauth.NewRedisStateStore(client, "mailflow"), microsoftoauth.NewClient(microsoftConfig, nil), accountService)
+		microsoftResolver, err := mailflowsync.NewMicrosoftAccountResolver(accountService, microsoftOAuth, nil, normalizer)
+		if err != nil {
+			logger.Error("Microsoft resolver configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		microsoftExecutor, err := mailflowsync.NewMicrosoftExecutor(microsoftResolver, pageWriter)
+		if err != nil {
+			logger.Error("Microsoft executor configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		executor, err := mailflowsync.NewRoutedExecutor(accountService, gmailExecutor, microsoftExecutor)
+		if err != nil {
+			logger.Error("provider sync routing failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
 		leases, err := mailflowsync.NewLeaseManager(client, queueConfig.Prefix, handleTimeout+time.Minute)
@@ -242,7 +261,7 @@ func main() {
 		}
 		orchestrator.SetActivityTracker(mailflowsync.NewRedisActivityTracker(client, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
 		actionService := mail.NewPendingActionService(mail.NewPendingActionRepository(pool), eventStore)
-		actionProcessor, err := mail.NewActionProcessor(actionService, gmailActionProviderResolver{resolver}, mail.NewThreadRepository(pool), mail.NewThreadRepository(pool))
+		actionProcessor, err := mail.NewActionProcessor(actionService, gmailActionProviderResolver{gmailResolver}, mail.NewThreadRepository(pool), mail.NewThreadRepository(pool))
 		if err != nil {
 			logger.Error("mail action processor configuration failed", "event", "mail.actions_unavailable", "error", err)
 			os.Exit(1)

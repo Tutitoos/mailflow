@@ -1572,6 +1572,12 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             {t("microsoftConnected")}
           </p>
         )}
+        {(new URLSearchParams(window.location.search).get("google") === "failed" ||
+          new URLSearchParams(window.location.search).get("microsoft") === "failed") && (
+          <p className="settings-notice" data-tone="warning" role="status">
+            {t("connectionFailed")}
+          </p>
+        )}
         {!configured.google && !loading && (
           <div className="settings-notice warning">
             <Info size={17} />

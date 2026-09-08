@@ -1,3 +1,5 @@
+import { isDesktopRuntime } from "./desktop-runtime";
+
 export type MailAccount = {
   id: string;
   provider: "google" | "microsoft" | "imap";
@@ -495,7 +497,7 @@ export async function discoverIMAPFolders(accountId: string) {
 export async function createGoogleAuthorization(reconsent = false) {
   const result = await request<{ authorizationUrl: string }>("/oauth/google/start", {
     method: "POST",
-    body: JSON.stringify({ reconsent }),
+    body: JSON.stringify({ reconsent, desktop: isDesktopRuntime() }),
   });
   return result.authorizationUrl;
 }
@@ -508,7 +510,7 @@ export async function startGoogleConnection(reconsent = false) {
 export async function createMicrosoftAuthorization(reconsent = false) {
   const result = await request<{ authorizationUrl: string }>("/oauth/microsoft/start", {
     method: "POST",
-    body: JSON.stringify({ reconsent }),
+    body: JSON.stringify({ reconsent, desktop: isDesktopRuntime() }),
   });
   return result.authorizationUrl;
 }

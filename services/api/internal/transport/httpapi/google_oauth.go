@@ -15,17 +15,20 @@ func googleOAuthCallback(service *googleoauth.Service, syncer SyncRequester) fib
 		if service == nil || !service.Configured() {
 			return googleOAuthProblem(googleoauth.ErrNotConfigured)
 		}
-		account, userID, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"))
+		account, userID, desktop, err := service.CallbackWithClient(c.Context(), c.Query("state"), c.Query("code"), c.Query("error"))
 		if err != nil {
+			if desktop {
+				return c.Redirect().Status(fiber.StatusSeeOther).To("mailflow://open/settings/accounts?google=failed")
+			}
 			return googleOAuthProblem(err)
 		}
 		if syncer == nil {
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected&sync=pending")
+			return googleOAuthRedirect(c, desktop, true)
 		}
 		if _, err := syncer.StartInitial(c.Context(), userID, account.ID); err != nil && !errors.Is(err, mailflowsync.ErrRunExists) {
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected&sync=pending")
+			return googleOAuthRedirect(c, desktop, true)
 		}
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected")
+		return googleOAuthRedirect(c, desktop, false)
 	}
 }
 
@@ -40,16 +43,28 @@ func googleOAuthStart(service *googleoauth.Service) fiber.Handler {
 		}
 		var body struct {
 			Reconsent bool `json:"reconsent"`
+			Desktop   bool `json:"desktop"`
 		}
 		if len(c.Body()) > 0 && c.Bind().Body(&body) != nil {
 			return newProblem(fiber.StatusBadRequest, "oauth_invalid_request", "Invalid OAuth request", "The OAuth request body is invalid.")
 		}
-		result, err := service.Start(c.Context(), user.ID, body.Reconsent)
+		result, err := service.StartForClient(c.Context(), user.ID, body.Reconsent, body.Desktop)
 		if err != nil {
 			return googleOAuthProblem(err)
 		}
 		return c.JSON(result)
 	}
+}
+
+func googleOAuthRedirect(c fiber.Ctx, desktop, syncPending bool) error {
+	location := "/settings/accounts?google=connected"
+	if desktop {
+		location = "mailflow://open/settings/accounts?google=connected"
+	}
+	if syncPending {
+		location += "&sync=pending"
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To(location)
 }
 
 func googleOAuthProblem(err error) error {

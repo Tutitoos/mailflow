@@ -125,6 +125,20 @@ func TestOAuthProviderFailureConsumesStateAndMapsTenantPolicy(t *testing.T) {
 	}
 }
 
+func TestOAuthDesktopTargetSurvivesProviderFailure(t *testing.T) {
+	states, provider, accountStore := &memoryStates{}, &fakeProvider{}, &fakeAccounts{}
+	service := NewService(Config{ClientID: "client", ClientSecret: "secret", RedirectURL: "https://mail.example.test/callback"}, states, provider, accountStore)
+	started, err := service.StartForClient(context.Background(), "owner", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _ := url.Parse(started.AuthorizationURL)
+	_, ownerID, desktop, err := service.CallbackWithClient(context.Background(), parsed.Query().Get("state"), "", "access_denied")
+	if !errors.Is(err, ErrAccessDenied) || ownerID != "owner" || !desktop {
+		t.Fatalf("desktop failure owner=%q desktop=%v err=%v", ownerID, desktop, err)
+	}
+}
+
 func TestRefreshMarksRevokedConsentAndDisconnectsLocally(t *testing.T) {
 	encoded, _ := json.Marshal(fixtureToken("access-secret", "refresh-secret"))
 	provider := &fakeProvider{refreshError: &ProviderError{Code: "invalid_grant"}}

@@ -1060,6 +1060,10 @@ export type GetGoogleOAuthStatusResponse = GetGoogleOAuthStatusResponses[keyof G
 export type StartGoogleOAuthData = {
     body?: {
         reconsent?: boolean;
+        /**
+         * Return the fixed OAuth result through the Mailflow desktop deep link
+         */
+        desktop?: boolean;
     };
     path?: never;
     query?: never;
@@ -1096,7 +1100,8 @@ export type CompleteGoogleOAuthData = {
     path?: never;
     query: {
         state: string;
-        code: string;
+        code?: string;
+        error?: string;
     };
     url: '/oauth/google/callback';
 };
@@ -1149,6 +1154,10 @@ export type GetMicrosoftOAuthStatusResponse = GetMicrosoftOAuthStatusResponses[k
 export type StartMicrosoftOAuthData = {
     body?: {
         reconsent?: boolean;
+        /**
+         * Return the fixed OAuth result through the Mailflow desktop deep link
+         */
+        desktop?: boolean;
     };
     path?: never;
     query?: never;

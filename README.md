@@ -68,6 +68,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Flujo Git y repos.lock](docs/git-workflow.md)
 - [Pruebas locales y de integración](docs/testing.md)
 - [Eventos WebSocket y replay](docs/events.md)
+- [Shell de escritorio macOS](docs/desktop.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)
 

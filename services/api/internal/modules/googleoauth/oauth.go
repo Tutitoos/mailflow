@@ -39,6 +39,7 @@ type Transaction struct {
 	UserID       string `json:"userId"`
 	CodeVerifier string `json:"codeVerifier"`
 	Reconsent    bool   `json:"reconsent"`
+	Desktop      bool   `json:"desktop"`
 }
 
 type StateStore interface {
@@ -98,6 +99,10 @@ func NewService(config Config, states StateStore, provider Provider, accountServ
 func (service *Service) Configured() bool { return service != nil && service.configured }
 
 func (service *Service) Start(ctx context.Context, userID string, reconsent bool) (StartResult, error) {
+	return service.StartForClient(ctx, userID, reconsent, false)
+}
+
+func (service *Service) StartForClient(ctx context.Context, userID string, reconsent, desktop bool) (StartResult, error) {
 	if !service.Configured() {
 		return StartResult{}, ErrNotConfigured
 	}
@@ -109,7 +114,7 @@ func (service *Service) Start(ctx context.Context, userID string, reconsent bool
 	if err != nil {
 		return StartResult{}, fmt.Errorf("create PKCE verifier: %w", err)
 	}
-	if err := service.states.Put(ctx, state, Transaction{UserID: userID, CodeVerifier: verifier, Reconsent: reconsent}, StateTTL); err != nil {
+	if err := service.states.Put(ctx, state, Transaction{UserID: userID, CodeVerifier: verifier, Reconsent: reconsent, Desktop: desktop}, StateTTL); err != nil {
 		return StartResult{}, fmt.Errorf("store OAuth state: %w", err)
 	}
 	expires := time.Now().UTC().Add(StateTTL)
@@ -122,37 +127,48 @@ func (service *Service) Callback(ctx context.Context, state, code string) (accou
 }
 
 func (service *Service) CallbackWithOwner(ctx context.Context, state, code string) (accounts.Account, string, error) {
+	account, userID, _, err := service.CallbackWithClient(ctx, state, code, "")
+	return account, userID, err
+}
+
+func (service *Service) CallbackWithClient(ctx context.Context, state, code, providerError string) (accounts.Account, string, bool, error) {
 	if !service.Configured() {
-		return accounts.Account{}, "", ErrNotConfigured
+		return accounts.Account{}, "", false, ErrNotConfigured
 	}
-	if state == "" || len(state) > 256 || code == "" || len(code) > 4096 {
-		return accounts.Account{}, "", ErrInvalidState
+	if state == "" || len(state) > 256 || len(code) > 4096 || len(providerError) > 256 {
+		return accounts.Account{}, "", false, ErrInvalidState
 	}
 	transaction, err := service.states.Consume(ctx, state)
 	if err != nil {
-		return accounts.Account{}, "", ErrInvalidState
+		return accounts.Account{}, "", false, ErrInvalidState
+	}
+	if providerError != "" {
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrProvider
+	}
+	if code == "" {
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrInvalidState
 	}
 	token, err := service.provider.Exchange(ctx, code, transaction.CodeVerifier)
 	if err != nil {
-		return accounts.Account{}, "", ErrProvider
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrProvider
 	}
 	if token.AccessToken == "" || token.RefreshToken == "" {
-		return accounts.Account{}, "", ErrInvalidToken
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrInvalidToken
 	}
 	identity, err := service.provider.Identity(ctx, token.AccessToken)
 	if err != nil || identity.Subject == "" || identity.Email == "" {
-		return accounts.Account{}, "", ErrProvider
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrProvider
 	}
 	encoded, err := json.Marshal(token)
 	if err != nil {
-		return accounts.Account{}, "", ErrInvalidToken
+		return accounts.Account{}, transaction.UserID, transaction.Desktop, ErrInvalidToken
 	}
 	account, err := service.accounts.Connect(ctx, accounts.CreateInput{
 		UserID: transaction.UserID, Provider: accounts.ProviderGoogle, RemoteID: identity.Subject,
 		DisplayName: identity.Email, Credentials: encoded,
 		Capabilities: googleCapabilities(),
 	})
-	return account, transaction.UserID, err
+	return account, transaction.UserID, transaction.Desktop, err
 }
 
 func (service *Service) Refresh(ctx context.Context, userID, accountID string) (accounts.Account, error) {

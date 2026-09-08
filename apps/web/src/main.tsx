@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { AdminPage } from "./admin-page";
 import { AuthGate } from "./auth-gate";
+import { initializeDesktopRuntime } from "./desktop-runtime";
 import { AccountsPage, MailPage } from "./pages";
 import { initializeTelemetry } from "./telemetry";
 import "./styles.css";
@@ -14,6 +15,7 @@ const queryClient = new QueryClient({
   },
 });
 
+initializeDesktopRuntime();
 initializeTelemetry();
 
 const router = createBrowserRouter([

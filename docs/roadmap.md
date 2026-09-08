@@ -65,7 +65,7 @@ Este estado confirma la base técnica, no funcionalidad de correo. Better Auth, 
 
 ## Fase 7 — macOS
 
-- Empaquetado Tauri.
+- Shell Tauri ligado a un origen HTTPS, sin IPC remoto, con navegación externa, callbacks cerrados, instancia única y estado de ventana gestionados en Rust.
 - Caché SQLite.
 - Keychain y notificaciones.
 - Atajos y menús nativos.

@@ -102,7 +102,30 @@ describe("Mailflow API client", () => {
     const authorizationUrl = await createMicrosoftAuthorization(true);
 
     expect(authorizationUrl).toContain("login.microsoftonline.com");
-    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ reconsent: true });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+      reconsent: true,
+      desktop: false,
+    });
+  });
+
+  it("binds OAuth completion to the fixed desktop callback when marked", async () => {
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => (key === "mailflow.desktop" ? "1" : null),
+      },
+    });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "short-jwt" }))
+      .mockResolvedValueOnce(json({ authorizationUrl: "https://accounts.example.test/authorize" }));
+    vi.stubGlobal("fetch", fetch);
+
+    await createGoogleAuthorization();
+
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+      reconsent: false,
+      desktop: true,
+    });
   });
 
   it("loads account-scoped navigation and opaque inbox pages", async () => {

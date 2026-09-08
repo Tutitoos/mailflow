@@ -169,6 +169,33 @@ func TestMicrosoftOAuthHTTPFlowIsAuthenticatedAndReplaySafe(t *testing.T) {
 	}
 }
 
+func TestMicrosoftOAuthDesktopFlowReturnsOnlyFixedDeepLinks(t *testing.T) {
+	store := &microsoftAccountStore{}
+	service := microsoftoauth.NewService(
+		microsoftoauth.Config{ClientID: "installation-client", ClientSecret: "sanitized-secret", RedirectURL: "https://mail.example.test/api/v1/oauth/microsoft/callback"},
+		&microsoftStates{}, &microsoftProvider{}, store,
+	)
+	app, token := authenticatedAdminApp(t, httpapi.Dependencies{Accounts: store, MicrosoftOAuth: service})
+
+	start := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/microsoft/start", strings.NewReader(`{"desktop":true}`))
+	start.Header.Set("Content-Type", "application/json")
+	authorizeAdmin(start, token)
+	response, err := app.Test(start)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("desktop start status=%d err=%v", response.StatusCode, err)
+	}
+	var started microsoftoauth.StartResult
+	if json.NewDecoder(response.Body).Decode(&started) != nil {
+		t.Fatal("decode desktop start response")
+	}
+	parsed, _ := url.Parse(started.AuthorizationURL)
+	callback := httptest.NewRequest(http.MethodGet, "/api/v1/oauth/microsoft/callback?state="+url.QueryEscape(parsed.Query().Get("state"))+"&code=sanitized-code", nil)
+	response, err = app.Test(callback)
+	if err != nil || response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "mailflow://open/settings/accounts?microsoft=connected&sync=pending" {
+		t.Fatalf("desktop callback status=%d location=%q err=%v", response.StatusCode, response.Header.Get("Location"), err)
+	}
+}
+
 var _ httpapi.AccountLister = (*microsoftAccountStore)(nil)
 var _ microsoftoauth.Accounts = (*microsoftAccountStore)(nil)
 

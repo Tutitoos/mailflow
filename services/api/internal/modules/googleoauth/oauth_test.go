@@ -105,6 +105,28 @@ func TestOAuthRequiresPKCEAndSingleUseState(t *testing.T) {
 	}
 }
 
+func TestOAuthDesktopTargetSurvivesSuccessAndProviderFailure(t *testing.T) {
+	states, provider, accountStore := &memoryStates{}, &fakeProvider{}, &fakeAccounts{}
+	service := NewService(Config{ClientID: "client", ClientSecret: "secret", RedirectURL: "https://mail.example.test/callback"}, states, provider, accountStore)
+
+	started, err := service.StartForClient(context.Background(), "owner", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _ := url.Parse(started.AuthorizationURL)
+	account, ownerID, desktop, err := service.CallbackWithClient(context.Background(), parsed.Query().Get("state"), "code", "")
+	if err != nil || account.ID == "" || ownerID != "owner" || !desktop {
+		t.Fatalf("desktop callback account=%+v owner=%q desktop=%v err=%v", account, ownerID, desktop, err)
+	}
+
+	started, _ = service.StartForClient(context.Background(), "owner", false, true)
+	parsed, _ = url.Parse(started.AuthorizationURL)
+	_, ownerID, desktop, err = service.CallbackWithClient(context.Background(), parsed.Query().Get("state"), "", "access_denied")
+	if !errors.Is(err, ErrProvider) || ownerID != "owner" || !desktop {
+		t.Fatalf("desktop failure owner=%q desktop=%v err=%v", ownerID, desktop, err)
+	}
+}
+
 func TestOAuthRefreshAndDisconnectNeverReturnCredentials(t *testing.T) {
 	provider, accountStore := &fakeProvider{}, &fakeAccounts{credentials: json.RawMessage(`{"accessToken":"access-secret","refreshToken":"refresh-secret","tokenType":"Bearer","expiry":"2026-09-07T00:00:00Z"}`)}
 	service := NewService(Config{ClientID: "client", ClientSecret: "secret", RedirectURL: "https://mail.example.test/callback"}, &memoryStates{}, provider, accountStore)

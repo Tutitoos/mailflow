@@ -9,7 +9,8 @@ port 465.
 
 The policies cover provider authentication, synchronization backlog, low disk
 capacity, failed or overdue backups, unavailable Sentry ingestion and service
-health. They accept only fixed policy names plus bounded operational tokens.
+health. Redis heartbeats let the worker detect unavailable API and Sentry
+ingestion components. Policies accept only fixed names plus bounded operational tokens.
 Mail addresses, account IDs, subjects, recipients, message bodies, credentials,
 tokens, cookies, signed URLs and arbitrary error strings are never persisted or
 published as alert data.

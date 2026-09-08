@@ -100,6 +100,7 @@ func main() {
 	var logsCancel context.CancelFunc
 	var sentryDone chan struct{}
 	var sentryCancel context.CancelFunc
+	var heartbeatDone []chan struct{}
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	googleClient := googleoauth.NewClient(googleConfig, nil)
 	var gmailResolver *mailflowsync.GmailAccountResolver
@@ -278,6 +279,19 @@ func main() {
 			logger.Error("admin heartbeat configuration failed", "event", "admin.heartbeat_unavailable")
 			os.Exit(1)
 		}
+		for _, component := range []string{"api", "sentry"} {
+			if component == "sentry" && options.Sentry == nil {
+				continue
+			}
+			done := make(chan struct{})
+			heartbeatDone = append(heartbeatDone, done)
+			go func(name string, completed chan struct{}) {
+				defer close(completed)
+				if heartbeatErr := adminHeartbeats.Run(shutdown, name); heartbeatErr != nil && !errors.Is(heartbeatErr, context.Canceled) {
+					logger.Error("component heartbeat stopped", "event", "admin.heartbeat_stopped", "component", name)
+				}
+			}(component, done)
+		}
 	}
 	if databasePool != nil {
 		translationsContext, cancelTranslations := context.WithTimeout(context.Background(), 10*time.Second)
@@ -341,6 +355,9 @@ func main() {
 	}
 	if sentryDone != nil {
 		<-sentryDone
+	}
+	for _, done := range heartbeatDone {
+		<-done
 	}
 	if listenErr != nil {
 		logger.Error("api stopped", "event", "api.stopped", "error", listenErr)

@@ -197,11 +197,18 @@ func main() {
 			for {
 				stats, statsErr := store.Stats(ctx)
 				snapshot := alerts.Snapshot{DiskFreePercent: diskFreePercent(runtimeConfig.CDNRoot)}
+				now := time.Now().UTC()
+				if observed, heartbeatErr := heartbeats.LastSeen(ctx, "api"); heartbeatErr != nil || now.Sub(observed) > admin.WorkerStaleAfter {
+					snapshot.UnhealthyServices = append(snapshot.UnhealthyServices, "api")
+				}
+				if observed, heartbeatErr := heartbeats.LastSeen(ctx, "sentry"); heartbeatErr != nil || now.Sub(observed) > admin.WorkerStaleAfter {
+					snapshot.SentryUnavailable = true
+				}
 				if statsErr == nil {
 					snapshot.SyncRetryJobs = stats.Retry
 					snapshot.SyncDeadJobs = stats.Dead
 				}
-				if backupStatus, statusErr := backupRepository.Status(ctx, time.Now().UTC(), 1); statusErr == nil {
+				if backupStatus, statusErr := backupRepository.Status(ctx, now, 1); statusErr == nil {
 					if len(backupStatus.Runs) > 0 {
 						snapshot.BackupFailed = backupStatus.Runs[0].State == "failed"
 					}

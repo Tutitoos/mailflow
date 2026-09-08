@@ -18,6 +18,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowimap "github.com/Tutitoos/mailflow/services/api/internal/modules/imap"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
@@ -108,6 +109,7 @@ func main() {
 	var metricsDone chan struct{}
 	var logsDone chan struct{}
 	var alertsDone chan struct{}
+	var imapWatchDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -189,6 +191,71 @@ func main() {
 			logger.Error("sync event store configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
+		imapProber := mailflowimap.DefaultNetworkProber()
+		imapService, err := mailflowimap.NewService(
+			accountService,
+			imapProber,
+			mailflowimap.WithFolderDiscovery(mailflowimap.NewFolderRepository(pool), imapProber),
+		)
+		if err != nil {
+			logger.Error("IMAP watcher configuration failed", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapAccounts, err := mailflowimap.NewDatabaseWatchAccounts(pool, accountService)
+		if err != nil {
+			logger.Error("IMAP account watcher unavailable", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapFactory, err := mailflowimap.NewNetworkWatchFactory(imapProber)
+		if err != nil {
+			logger.Error("IMAP network watcher unavailable", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapNotifier, err := mailflowimap.NewFolderWatchNotifier(imapService, eventStore)
+		if err != nil {
+			logger.Error("IMAP watch notifier unavailable", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapWatchConfig, err := imapWatchConfigFromEnv()
+		if err != nil {
+			logger.Error("IMAP watcher configuration failed", "event", "worker.config_invalid", "error", err)
+			os.Exit(1)
+		}
+		leaseTTL := imapWatchConfig.LeaseRenew * 3
+		if leaseTTL < time.Second {
+			leaseTTL = time.Second
+		}
+		imapLeases, err := mailflowimap.NewRedisWatchLeases(client, queueConfig.Prefix, leaseTTL)
+		if err != nil {
+			logger.Error("IMAP watch lease unavailable", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapSupervisor, err := mailflowimap.NewWatchSupervisor(imapAccounts, imapFactory, imapNotifier, imapLeases, imapWatchConfig)
+		if err != nil {
+			logger.Error("IMAP watcher unavailable", "event", "imap.watch_unavailable", "error", err)
+			os.Exit(1)
+		}
+		imapSupervisor.SetObserver(mailflowimap.WatchObserverFunc(func(event mailflowimap.WatchEvent) {
+			operation := event.Operation
+			if event.Reason != "" {
+				operation += "_" + string(event.Reason)
+			}
+			dimensions := map[string]string{"service": "worker", "module": "imap", "operation": operation, "result": event.Result}
+			if metricErr := registry.Add("mailflow_imap_watch_total", 1, dimensions); metricErr != nil {
+				logger.Error("IMAP watch metric rejected", "event", "metrics.rejected", "error", metricErr)
+			}
+			if event.Result == "failure" {
+				logger.Warn("IMAP watch operation failed", "event", "imap.watch_failed", "operation", event.Operation)
+			}
+		}))
+		imapWatchDone = make(chan struct{})
+		go func() {
+			defer close(imapWatchDone)
+			logger.Info("IMAP watcher started", "event", "imap.watch_started")
+			if watchErr := imapSupervisor.Run(ctx); watchErr != nil && !errors.Is(watchErr, context.Canceled) {
+				logger.Error("IMAP watcher stopped", "event", "imap.watch_stopped", "error", watchErr)
+			}
+		}()
 		var alertSender alerts.Sender
 		if runtimeConfig.AlertSMTPHost != "" {
 			alertSender, err = alerts.NewSMTPSender(alerts.SMTPConfig{Host: runtimeConfig.AlertSMTPHost, Port: runtimeConfig.AlertSMTPPort, Username: runtimeConfig.AlertSMTPUsername, Password: runtimeConfig.AlertSMTPPassword, From: runtimeConfig.AlertSMTPFrom, To: runtimeConfig.AlertSMTPTo, ImplicitTLS: runtimeConfig.AlertSMTPImplicitTLS})
@@ -379,6 +446,9 @@ func main() {
 	if actionDone != nil {
 		<-actionDone
 	}
+	if imapWatchDone != nil {
+		<-imapWatchDone
+	}
 	if metricsDone != nil {
 		<-metricsDone
 	}
@@ -437,4 +507,38 @@ func durationFromEnv(name string, fallback time.Duration) (time.Duration, error)
 		return 0, errors.New(name + " must be a positive duration")
 	}
 	return duration, nil
+}
+
+func imapWatchConfigFromEnv() (mailflowimap.WatchConfig, error) {
+	config := mailflowimap.DefaultWatchConfig()
+	durations := []struct {
+		name   string
+		target *time.Duration
+	}{
+		{name: "MAILFLOW_IMAP_ACCOUNT_REFRESH", target: &config.AccountRefresh},
+		{name: "MAILFLOW_IMAP_IDLE_HEARTBEAT", target: &config.Heartbeat},
+		{name: "MAILFLOW_IMAP_POLL_INTERVAL", target: &config.PollInterval},
+		{name: "MAILFLOW_IMAP_RECONNECT_MIN", target: &config.ReconnectMin},
+		{name: "MAILFLOW_IMAP_RECONNECT_MAX", target: &config.ReconnectMax},
+		{name: "MAILFLOW_IMAP_LEASE_RENEW", target: &config.LeaseRenew},
+		{name: "MAILFLOW_IMAP_BURST_WINDOW", target: &config.BurstWindow},
+	}
+	for _, setting := range durations {
+		value, err := durationFromEnv(setting.name, *setting.target)
+		if err != nil {
+			return mailflowimap.WatchConfig{}, err
+		}
+		*setting.target = value
+	}
+	if value := os.Getenv("MAILFLOW_IMAP_MAX_CONNECTIONS"); value != "" {
+		connections, err := strconv.Atoi(value)
+		if err != nil || connections < 1 || connections > 64 {
+			return mailflowimap.WatchConfig{}, errors.New("MAILFLOW_IMAP_MAX_CONNECTIONS must be between 1 and 64")
+		}
+		config.MaxConnections = connections
+	}
+	if config.ReconnectMax < config.ReconnectMin {
+		return mailflowimap.WatchConfig{}, errors.New("MAILFLOW_IMAP_RECONNECT_MAX must not be less than MAILFLOW_IMAP_RECONNECT_MIN")
+	}
+	return config, nil
 }

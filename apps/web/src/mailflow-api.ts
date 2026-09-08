@@ -242,6 +242,33 @@ export type AdminCDNStatus = {
   missingObjects: number;
 };
 
+export type AdminBackupStatus = {
+  configured: boolean;
+  state: AdminHealthState;
+  runtime?: {
+    enabled: boolean;
+    repositoryKind: "local" | "s3";
+    schedule: string;
+    timezone: string;
+    nextRunAt: string;
+    heartbeatAt: string;
+  };
+  lastSuccessAt?: string;
+  runs: Array<{
+    id: string;
+    trigger: "scheduled" | "command";
+    repositoryKind: "local" | "s3";
+    state: "running" | "succeeded" | "failed";
+    snapshotId?: string;
+    errorCode?: string;
+    fileCount: number;
+    byteCount: number;
+    scheduledFor: string;
+    startedAt: string;
+    completedAt?: string;
+  }>;
+};
+
 export type AdminMetric = {
   bucket: string;
   resolution: "minute" | "hour" | "day";
@@ -370,6 +397,10 @@ export async function retryAdminQueue(accountId: string, idempotencyKey: string)
 
 export async function loadAdminCDNStatus(signal?: AbortSignal) {
   return request<AdminCDNStatus>("/admin/cdn", { signal });
+}
+
+export async function loadAdminBackups(signal?: AbortSignal) {
+  return request<AdminBackupStatus>("/admin/backups?limit=25", { signal });
 }
 
 export async function loadAdminMetrics(signal?: AbortSignal) {

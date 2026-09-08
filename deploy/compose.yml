@@ -198,18 +198,35 @@ services:
     restart: unless-stopped
 
   backup:
-    image: restic/restic:0.18.1
+    build:
+      context: ..
+      dockerfile: services/api/backup.Dockerfile
     profiles: [backup]
-    entrypoint: [restic]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
     environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: mailflow
+      POSTGRES_DB: mailflow
+      MAILFLOW_CDN_ROOT: /data/cdn
+      MAILFLOW_MASTER_KEY_FILE: /run/secrets/master_key
+      MAILFLOW_BACKUP_ENABLED: ${MAILFLOW_BACKUP_ENABLED:-true}
+      MAILFLOW_BACKUP_SCHEDULE: ${MAILFLOW_BACKUP_SCHEDULE:-03:00}
+      MAILFLOW_BACKUP_TIMEZONE: ${MAILFLOW_BACKUP_TIMEZONE:-UTC}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/repository}
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
-    secrets: [restic_password]
+    secrets: [postgres_password, restic_password, master_key]
     volumes:
-      # The worker writes a consistent pg_dump and manifest here. Restic must
-      # never copy PostgreSQL's live data directory.
-      - backup-staging:/backup/database:ro
-      - mailflow-cdn:/backup/cdn:ro
+      - backup-staging:/backup/source
+      - mailflow-cdn:/data/cdn:ro
       - ${BACKUP_PATH:-./backups}:/repository
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
 
 secrets:
   better_auth_secret:

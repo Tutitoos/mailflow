@@ -40,7 +40,7 @@ xcuserdata/
 
 # Local data
 data/
-backups/
+/backups/
 *.db
 *.sqlite
 *.sqlite3

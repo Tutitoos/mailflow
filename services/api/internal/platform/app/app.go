@@ -6,6 +6,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
@@ -28,6 +29,7 @@ type Options struct {
 	AuthAudience  string
 	AuthIssuer    string
 	AuthJWKSURL   string
+	Backups       *backups.Repository
 	CurrentUsers  authbridge.UserResolver
 	Delivery      *mail.DeliveryService
 	Events        *events.Store
@@ -78,6 +80,7 @@ func Build(version string, options ...Options) *fiber.App {
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
+		Backups:       runtimeOptions.Backups,
 		CurrentUsers:  runtimeOptions.CurrentUsers,
 		Delivery:      runtimeOptions.Delivery,
 		Events:        runtimeOptions.Events,

@@ -18,6 +18,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "./components/ui/button";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
+  type AdminBackupStatus,
   type AdminCDNStatus,
   type AdminHealthState,
   type AdminLogEntry,
@@ -26,6 +27,7 @@ import {
   type AdminSentryIssue,
   type AdminStatus,
   activateTranslationChanges,
+  loadAdminBackups,
   loadAdminCDNStatus,
   loadAdminDebug,
   loadAdminLogs,
@@ -201,6 +203,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
   const [telemetry, setTelemetry] = useState<SentryTelemetrySummary | null>(null);
   const [translations, setTranslations] = useState<TranslationAdminSummary | null>(null);
   const [cdn, setCDN] = useState<AdminCDNStatus | null>(null);
+  const [backups, setBackups] = useState<AdminBackupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [confirmAccount, setConfirmAccount] = useState<MailAccount | null>(null);
@@ -225,6 +228,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
       loadSentryTelemetry(signal),
       loadTranslationAdminSummary(signal),
       loadAdminCDNStatus(signal),
+      loadAdminBackups(signal),
     ]);
     if (signal?.aborted) return;
     if (results[0].status === "fulfilled") setStatus(results[0].value);
@@ -240,6 +244,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
     if (results[7].status === "fulfilled") setTelemetry(results[7].value);
     if (results[8].status === "fulfilled") setTranslations(results[8].value);
     if (results[9].status === "fulfilled") setCDN(results[9].value);
+    if (results[10].status === "fulfilled") setBackups(results[10].value);
     setUnavailable(results[0].status === "rejected");
     setLoading(false);
   }, []);
@@ -711,10 +716,54 @@ export function AdminPage({ locale }: { locale: Locale }) {
     if (section === "cdn") return renderCDN();
     if (section === "backups")
       return (
-        <section className="admin-placeholder">
-          <Clock3 size={24} />
-          <p>{t("admin.placeholder.backups")}</p>
-        </section>
+        <>
+          <section className="admin-stat-grid">
+            <article>
+              <Clock3 size={18} />
+              <span>{t("admin.backups.status")}</span>
+              <HealthBadge state={backups?.state} t={t} />
+            </article>
+            <article>
+              <Database size={18} />
+              <span>{t("admin.backups.repository")}</span>
+              <strong>{backups?.runtime?.repositoryKind ?? "—"}</strong>
+            </article>
+            <article>
+              <Clock3 size={18} />
+              <span>{t("admin.backups.next")}</span>
+              <strong>{formatTime(backups?.runtime?.nextRunAt, locale)}</strong>
+            </article>
+            <article>
+              <CheckCircle2 size={18} />
+              <span>{t("admin.backups.lastSuccess")}</span>
+              <strong>{formatTime(backups?.lastSuccessAt, locale)}</strong>
+            </article>
+          </section>
+          <section className="admin-panel">
+            <header>
+              <strong>{t("admin.backups.history")}</strong>
+            </header>
+            <div className="admin-list">
+              {backups?.runs.length ? (
+                backups.runs.map((run) => (
+                  <article key={run.id}>
+                    {run.state === "succeeded" ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <AlertTriangle size={16} />
+                    )}
+                    <strong>{t(`admin.backups.${run.state}` as TranslationKey)}</strong>
+                    <span>{formatTime(run.startedAt, locale)}</span>
+                    <span>{formatBytes(run.byteCount)}</span>
+                    <small>{run.errorCode ?? run.snapshotId?.slice(0, 8) ?? "—"}</small>
+                  </article>
+                ))
+              ) : (
+                <p>{t("admin.backups.empty")}</p>
+              )}
+            </div>
+          </section>
+        </>
       );
     if (section === "updates")
       return (

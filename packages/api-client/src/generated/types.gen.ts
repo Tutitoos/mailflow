@@ -56,6 +56,37 @@ export type AdminCdnStatus = {
     missingObjects: number;
 };
 
+export type AdminBackupRuntime = {
+    enabled: boolean;
+    repositoryKind: 'local' | 's3';
+    schedule: string;
+    timezone: string;
+    nextRunAt: string;
+    heartbeatAt: string;
+};
+
+export type AdminBackupRun = {
+    id: string;
+    trigger: 'scheduled' | 'command';
+    repositoryKind: 'local' | 's3';
+    state: 'running' | 'succeeded' | 'failed';
+    snapshotId?: string;
+    errorCode?: 'interrupted' | 'staging_failed' | 'dump_failed' | 'repository_failed' | 'snapshot_failed' | 'verification_failed' | 'retention_failed';
+    fileCount: number;
+    byteCount: number;
+    scheduledFor: string;
+    startedAt: string;
+    completedAt?: string;
+};
+
+export type AdminBackupStatus = {
+    configured: boolean;
+    state: AdminHealthState;
+    runtime?: AdminBackupRuntime;
+    lastSuccessAt?: string;
+    runs: Array<AdminBackupRun>;
+};
+
 export type SentryReceipt = {
     id: string;
     receivedAt?: string;
@@ -1471,6 +1502,37 @@ export type GetAdminCdnStatusResponses = {
 };
 
 export type GetAdminCdnStatusResponse = GetAdminCdnStatusResponses[keyof GetAdminCdnStatusResponses];
+
+export type GetAdminBackupsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+    };
+    url: '/admin/backups';
+};
+
+export type GetAdminBackupsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminBackupsError = GetAdminBackupsErrors[keyof GetAdminBackupsErrors];
+
+export type GetAdminBackupsResponses = {
+    /**
+     * Bounded backup scheduler state and redacted run history
+     */
+    200: AdminBackupStatus;
+};
+
+export type GetAdminBackupsResponse = GetAdminBackupsResponses[keyof GetAdminBackupsResponses];
 
 export type GetAdminMetricsData = {
     body?: never;

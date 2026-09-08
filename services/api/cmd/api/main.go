@@ -15,6 +15,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
@@ -191,6 +192,7 @@ func main() {
 		options.Readiness = pool.Ping
 		options.Attachments = cdnService
 		options.CurrentUsers = authbridge.NewRepository(queries)
+		options.Backups = backups.NewRepository(pool)
 		options.Inbox = mail.NewThreadRepository(pool)
 		options.Threads = options.Inbox
 		options.Search = options.Inbox

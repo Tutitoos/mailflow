@@ -41,4 +41,25 @@ A dropped session reconnects with exponential backoff from one second to one min
 
 Redis grants a renewable per-account lease before a connection is opened, preventing two workers from watching the same account. The worker defaults to four concurrent IMAP connections and releases both sessions and leases during shutdown. The normal worker heartbeat and the bounded `mailflow_imap_watch_total` metric expose watcher health without account identifiers or message data.
 
-The defaults can be changed with `MAILFLOW_IMAP_ACCOUNT_REFRESH`, `MAILFLOW_IMAP_IDLE_HEARTBEAT`, `MAILFLOW_IMAP_POLL_INTERVAL`, `MAILFLOW_IMAP_RECONNECT_MIN`, `MAILFLOW_IMAP_RECONNECT_MAX`, `MAILFLOW_IMAP_LEASE_RENEW`, `MAILFLOW_IMAP_BURST_WINDOW`, and `MAILFLOW_IMAP_MAX_CONNECTIONS`. Duration values use Go duration syntax. Message retrieval, MIME normalization, threading, and remote actions are deliberately handled by the next synchronization stage rather than the watcher.
+The defaults can be changed with `MAILFLOW_IMAP_ACCOUNT_REFRESH`, `MAILFLOW_IMAP_IDLE_HEARTBEAT`, `MAILFLOW_IMAP_POLL_INTERVAL`, `MAILFLOW_IMAP_RECONNECT_MIN`, `MAILFLOW_IMAP_RECONNECT_MAX`, `MAILFLOW_IMAP_LEASE_RENEW`, `MAILFLOW_IMAP_BURST_WINDOW`, and `MAILFLOW_IMAP_MAX_CONNECTIONS`. Duration values use Go duration syntax. The watcher only detects work; the durable synchronization run advances message checkpoints after its database transaction commits.
+
+## Message synchronization and threading
+
+- The worker snapshots every selectable folder's `UIDVALIDITY` and `UIDNEXT`, backfills the recent 90-day window first, and then continues through older mail with bounded UID pages.
+- Incremental pages resume from the saved next UID. A changed `UIDVALIDITY` invalidates only that account checkpoint and starts the existing reconciliation recovery instead of guessing which old UID maps to which message.
+- The daily full reconciliation records a bounded UID snapshot for each selectable folder. Locations missing from that snapshot are unlinked, and a message is soft-deleted only when it has no remaining folder location, so remote expunges do not leave stale mail or erase valid copies.
+- MIME is fetched with `BODY.PEEK[]`, bounded before parsing, normalized into sanitized HTML and plain text, and stored without protocol transcripts.
+- A stable message ID is derived from a valid RFC `Message-ID`; messages without one use a SHA-256 digest of the bounded raw message. Malformed references are ignored.
+- Thread identity uses the first valid `References` value, then `In-Reply-To`, then the message's own ID. PostgreSQL uniqueness remains account-scoped, so identical RFC IDs in two accounts never create a shared conversation.
+- IMAP location is a separate record containing mailbox identity, `UIDVALIDITY`, and UID. When MOVE or COPY assigns a new UID, Mailflow updates that record and retains one normalized domain message.
+
+## Actions, drafts, attachments, and SMTP
+
+- Read, unread, starred, and important actions use silent UID STORE mutations. Thread actions expand to the stable messages in that owner-scoped thread before reaching IMAP.
+- Archive, trash, and restore use UID MOVE when advertised. The fallback uses COPY, silent `\\Deleted`, and UID EXPUNGE only when UIDPLUS can identify exactly the affected message; Mailflow never substitutes a mailbox-wide EXPUNGE.
+- Draft checkpoints append a complete RFC message to the discovered Drafts folder. UIDPLUS is required so the returned draft locator can be updated or discarded without searching private content.
+- SMTP receives exactly one attempt from the provider. Loss of the connection during or after `DATA` is an ambiguous outcome, which the durable outbound-delivery record exposes without retrying and risking a duplicate. A confirmed SMTP delivery remains successful even if the best-effort Sent-folder append fails.
+- Bcc recipients remain in the SMTP envelope while the `Bcc` header and its folded continuation lines are removed from the delivered payload.
+- Attachment metadata uses an opaque MIME part index. Download re-fetches the message from its current owner-scoped location and applies the same raw, part, and MIME limits before the CDN cache receives bytes.
+
+The protocol implementation uses the maintained `go-imap/v2` client for response framing and literals while Mailflow retains its own domain cursors, persistence rules, and safety policy. Sanitized protocol fixtures, MIME corpora, UID move tests, SMTP ambiguity tests, and PostgreSQL owner-isolation tests run in CI. A protected iCloud or generic-server check remains manual because repository and CI environments must not contain real credentials or private mail.

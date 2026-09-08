@@ -59,6 +59,8 @@ Este estado confirma la base técnica, no funcionalidad de correo. Better Auth, 
 - IMAP/SMTP sobre TLS.
 - iCloud mediante contraseña específica.
 - IMAP IDLE y polling de respaldo.
+- Sincronización MIME por UID, threading estable y reconciliación de MOVE/COPY.
+- Acciones, drafts, adjuntos y envío SMTP con resultados ambiguos protegidos por idempotencia.
 - Matriz de compatibilidad con servidores genéricos.
 
 ## Fase 7 — macOS

@@ -50,6 +50,7 @@ type DiscoveredFolder struct {
 type FolderState struct {
 	MailboxID          string            `json:"mailboxId"`
 	RemoteID           string            `json:"remoteId"`
+	WireName           string            `json:"-"`
 	Name               string            `json:"name"`
 	Role               mail.MailboxRole  `json:"role"`
 	Selectable         bool              `json:"selectable"`

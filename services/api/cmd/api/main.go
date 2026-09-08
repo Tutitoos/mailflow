@@ -272,7 +272,12 @@ func main() {
 			logger.Error("Microsoft provider configuration failed", "event", "mail.provider_unavailable")
 			os.Exit(1)
 		}
-		workflows, resolverErr := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver)
+		imapResolver, resolverErr := mailflowsync.NewIMAPAccountResolver(accountService, databasePool, nil, normalizer)
+		if resolverErr != nil {
+			logger.Error("IMAP provider configuration failed", "event", "mail.provider_unavailable")
+			os.Exit(1)
+		}
+		workflows, resolverErr := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver, imapResolver)
 		if resolverErr != nil {
 			logger.Error("mail workflow routing failed", "event", "mail.provider_unavailable")
 			os.Exit(1)

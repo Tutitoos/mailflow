@@ -218,7 +218,7 @@ func New(deps Dependencies) *fiber.App {
 	v1.Post("/oauth/microsoft/start", microsoftOAuthStart(deps.MicrosoftOAuth))
 	v1.Post("/accounts/imap/probe", probeIMAPAccount(deps.IMAP))
 	v1.Post("/accounts/imap", connectIMAPAccount(deps.IMAP))
-	v1.Post("/accounts/:accountId/imap/folders/discover", discoverIMAPFolders(deps.IMAP))
+	v1.Post("/accounts/:accountId/imap/folders/discover", discoverIMAPFolders(deps.IMAP, deps.Sync))
 	v1.Post("/accounts/:accountId/refresh", refreshAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth))
 	v1.Post("/accounts/:accountId/sync", synchronizeAccount(deps.Sync))
 	v1.Delete("/accounts/:accountId", disconnectOAuthAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth, deps.IMAP))

@@ -21,6 +21,7 @@ SELECT
   mailboxes.total_count,
   mailboxes.unread_count,
   imap_folder_cursors.identity_key,
+  imap_folder_cursors.wire_name,
   imap_folder_cursors.namespace_prefix,
   imap_folder_cursors.delimiter,
   imap_folder_cursors.subscribed,
@@ -56,6 +57,7 @@ type ListIMAPFolderStatesByOwnerRow struct {
 	TotalCount         int32              `json:"total_count"`
 	UnreadCount        int32              `json:"unread_count"`
 	IdentityKey        string             `json:"identity_key"`
+	WireName           string             `json:"wire_name"`
 	NamespacePrefix    string             `json:"namespace_prefix"`
 	Delimiter          pgtype.Text        `json:"delimiter"`
 	Subscribed         bool               `json:"subscribed"`
@@ -87,6 +89,7 @@ func (q *Queries) ListIMAPFolderStatesByOwner(ctx context.Context, arg ListIMAPF
 			&i.TotalCount,
 			&i.UnreadCount,
 			&i.IdentityKey,
+			&i.WireName,
 			&i.NamespacePrefix,
 			&i.Delimiter,
 			&i.Subscribed,
@@ -222,15 +225,16 @@ func (q *Queries) RenameIMAPMailboxIdentity(ctx context.Context, arg RenameIMAPM
 
 const upsertIMAPFolderState = `-- name: UpsertIMAPFolderState :one
 INSERT INTO imap_folder_cursors (
-  mailbox_id, account_id, identity_key, namespace_prefix, delimiter,
+  mailbox_id, account_id, identity_key, wire_name, namespace_prefix, delimiter,
   subscribed, uid_next, uid_validity, next_uid, state
 ) VALUES (
-  $1, $2, $3,
-  $4, $5, $6,
-  $7, $8, $9, $10
+  $1, $2, $3, $4,
+  $5, $6, $7,
+  $8, $9, $10, $11
 )
 ON CONFLICT (mailbox_id, account_id) DO UPDATE SET
   identity_key = EXCLUDED.identity_key,
+  wire_name = EXCLUDED.wire_name,
   namespace_prefix = EXCLUDED.namespace_prefix,
   delimiter = EXCLUDED.delimiter,
   subscribed = EXCLUDED.subscribed,
@@ -267,13 +271,14 @@ ON CONFLICT (mailbox_id, account_id) DO UPDATE SET
     ELSE NULL
   END,
   updated_at = now()
-RETURNING mailbox_id, account_id, identity_key, namespace_prefix, delimiter, subscribed, uid_next, uid_validity, next_uid, state, version, invalidated_at, invalidation_reason, created_at, updated_at
+RETURNING mailbox_id, account_id, identity_key, namespace_prefix, delimiter, subscribed, uid_next, uid_validity, next_uid, state, version, invalidated_at, invalidation_reason, created_at, updated_at, wire_name
 `
 
 type UpsertIMAPFolderStateParams struct {
 	MailboxID       pgtype.UUID `json:"mailbox_id"`
 	AccountID       pgtype.UUID `json:"account_id"`
 	IdentityKey     string      `json:"identity_key"`
+	WireName        string      `json:"wire_name"`
 	NamespacePrefix string      `json:"namespace_prefix"`
 	Delimiter       pgtype.Text `json:"delimiter"`
 	Subscribed      bool        `json:"subscribed"`
@@ -288,6 +293,7 @@ func (q *Queries) UpsertIMAPFolderState(ctx context.Context, arg UpsertIMAPFolde
 		arg.MailboxID,
 		arg.AccountID,
 		arg.IdentityKey,
+		arg.WireName,
 		arg.NamespacePrefix,
 		arg.Delimiter,
 		arg.Subscribed,
@@ -313,6 +319,7 @@ func (q *Queries) UpsertIMAPFolderState(ctx context.Context, arg UpsertIMAPFolde
 		&i.InvalidationReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WireName,
 	)
 	return i, err
 }

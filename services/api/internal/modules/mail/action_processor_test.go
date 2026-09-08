@@ -94,3 +94,32 @@ func TestActionProcessorCompletesAndRestoresTerminalFailures(t *testing.T) {
 		t.Fatalf("terminal action: result=%+v storeRestore=%v stateRestore=%v error=%v", result, store.restored, restored, err)
 	}
 }
+
+func TestRemoteActionResolverExpandsIMAPThreadsAndScopesMessageTargets(t *testing.T) {
+	_, pool, userID, accountID := actionFixture(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, "update accounts set provider = 'imap' where id = $1", accountID); err != nil {
+		t.Fatal(err)
+	}
+	repository := NewThreadRepository(pool)
+	stamp := time.Now().UTC()
+	thread, err := repository.UpsertThread(ctx, UpsertThreadInput{UserID: userID, AccountID: accountID, RemoteID: "imap-thread", LastMessageAt: stamp, Category: CategoryPrimary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := repository.UpsertMessage(ctx, UpsertMessageInput{UserID: userID, AccountID: accountID, ThreadID: thread.ID, RemoteID: "imap-message-1", SentAt: stamp, BodyText: "one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.UpsertMessage(ctx, UpsertMessageInput{UserID: userID, AccountID: accountID, ThreadID: thread.ID, RemoteID: "imap-message-2", SentAt: stamp.Add(time.Minute), BodyText: "two"}); err != nil {
+		t.Fatal(err)
+	}
+	threadAction, err := repository.ResolveRemoteAction(ctx, userID, PendingAction{AccountID: accountID, TargetKind: ActionTargetThread, TargetID: thread.ID, Kind: ActionMarkRead, IdempotencyKey: "thread-action-key"})
+	if err != nil || len(threadAction.TargetIDs) != 2 || threadAction.TargetIDs[0] != "imap-message-1" || threadAction.TargetIDs[1] != "imap-message-2" {
+		t.Fatalf("thread targets=%v error=%v", threadAction.TargetIDs, err)
+	}
+	messageAction, err := repository.ResolveRemoteAction(ctx, userID, PendingAction{AccountID: accountID, TargetKind: ActionTargetMessage, TargetID: first.ID, Kind: ActionStar, IdempotencyKey: "message-action-key"})
+	if err != nil || len(messageAction.TargetIDs) != 1 || messageAction.TargetIDs[0] != "imap-message-1" {
+		t.Fatalf("message targets=%v error=%v", messageAction.TargetIDs, err)
+	}
+}

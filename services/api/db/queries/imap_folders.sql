@@ -8,6 +8,7 @@ SELECT
   mailboxes.total_count,
   mailboxes.unread_count,
   imap_folder_cursors.identity_key,
+  imap_folder_cursors.wire_name,
   imap_folder_cursors.namespace_prefix,
   imap_folder_cursors.delimiter,
   imap_folder_cursors.subscribed,
@@ -30,15 +31,16 @@ ORDER BY mailboxes.remote_name, mailboxes.id;
 
 -- name: UpsertIMAPFolderState :one
 INSERT INTO imap_folder_cursors (
-  mailbox_id, account_id, identity_key, namespace_prefix, delimiter,
+  mailbox_id, account_id, identity_key, wire_name, namespace_prefix, delimiter,
   subscribed, uid_next, uid_validity, next_uid, state
 ) VALUES (
-  sqlc.arg(mailbox_id), sqlc.arg(account_id), sqlc.arg(identity_key),
+  sqlc.arg(mailbox_id), sqlc.arg(account_id), sqlc.arg(identity_key), sqlc.arg(wire_name),
   sqlc.arg(namespace_prefix), sqlc.narg(delimiter), sqlc.arg(subscribed),
   sqlc.narg(uid_next), sqlc.narg(uid_validity), sqlc.narg(next_uid), sqlc.arg(state)
 )
 ON CONFLICT (mailbox_id, account_id) DO UPDATE SET
   identity_key = EXCLUDED.identity_key,
+  wire_name = EXCLUDED.wire_name,
   namespace_prefix = EXCLUDED.namespace_prefix,
   delimiter = EXCLUDED.delimiter,
   subscribed = EXCLUDED.subscribed,

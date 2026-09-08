@@ -65,11 +65,18 @@ func (resolver workflowMicrosoftResolver) ResolveMicrosoft(context.Context, stri
 	return resolver.provider, nil
 }
 
+type workflowIMAPResolver struct{ provider IMAPProvider }
+
+func (resolver workflowIMAPResolver) ResolveIMAP(context.Context, string, string) (IMAPProvider, error) {
+	return resolver.provider, nil
+}
+
 func TestWorkflowResolverRoutesScopedProvidersAndCapabilities(t *testing.T) {
 	google := &workflowProvider{kind: mail.ProviderGoogle}
 	microsoft := &workflowProvider{kind: mail.ProviderMicrosoft}
+	imap := &workflowProvider{kind: mail.ProviderIMAP}
 	lookup := &workflowAccountLookup{account: accounts.Account{Provider: accounts.ProviderMicrosoft, Capabilities: map[string]bool{"actions": true, "send": true}}}
-	resolver, err := NewWorkflowProviderResolver(lookup, workflowGmailResolver{google}, workflowMicrosoftResolver{microsoft})
+	resolver, err := NewWorkflowProviderResolver(lookup, workflowGmailResolver{google}, workflowMicrosoftResolver{microsoft}, workflowIMAPResolver{imap})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,5 +105,11 @@ func TestWorkflowResolverRoutesScopedProvidersAndCapabilities(t *testing.T) {
 	lookup.account = accounts.Account{Provider: accounts.ProviderMicrosoft, Capabilities: map[string]bool{}}
 	if _, err := resolver.Resolve(context.Background(), "owner", "account", "attachments"); err != nil {
 		t.Fatalf("legacy provider capability was not preserved: %v", err)
+	}
+
+	lookup.account = accounts.Account{Provider: accounts.ProviderIMAP, Capabilities: map[string]bool{"actions": true, "send": true}}
+	provider, err = resolver.Resolve(context.Background(), "owner", "account", "actions", "send")
+	if err != nil || provider.Kind() != mail.ProviderIMAP {
+		t.Fatalf("IMAP provider = %v error=%v", provider.Kind(), err)
 	}
 }

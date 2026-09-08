@@ -70,7 +70,7 @@ func (repository *FolderRepositoryStore) Reconcile(ctx context.Context, user, ac
 			nextUID = current.NextUid.Int64
 		}
 		cursor, err := queries.UpsertIMAPFolderState(ctx, dbgen.UpsertIMAPFolderStateParams{
-			MailboxID: mailboxID, AccountID: accountID, IdentityKey: folder.IdentityKey,
+			MailboxID: mailboxID, AccountID: accountID, IdentityKey: folder.IdentityKey, WireName: folder.WireName,
 			NamespacePrefix: folder.NamespacePrefix, Delimiter: optionalFolderText(folder.Delimiter),
 			Subscribed: folder.Subscribed, UidNext: optionalFolderInt(folder.UIDNext),
 			UidValidity: optionalFolderInt(folder.UIDValidity), NextUid: selectableNextUID(folder.Selectable, nextUID), State: string(state),
@@ -155,7 +155,7 @@ func renameCandidate(existing []dbgen.ListIMAPFolderStatesByOwnerRow, present, u
 
 func mapFolderState(mailboxID pgtype.UUID, folder DiscoveredFolder, cursor dbgen.ImapFolderCursor) FolderState {
 	return FolderState{
-		MailboxID: uuid.UUID(mailboxID.Bytes).String(), RemoteID: folder.IdentityKey, Name: folder.Name,
+		MailboxID: uuid.UUID(mailboxID.Bytes).String(), RemoteID: folder.IdentityKey, WireName: folder.WireName, Name: folder.Name,
 		Role: folder.Role, Selectable: folder.Selectable, Subscribed: folder.Subscribed,
 		NamespacePrefix: folder.NamespacePrefix, Delimiter: folderTextPointer(cursor.Delimiter),
 		UIDNext: folderIntPointer(cursor.UidNext), UIDValidity: folderIntPointer(cursor.UidValidity), NextUID: folderIntPointer(cursor.NextUid),

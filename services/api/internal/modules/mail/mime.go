@@ -76,7 +76,7 @@ func (normalizer *Normalizer) Normalize(source io.Reader) (NormalizedMessageCont
 	if err != nil {
 		return NormalizedMessageContent{}, err
 	}
-	state := mimeState{policy: normalizer.policy, content: content}
+	state := mimeState{policy: normalizer.policy, content: content, captureIndex: -1}
 	if err := state.consume(textproto.MIMEHeader(message.Header), message.Body); err != nil {
 		return NormalizedMessageContent{}, err
 	}
@@ -96,12 +96,44 @@ func (normalizer *Normalizer) Normalize(source io.Reader) (NormalizedMessageCont
 	return state.content, nil
 }
 
+// ExtractAttachment applies the same MIME limits and transfer decoding as
+// Normalize, but returns only the requested attachment payload.
+func (normalizer *Normalizer) ExtractAttachment(source io.Reader, index int) ([]byte, AttachmentInput, error) {
+	if index < 0 {
+		return nil, AttachmentInput{}, ErrMalformedMIME
+	}
+	raw, err := readBounded(source, normalizer.policy.MaxRawBytes)
+	if err != nil {
+		return nil, AttachmentInput{}, err
+	}
+	message, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return nil, AttachmentInput{}, ErrMalformedMIME
+	}
+	content, err := normalizeHeaders(message.Header)
+	if err != nil {
+		return nil, AttachmentInput{}, err
+	}
+	state := mimeState{policy: normalizer.policy, content: content, captureIndex: index}
+	if err := state.consume(textproto.MIMEHeader(message.Header), message.Body); err != nil {
+		return nil, AttachmentInput{}, err
+	}
+	if state.captured == nil {
+		return nil, AttachmentInput{}, ErrMalformedMIME
+	}
+	return state.captured, state.capturedMetadata, nil
+}
+
 type mimeState struct {
-	policy  MIMEPolicy
-	parts   int
-	text    strings.Builder
-	html    strings.Builder
-	content NormalizedMessageContent
+	policy           MIMEPolicy
+	parts            int
+	text             strings.Builder
+	html             strings.Builder
+	content          NormalizedMessageContent
+	attachmentIndex  int
+	captureIndex     int
+	captured         []byte
+	capturedMetadata AttachmentInput
 }
 
 func (state *mimeState) consume(header textproto.MIMEHeader, body io.Reader) error {
@@ -169,10 +201,16 @@ func (state *mimeState) consume(header textproto.MIMEHeader, body io.Reader) err
 		if len(decodedFilename) > 1024 || len(contentID) > 998 {
 			return ErrMIMETooLarge
 		}
-		state.content.Attachments = append(state.content.Attachments, AttachmentInput{
+		metadata := AttachmentInput{
 			Filename: decodedFilename, MediaType: mediaType, Disposition: kind,
 			ContentID: contentID, SizeBytes: int64(len(payload)),
-		})
+		}
+		state.content.Attachments = append(state.content.Attachments, metadata)
+		if state.attachmentIndex == state.captureIndex {
+			state.captured = append([]byte(nil), payload...)
+			state.capturedMetadata = metadata
+		}
+		state.attachmentIndex++
 		return nil
 	}
 	decodedText, err := decodeCharset(payload, parameters["charset"])

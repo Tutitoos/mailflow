@@ -216,6 +216,17 @@ type ImapFolderCursor struct {
 	InvalidationReason pgtype.Text        `json:"invalidation_reason"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	WireName           string             `json:"wire_name"`
+}
+
+type ImapMessageLocation struct {
+	MessageID   pgtype.UUID        `json:"message_id"`
+	MailboxID   pgtype.UUID        `json:"mailbox_id"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	UidValidity int64              `json:"uid_validity"`
+	Uid         int64              `json:"uid"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Label struct {

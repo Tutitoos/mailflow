@@ -131,5 +131,11 @@ func boundedCapabilities(input map[string]bool) map[string]bool {
 			result[key] = true
 		}
 	}
+	for _, key := range []string{"actions", "attachments", "folders", "search", "send", "threads"} {
+		result[key] = true
+	}
+	result["drafts"] = result["imap.uidplus"]
+	result["categories"] = false
+	result["labels"] = false
 	return result
 }

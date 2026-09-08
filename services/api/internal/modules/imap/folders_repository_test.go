@@ -41,7 +41,7 @@ func TestFolderRepositoryPreservesIdentityAndInvalidatesOnlyChangedUIDValidity(t
 		t.Fatalf("delimiter reconciliation = %+v, error=%v", second, err)
 	}
 	for _, folder := range second.Folders {
-		if folder.Name == "Projects.Invoices" && (folder.MailboxID != firstIDs["Projects/Invoices"] || folder.NextUID == nil || *folder.NextUID != 15) {
+		if folder.Name == "Projects.Invoices" && (folder.MailboxID != firstIDs["Projects/Invoices"] || folder.WireName != "Projects.Invoices" || folder.NextUID == nil || *folder.NextUID != 15) {
 			t.Fatalf("stable cursor = %+v", folder)
 		}
 	}

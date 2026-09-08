@@ -35,7 +35,7 @@ func TestRoutedExecutorSelectsOwnerScopedAccountProvider(t *testing.T) {
 	user, accountID := "0199ed3b-c950-7000-8000-000000000001", "0199ed3b-c950-7000-8000-000000000016"
 	store := &routingAccounts{account: accounts.Account{ID: accountID, Provider: accounts.ProviderMicrosoft}}
 	google, microsoft := &routingPageExecutor{}, &routingPageExecutor{}
-	executor, err := NewRoutedExecutor(store, google, microsoft)
+	executor, err := NewRoutedExecutor(store, google, microsoft, &routingPageExecutor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestRoutedExecutorPreservesTypedRecoveryWithoutLeakingProviderError(t *test
 	accountID := "0199ed3b-c950-7000-8000-000000000016"
 	store := &routingAccounts{account: accounts.Account{ID: accountID, Provider: accounts.ProviderMicrosoft}}
 	microsoft := &routingPageExecutor{err: ErrRemoteCursorInvalid}
-	executor, _ := NewRoutedExecutor(store, &routingPageExecutor{}, microsoft)
+	executor, _ := NewRoutedExecutor(store, &routingPageExecutor{}, microsoft, &routingPageExecutor{})
 	_, err := executor.FetchPage(context.Background(), "0199ed3b-c950-7000-8000-000000000001", Run{AccountID: accountID})
 	if !errors.Is(err, ErrRemoteCursorInvalid) || providerKindFromError(err) != mail.ProviderMicrosoft || err.Error() != "mail provider synchronization failed" {
 		t.Fatalf("routed error = %v provider=%q", err, providerKindFromError(err))

@@ -6,6 +6,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	mailflowimap "github.com/Tutitoos/mailflow/services/api/internal/modules/imap"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -37,7 +38,7 @@ func connectIMAPAccount(service *mailflowimap.Service) fiber.Handler {
 	}
 }
 
-func discoverIMAPFolders(service *mailflowimap.Service) fiber.Handler {
+func discoverIMAPFolders(service *mailflowimap.Service, syncer SyncRequester) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil {
 			return newProblem(fiber.StatusServiceUnavailable, "imap_unavailable", "IMAP is unavailable", "IMAP account management is temporarily unavailable.")
@@ -49,6 +50,11 @@ func discoverIMAPFolders(service *mailflowimap.Service) fiber.Handler {
 		result, err := service.DiscoverFolders(c.Context(), user.ID, c.Params("accountId"))
 		if err != nil {
 			return imapProblem(err)
+		}
+		if syncer != nil {
+			if _, err := syncer.StartInitial(c.Context(), user.ID, c.Params("accountId")); err != nil && !errors.Is(err, mailflowsync.ErrRunExists) {
+				return newProblem(fiber.StatusServiceUnavailable, "sync_enqueue_failed", "Synchronization unavailable", "The folders were saved, but initial synchronization could not be queued.")
+			}
 		}
 		return c.JSON(result)
 	}

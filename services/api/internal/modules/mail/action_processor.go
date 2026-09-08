@@ -10,7 +10,14 @@ import (
 )
 
 type ActionProvider interface {
+	Kind() ProviderKind
 	Apply(context.Context, RemoteAction) error
+}
+
+type ActionProcessResult struct {
+	Processed bool
+	Provider  ProviderKind
+	Result    string
 }
 
 type ActionProviderResolver interface {
@@ -36,31 +43,44 @@ func NewActionProcessor(service *PendingActionService, providers ActionProviderR
 	return &ActionProcessor{service: service, providers: providers, remote: remote, state: state, now: func() time.Time { return time.Now().UTC() }}, nil
 }
 
-func (processor *ActionProcessor) ProcessNext(ctx context.Context, userID string) (bool, error) {
+func (processor *ActionProcessor) ProcessNext(ctx context.Context, userID string) (ActionProcessResult, error) {
 	claim, err := processor.service.Claim(ctx, userID)
 	if errors.Is(err, ErrActionUnavailable) {
-		return false, nil
+		return ActionProcessResult{}, nil
 	}
 	if err != nil {
-		return false, err
+		return ActionProcessResult{}, err
 	}
 	provider, resolveErr := processor.providers.ResolveActionProvider(ctx, userID, claim.AccountID)
+	result := ActionProcessResult{Processed: true, Result: "failure"}
+	if resolveErr == nil && provider != nil {
+		result.Provider = provider.Kind()
+	} else if resolveErr == nil {
+		resolveErr = errors.New("mail action provider is unavailable")
+	}
 	remote, targetErr := processor.remote.ResolveRemoteAction(ctx, userID, claim.PendingAction)
 	if resolveErr == nil && targetErr == nil {
 		targetErr = provider.Apply(ctx, remote)
 	}
 	if targetErr == nil && resolveErr == nil {
 		_, err = processor.service.Complete(ctx, userID, claim)
-		return true, err
+		result.Result = "success"
+		return result, err
 	}
 	errorCode := "provider_unavailable"
 	if targetErr != nil {
 		errorCode = "remote_action_failed"
 	}
-	_, _, err = processor.service.Fail(ctx, userID, claim, errorCode, processor.now().Add(time.Duration(claim.Attempts)*time.Minute), claim.AuthoritativeState, func(ctx context.Context, tx pgx.Tx) error {
+	_, conflict, err := processor.service.Fail(ctx, userID, claim, errorCode, processor.now().Add(time.Duration(claim.Attempts)*time.Minute), claim.AuthoritativeState, func(ctx context.Context, tx pgx.Tx) error {
 		return processor.state.ApplyActionState(ctx, tx, EnqueueActionInput{UserID: userID, AccountID: claim.AccountID, Kind: claim.Kind, TargetKind: claim.TargetKind, TargetID: claim.TargetID}, json.RawMessage(claim.AuthoritativeState))
 	})
-	return true, err
+	if err == nil {
+		result.Result = "retry"
+		if conflict {
+			result.Result = "conflict"
+		}
+	}
+	return result, err
 }
 
 func (repository *ThreadRepositoryStore) ResolveRemoteAction(ctx context.Context, userID string, action PendingAction) (RemoteAction, error) {

@@ -22,6 +22,7 @@ type GmailProvider interface {
 	Apply(context.Context, mail.RemoteAction) error
 	SaveDraft(context.Context, mail.OutgoingMessage) (string, error)
 	Send(context.Context, mail.OutgoingMessage) (string, error)
+	DeleteDraft(context.Context, string) error
 	DownloadAttachment(context.Context, string, string) (io.ReadCloser, error)
 }
 

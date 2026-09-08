@@ -16,14 +16,21 @@ import (
 type outgoingTestProvider struct {
 	drafts  int
 	sends   int
+	deletes int
 	sendErr error
 	last    string
 	thread  string
+	source  string
+	mode    ComposeMode
+	draftID string
 }
 
 func (provider *outgoingTestProvider) SaveDraft(_ context.Context, message OutgoingMessage) (string, error) {
 	provider.drafts++
 	provider.thread = message.ThreadID
+	provider.source = message.SourceMessageID
+	provider.mode = message.Mode
+	provider.draftID = message.DraftID
 	payload, _ := io.ReadAll(message.Raw)
 	provider.last = string(payload)
 	return "remote-draft", nil
@@ -32,9 +39,17 @@ func (provider *outgoingTestProvider) SaveDraft(_ context.Context, message Outgo
 func (provider *outgoingTestProvider) Send(_ context.Context, message OutgoingMessage) (string, error) {
 	provider.sends++
 	provider.thread = message.ThreadID
+	provider.source = message.SourceMessageID
+	provider.mode = message.Mode
+	provider.draftID = message.DraftID
 	payload, _ := io.ReadAll(message.Raw)
 	provider.last = string(payload)
 	return "remote-message", provider.sendErr
+}
+
+func (provider *outgoingTestProvider) DeleteDraft(context.Context, string) error {
+	provider.deletes++
+	return nil
 }
 
 type outgoingTestResolver struct{ provider *outgoingTestProvider }
@@ -62,16 +77,34 @@ func TestDeliveryCheckpointsRepliesAndNeverRepeatsSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkpoint, err := service.CheckpointDraft(context.Background(), userID, accountID, draft.ID)
-	if err != nil || checkpoint.SyncStatus != DraftSynced || provider.drafts != 1 || provider.thread != "remote-thread" || !strings.Contains(provider.last, "In-Reply-To: <source@example.test>") {
-		t.Fatalf("checkpoint=%+v drafts=%d thread=%q payload=%q error=%v", checkpoint, provider.drafts, provider.thread, provider.last, err)
+	if err != nil || checkpoint.SyncStatus != DraftSynced || provider.drafts != 1 || provider.thread != "remote-thread" || provider.source != "gmail-message" || provider.mode != ComposeReply || !strings.Contains(provider.last, "In-Reply-To: <source@example.test>") {
+		t.Fatalf("checkpoint=%+v drafts=%d thread=%q source=%q mode=%q payload=%q error=%v", checkpoint, provider.drafts, provider.thread, provider.source, provider.mode, provider.last, err)
 	}
 	delivery, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, checkpoint.LocalRevision, "send-fixture-key-0001")
-	if err != nil || delivery.Status != DeliverySent || provider.sends != 1 {
-		t.Fatalf("delivery=%+v sends=%d error=%v", delivery, provider.sends, err)
+	if err != nil || delivery.Status != DeliverySent || provider.sends != 1 || provider.draftID != "remote-draft" || provider.source != "gmail-message" || provider.mode != ComposeReply {
+		t.Fatalf("delivery=%+v sends=%d draft=%q source=%q mode=%q error=%v", delivery, provider.sends, provider.draftID, provider.source, provider.mode, err)
 	}
 	repeated, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, checkpoint.LocalRevision, "send-fixture-key-0001")
 	if err != nil || repeated.ID != delivery.ID || provider.sends != 1 {
 		t.Fatalf("repeated=%+v sends=%d error=%v", repeated, provider.sends, err)
+	}
+}
+
+func TestDeliveryDiscardsRemoteDraftBeforeLocalState(t *testing.T) {
+	repository, pool, userID, accountID := draftFixture(t)
+	draft := createDraftFixture(t, repository, userID, accountID)
+	provider := &outgoingTestProvider{}
+	service, err := NewDeliveryService(pool, repository, outgoingTestResolver{provider}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := service.CheckpointDraft(context.Background(), userID, accountID, draft.ID)
+	if err != nil || checkpoint.RemoteID == nil {
+		t.Fatalf("checkpoint = %+v, %v", checkpoint, err)
+	}
+	discarded, err := service.DiscardDraft(context.Background(), userID, accountID, draft.ID)
+	if err != nil || discarded.SyncStatus != DraftDiscarded || provider.deletes != 1 {
+		t.Fatalf("discarded=%+v deletes=%d error=%v", discarded, provider.deletes, err)
 	}
 }
 

@@ -87,6 +87,7 @@ func (*Provider) Kind() mail.ProviderKind { return mail.ProviderMicrosoft }
 
 func (*Provider) Capabilities(context.Context) (map[string]bool, error) {
 	return map[string]bool{
+		"actions":     true,
 		"attachments": true,
 		"categories":  true,
 		"drafts":      true,
@@ -317,7 +318,26 @@ func (provider *Provider) Apply(ctx context.Context, action mail.RemoteAction) e
 }
 
 func (provider *Provider) SaveDraft(ctx context.Context, draft mail.OutgoingMessage) (string, error) {
-	if len(draft.DraftID) > 512 || len(draft.ThreadID) > 512 {
+	if len(draft.DraftID) > 512 || len(draft.ThreadID) > 512 || len(draft.SourceMessageID) > 512 {
+		return "", permanentError()
+	}
+	path := "/messages"
+	switch draft.Mode {
+	case "", mail.ComposeNew:
+		if draft.SourceMessageID != "" {
+			return "", permanentError()
+		}
+	case mail.ComposeReply:
+		if strings.TrimSpace(draft.SourceMessageID) == "" {
+			return "", permanentError()
+		}
+		path = "/messages/" + url.PathEscape(draft.SourceMessageID) + "/createReply"
+	case mail.ComposeForward:
+		if strings.TrimSpace(draft.SourceMessageID) == "" {
+			return "", permanentError()
+		}
+		path = "/messages/" + url.PathEscape(draft.SourceMessageID) + "/createForward"
+	default:
 		return "", permanentError()
 	}
 	encoded, err := encodeMIME(draft.Raw)
@@ -327,7 +347,7 @@ func (provider *Provider) SaveDraft(ctx context.Context, draft mail.OutgoingMess
 	var response struct {
 		ID string `json:"id"`
 	}
-	if err := provider.json(ctx, http.MethodPost, "/messages", nil, []byte(encoded), "text/plain", &response); err != nil {
+	if err := provider.json(ctx, http.MethodPost, path, nil, []byte(encoded), "text/plain", &response); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(response.ID) == "" {
@@ -344,7 +364,7 @@ func (provider *Provider) SaveDraft(ctx context.Context, draft mail.OutgoingMess
 }
 
 func (provider *Provider) Send(ctx context.Context, message mail.OutgoingMessage) (string, error) {
-	draftID, err := provider.SaveDraft(ctx, mail.OutgoingMessage{DraftID: message.DraftID, ThreadID: message.ThreadID, Raw: message.Raw})
+	draftID, err := provider.SaveDraft(ctx, message)
 	if err != nil {
 		return "", err
 	}
@@ -352,6 +372,18 @@ func (provider *Provider) Send(ctx context.Context, message mail.OutgoingMessage
 		return "", err
 	}
 	return draftID, nil
+}
+
+func (provider *Provider) DeleteDraft(ctx context.Context, draftID string) error {
+	if strings.TrimSpace(draftID) == "" || len(draftID) > 512 {
+		return permanentError()
+	}
+	err := provider.json(ctx, http.MethodDelete, "/messages/"+url.PathEscape(draftID), nil, nil, "", nil)
+	var providerError *ProviderError
+	if errors.As(err, &providerError) && providerError.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return err
 }
 
 func (provider *Provider) DownloadAttachment(ctx context.Context, messageID, attachmentID string) (io.ReadCloser, error) {

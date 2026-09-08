@@ -79,6 +79,7 @@ func (*fakeMicrosoftProvider) SaveDraft(context.Context, mail.OutgoingMessage) (
 func (*fakeMicrosoftProvider) Send(context.Context, mail.OutgoingMessage) (string, error) {
 	return "message", nil
 }
+func (*fakeMicrosoftProvider) DeleteDraft(context.Context, string) error { return nil }
 func (*fakeMicrosoftProvider) DownloadAttachment(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("attachment")), nil
 }

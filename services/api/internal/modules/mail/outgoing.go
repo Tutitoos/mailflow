@@ -48,6 +48,7 @@ type Delivery struct {
 type OutgoingProvider interface {
 	SaveDraft(context.Context, OutgoingMessage) (string, error)
 	Send(context.Context, OutgoingMessage) (string, error)
+	DeleteDraft(context.Context, string) error
 }
 
 type OutgoingProviderResolver interface {
@@ -99,6 +100,19 @@ func (service *DeliveryService) UpdateDraft(ctx context.Context, input UpdateDra
 }
 
 func (service *DeliveryService) DiscardDraft(ctx context.Context, user, account, draftID string) (Draft, error) {
+	current, err := service.drafts.GetDraft(ctx, user, account, draftID)
+	if err != nil {
+		return Draft{}, err
+	}
+	if current.RemoteID != nil {
+		provider, resolveErr := service.providers.ResolveOutgoingProvider(ctx, user, account)
+		if resolveErr != nil {
+			return Draft{}, resolveErr
+		}
+		if deleteErr := provider.DeleteDraft(ctx, *current.RemoteID); deleteErr != nil {
+			return Draft{}, deleteErr
+		}
+	}
 	draft, err := service.drafts.DiscardDraft(ctx, user, account, draftID)
 	if err == nil {
 		service.publishDraft(ctx, user, draft, "discarded")
@@ -121,7 +135,7 @@ func (service *DeliveryService) CheckpointDraft(ctx context.Context, user, accou
 	if draft.SyncedRevision == draft.LocalRevision && draft.RemoteID != nil {
 		return draft, nil
 	}
-	raw, threadID, err := service.build(ctx, user, draft)
+	raw, outgoingContext, err := service.build(ctx, user, draft)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -133,7 +147,9 @@ func (service *DeliveryService) CheckpointDraft(ctx context.Context, user, accou
 	if draft.RemoteID != nil {
 		remoteID = *draft.RemoteID
 	}
-	remoteID, err = provider.SaveDraft(ctx, OutgoingMessage{DraftID: remoteID, ThreadID: threadID, Raw: bytes.NewReader(raw)})
+	message := outgoingMessageForDraft(draft, outgoingContext, raw)
+	message.DraftID = remoteID
+	remoteID, err = provider.SaveDraft(ctx, message)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -169,7 +185,7 @@ func (service *DeliveryService) SendDraft(ctx context.Context, user, account, dr
 	if draft.LocalRevision != expectedRevision || draft.SyncStatus == DraftConflict || draft.SyncStatus == DraftDiscarded || len(draft.Recipients) == 0 {
 		return Delivery{}, ErrDraftConflict
 	}
-	raw, threadID, err := service.build(ctx, user, draft)
+	raw, outgoingContext, err := service.build(ctx, user, draft)
 	if err != nil {
 		return Delivery{}, err
 	}
@@ -189,7 +205,11 @@ func (service *DeliveryService) SendDraft(ctx context.Context, user, account, dr
 	if !claimed {
 		return delivery, nil
 	}
-	remoteID, sendErr := provider.Send(ctx, OutgoingMessage{ThreadID: threadID, Raw: bytes.NewReader(raw)})
+	message := outgoingMessageForDraft(draft, outgoingContext, raw)
+	if draft.RemoteID != nil {
+		message.DraftID = *draft.RemoteID
+	}
+	remoteID, sendErr := provider.Send(ctx, message)
 	if sendErr != nil {
 		return service.finishDelivery(ctx, user, delivery.ID, DeliveryAmbiguous, "")
 	}
@@ -204,40 +224,48 @@ func (service *DeliveryService) SendDraft(ctx context.Context, user, account, dr
 	return delivery, nil
 }
 
-func (service *DeliveryService) build(ctx context.Context, user string, draft Draft) ([]byte, string, error) {
+func (service *DeliveryService) build(ctx context.Context, user string, draft Draft) ([]byte, outgoingContext, error) {
 	context := outgoingContext{}
 	if draft.SourceMessageID != nil {
 		userID, accountID, messageID, err := scopedResourceIDs(user, draft.AccountID, *draft.SourceMessageID)
 		if err != nil {
-			return nil, "", ErrInvalidDraft
+			return nil, outgoingContext{}, ErrInvalidDraft
 		}
-		err = service.pool.QueryRow(ctx, `select threads.remote_id, coalesce(messages.message_id, ''), messages.references_header
+		err = service.pool.QueryRow(ctx, `select threads.remote_id, messages.remote_id, coalesce(messages.message_id, ''), messages.references_header
 from messages join threads on threads.id = messages.thread_id and threads.account_id = messages.account_id
 join accounts on accounts.id = messages.account_id
-where messages.id = $1 and messages.account_id = $2 and accounts.user_id = $3`, messageID, accountID, userID).Scan(&context.threadID, &context.messageID, &context.references)
+where messages.id = $1 and messages.account_id = $2 and accounts.user_id = $3`, messageID, accountID, userID).Scan(&context.threadID, &context.sourceMessageID, &context.messageID, &context.references)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, "", ErrDraftNotFound
+			return nil, outgoingContext{}, ErrDraftNotFound
 		}
 		if err != nil {
-			return nil, "", err
+			return nil, outgoingContext{}, err
 		}
 	}
 	attachments, err := service.loadAttachments(ctx, user, draft)
 	if err != nil {
-		return nil, "", err
+		return nil, outgoingContext{}, err
 	}
 	raw, err := buildOutgoingMIME(draft, context, attachments)
-	threadID := ""
-	if draft.Mode == ComposeReply {
-		threadID = context.threadID
-	}
-	return raw, threadID, err
+	return raw, context, err
 }
 
 type outgoingContext struct {
-	threadID   string
-	messageID  string
-	references []string
+	threadID        string
+	sourceMessageID string
+	messageID       string
+	references      []string
+}
+
+func outgoingMessageForDraft(draft Draft, source outgoingContext, raw []byte) OutgoingMessage {
+	threadID := ""
+	if draft.Mode == ComposeReply {
+		threadID = source.threadID
+	}
+	return OutgoingMessage{
+		ThreadID: threadID, SourceMessageID: source.sourceMessageID,
+		Mode: draft.Mode, Raw: bytes.NewReader(raw),
+	}
 }
 
 type outgoingAttachment struct {

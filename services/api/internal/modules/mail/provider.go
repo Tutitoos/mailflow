@@ -79,9 +79,11 @@ type RemoteAction struct {
 }
 
 type OutgoingMessage struct {
-	DraftID  string
-	ThreadID string
-	Raw      io.Reader
+	DraftID         string
+	ThreadID        string
+	SourceMessageID string
+	Mode            ComposeMode
+	Raw             io.Reader
 }
 
 type Provider interface {
@@ -98,4 +100,13 @@ type Provider interface {
 
 type AttachmentProvider interface {
 	DownloadAttachment(ctx context.Context, messageID, attachmentID string) (io.ReadCloser, error)
+}
+
+// AccountProvider is the complete mail surface exposed by a connected account.
+// Provider-specific implementations stay behind this interface so callers never
+// select a provider from untrusted request data alone.
+type AccountProvider interface {
+	Provider
+	AttachmentProvider
+	DeleteDraft(context.Context, string) error
 }

@@ -14,8 +14,7 @@ import (
 const microsoftPageSize = 100
 
 type MicrosoftProvider interface {
-	mail.Provider
-	mail.AttachmentProvider
+	mail.AccountProvider
 }
 
 type MicrosoftProviderResolver interface {

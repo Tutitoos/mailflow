@@ -8,6 +8,7 @@ COPY package.json bun.lock biome.json tsconfig.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY services/auth/package.json services/auth/package.json
 RUN bun install --frozen-lockfile
+COPY services/api/internal/modules/translations/catalogs.json services/api/internal/modules/translations/catalogs.json
 COPY apps/web apps/web
 RUN bun run --cwd apps/web build
 

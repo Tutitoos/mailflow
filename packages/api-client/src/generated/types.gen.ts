@@ -48,6 +48,60 @@ export type SentryTelemetrySummary = {
     replayEnabled: boolean;
 };
 
+export type TranslationCatalog = {
+    locale: 'en' | 'es';
+    defaultLocale: 'en';
+    revision: number;
+    messages: {
+        [key: string]: string;
+    };
+    missingKeys: Array<string>;
+};
+
+export type TranslationMessage = {
+    value: string;
+    sourceHash: string;
+};
+
+export type TranslationDiagnostics = {
+    missingEnglish: Array<string>;
+    missingSpanish: Array<string>;
+    staleSpanish: Array<string>;
+    invalidIcu: Array<string>;
+    unknownKeys: Array<string>;
+    privateValues: Array<string>;
+};
+
+export type TranslationExport = {
+    defaultLocale: 'en';
+    revision: number;
+    catalogs: {
+        en: {
+            [key: string]: TranslationMessage;
+        };
+        es: {
+            [key: string]: TranslationMessage;
+        };
+    };
+    diagnostics: TranslationDiagnostics;
+};
+
+export type TranslationChange = {
+    locale: 'en' | 'es';
+    key: string;
+    value: string | null;
+    sourceHash?: string;
+};
+
+export type TranslationUpdate = {
+    expectedRevision: number;
+    changes: Array<TranslationChange>;
+};
+
+export type TranslationUpdateResult = TranslationExport & {
+    eventPublished: boolean;
+};
+
 export type CurrentUser = {
     id: string;
     email: string;
@@ -76,7 +130,7 @@ export type SyncRunAccepted = {
 export type EventEnvelope = {
     version: 1;
     cursor: string;
-    type: 'mail.changed' | 'sync.progress' | 'draft.changed' | 'admin.alert' | 'admin.log' | 'system.status' | 'system.resync_required';
+    type: 'mail.changed' | 'sync.progress' | 'draft.changed' | 'admin.alert' | 'admin.log' | 'system.status' | 'translations.changed' | 'system.resync_required';
     timestamp: string;
     payload: {
         [key: string]: unknown;
@@ -1239,12 +1293,23 @@ export type GetTranslationsData = {
     url: '/translations/{locale}';
 };
 
+export type GetTranslationsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetTranslationsError = GetTranslationsErrors[keyof GetTranslationsErrors];
+
 export type GetTranslationsResponses = {
     /**
-     * Translation catalog with English fallback
+     * Versioned translation catalog with English fallback
      */
-    200: unknown;
+    200: TranslationCatalog;
 };
+
+export type GetTranslationsResponse = GetTranslationsResponses[keyof GetTranslationsResponses];
 
 export type GetAdminStatusData = {
     body?: never;
@@ -1484,3 +1549,94 @@ export type SetSentryIssueStatusResponses = {
 };
 
 export type SetSentryIssueStatusResponse = SetSentryIssueStatusResponses[keyof SetSentryIssueStatusResponses];
+
+export type ExportTranslationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/translations';
+};
+
+export type ExportTranslationsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type ExportTranslationsError = ExportTranslationsErrors[keyof ExportTranslationsErrors];
+
+export type ExportTranslationsResponses = {
+    /**
+     * Active versioned English sources and Spanish overrides
+     */
+    200: TranslationExport;
+};
+
+export type ExportTranslationsResponse = ExportTranslationsResponses[keyof ExportTranslationsResponses];
+
+export type UpdateTranslationsData = {
+    body: TranslationUpdate;
+    path?: never;
+    query?: never;
+    url: '/admin/translations';
+};
+
+export type UpdateTranslationsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    409: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    422: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type UpdateTranslationsError = UpdateTranslationsErrors[keyof UpdateTranslationsErrors];
+
+export type UpdateTranslationsResponses = {
+    /**
+     * Activated catalog revision
+     */
+    200: TranslationUpdateResult;
+};
+
+export type UpdateTranslationsResponse = UpdateTranslationsResponses[keyof UpdateTranslationsResponses];
+
+export type ValidateTranslationsData = {
+    body: TranslationUpdate;
+    path?: never;
+    query?: never;
+    url: '/admin/translations/validate';
+};
+
+export type ValidateTranslationsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    409: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    422: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type ValidateTranslationsError = ValidateTranslationsErrors[keyof ValidateTranslationsErrors];
+
+export type ValidateTranslationsResponses = {
+    /**
+     * Candidate catalog and diagnostics without activation
+     */
+    200: TranslationExport;
+};
+
+export type ValidateTranslationsResponse = ValidateTranslationsResponses[keyof ValidateTranslationsResponses];

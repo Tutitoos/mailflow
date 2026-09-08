@@ -28,13 +28,17 @@ func TestHealthAndEnglishFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	var payload struct {
-		Messages map[string]string `json:"messages"`
+		Locale        string            `json:"locale"`
+		DefaultLocale string            `json:"defaultLocale"`
+		Revision      int64             `json:"revision"`
+		Messages      map[string]string `json:"messages"`
+		MissingKeys   []string          `json:"missingKeys"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Messages["status.healthy"] != "All systems operational" {
-		t.Fatalf("expected English fallback, got %q", payload.Messages["status.healthy"])
+	if payload.Locale != "en" || payload.DefaultLocale != "en" || payload.Revision != 0 || payload.Messages["status.healthy"] != "All systems operational" || len(payload.MissingKeys) != 0 {
+		t.Fatalf("unexpected English fallback: %+v", payload)
 	}
 }
 

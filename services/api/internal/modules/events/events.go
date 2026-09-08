@@ -170,7 +170,7 @@ func value(message redis.XMessage, key string) string {
 
 func validType(value string) bool {
 	switch value {
-	case "mail.changed", "sync.progress", "draft.changed", "admin.alert", "admin.log", "system.status":
+	case "mail.changed", "sync.progress", "draft.changed", "admin.alert", "admin.log", "system.status", "translations.changed":
 		return true
 	default:
 		return false

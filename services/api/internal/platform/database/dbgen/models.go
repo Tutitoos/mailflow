@@ -498,6 +498,27 @@ type Thread struct {
 	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
 }
 
+type TranslationMessage struct {
+	RevisionID int64  `json:"revision_id"`
+	Locale     string `json:"locale"`
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	SourceHash string `json:"source_hash"`
+}
+
+type TranslationRevision struct {
+	ID           int64              `json:"id"`
+	ActorUserID  pgtype.UUID        `json:"actor_user_id"`
+	MessageCount int32              `json:"message_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type TranslationState struct {
+	Singleton      bool               `json:"singleton"`
+	ActiveRevision int64              `json:"active_revision"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type User struct {
 	ID            pgtype.UUID        `json:"id"`
 	Email         string             `json:"email"`

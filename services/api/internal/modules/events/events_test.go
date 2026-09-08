@@ -88,6 +88,15 @@ func TestLiveEventsAreScopedAndPayloadsAreSanitized(t *testing.T) {
 	}
 }
 
+func TestTranslationChangeIsAValidBoundedEvent(t *testing.T) {
+	if !validType("translations.changed") {
+		t.Fatal("translation invalidation event type is not registered")
+	}
+	if !safePayload(json.RawMessage(`{"revision":42}`), DefaultConfig().MaxPayloadBytes) {
+		t.Fatal("bounded translation invalidation payload was rejected")
+	}
+}
+
 func TestLiveReadIsBoundedForSlowConsumers(t *testing.T) {
 	client, prefix := testkit.Redis(t)
 	config := DefaultConfig()

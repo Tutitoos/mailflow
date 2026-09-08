@@ -176,6 +176,7 @@ export type MailEvent = {
     | "admin.alert"
     | "admin.log"
     | "system.status"
+    | "translations.changed"
     | "system.resync_required";
   timestamp: string;
   payload: Record<string, unknown>;
@@ -188,6 +189,18 @@ export type SentryTelemetrySummary = {
   replays: number;
   replaySegments: number;
   replayEnabled: boolean;
+};
+
+export type TranslationAdminSummary = {
+  revision: number;
+  diagnostics: {
+    missingEnglish: string[];
+    missingSpanish: string[];
+    staleSpanish: string[];
+    invalidIcu: string[];
+    unknownKeys: string[];
+    privateValues: string[];
+  };
 };
 
 export class APIError extends Error {
@@ -260,6 +273,25 @@ export async function loadMailAccounts(signal?: AbortSignal) {
 
 export async function loadSentryTelemetry(signal?: AbortSignal) {
   return request<SentryTelemetrySummary>("/admin/sentry/telemetry", { signal });
+}
+
+export async function loadTranslationCatalog(locale: "en" | "es", signal?: AbortSignal) {
+  const response = await fetch(`/api/v1/translations/${locale}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw new APIError("translations_unavailable");
+  return (await response.json()) as {
+    locale: "en" | "es";
+    defaultLocale: "en";
+    revision: number;
+    messages: Record<string, string>;
+    missingKeys: string[];
+  };
+}
+
+export async function loadTranslationAdminSummary(signal?: AbortSignal) {
+  return request<TranslationAdminSummary>("/admin/translations", { signal });
 }
 
 export async function loadMailNavigation(accountId: string, signal?: AbortSignal) {

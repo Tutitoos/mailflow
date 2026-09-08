@@ -234,6 +234,25 @@ export type Account = {
     updatedAt: string;
 };
 
+export type MailServerConfig = {
+    host: string;
+    port: number;
+    tlsMode: 'implicit' | 'starttls';
+};
+
+export type ImapAccountInput = {
+    displayName: string;
+    username: string;
+    imap: MailServerConfig;
+    smtp: MailServerConfig;
+};
+
+export type ImapProbeResult = {
+    capabilities: {
+        [key: string]: boolean;
+    };
+};
+
 export type SyncRunAccepted = {
     status: 'queued' | 'already_queued';
     runId?: string;
@@ -497,6 +516,14 @@ export type Problem = {
     }>;
 };
 
+export type ImapAccountInputWritable = {
+    displayName: string;
+    username: string;
+    password: string;
+    imap: MailServerConfig;
+    smtp: MailServerConfig;
+};
+
 export type AccountId = string;
 
 export type AccountIdQuery = string;
@@ -752,6 +779,56 @@ export type ListAccountsResponses = {
 
 export type ListAccountsResponse = ListAccountsResponses[keyof ListAccountsResponses];
 
+export type ProbeImapAccountData = {
+    body: ImapAccountInputWritable;
+    path?: never;
+    query?: never;
+    url: '/accounts/imap/probe';
+};
+
+export type ProbeImapAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ProbeImapAccountError = ProbeImapAccountErrors[keyof ProbeImapAccountErrors];
+
+export type ProbeImapAccountResponses = {
+    /**
+     * Secure connectivity and bounded server capabilities verified
+     */
+    200: ImapProbeResult;
+};
+
+export type ProbeImapAccountResponse = ProbeImapAccountResponses[keyof ProbeImapAccountResponses];
+
+export type ConnectImapAccountData = {
+    body: ImapAccountInputWritable;
+    path?: never;
+    query?: never;
+    url: '/accounts/imap';
+};
+
+export type ConnectImapAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ConnectImapAccountError = ConnectImapAccountErrors[keyof ConnectImapAccountErrors];
+
+export type ConnectImapAccountResponses = {
+    /**
+     * IMAP account connected with encrypted credentials
+     */
+    201: Account;
+};
+
+export type ConnectImapAccountResponse = ConnectImapAccountResponses[keyof ConnectImapAccountResponses];
+
 export type SynchronizeAccountData = {
     body?: never;
     headers: {
@@ -834,6 +911,7 @@ export type DisconnectAccountResponses = {
     200: {
         account: Account;
         remoteRevoked: boolean;
+        credentialsRemoved?: boolean;
         revocationUrl?: string;
     };
 };

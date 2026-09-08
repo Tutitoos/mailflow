@@ -113,6 +113,61 @@ func (q *Queries) DisableAccount(ctx context.Context, arg DisableAccountParams) 
 	return i, err
 }
 
+const disableAccountAndClearCredentials = `-- name: DisableAccountAndClearCredentials :one
+UPDATE accounts
+SET encrypted_credentials = $1,
+    credential_nonce = $2,
+    capabilities = '{}'::jsonb,
+    disabled_at = COALESCE(disabled_at, now()),
+    sync_state = 'disabled',
+    updated_at = now()
+WHERE id = $3 AND user_id = $4 AND provider = 'imap'
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
+`
+
+type DisableAccountAndClearCredentialsParams struct {
+	EncryptedCredentials []byte      `json:"encrypted_credentials"`
+	CredentialNonce      []byte      `json:"credential_nonce"`
+	ID                   pgtype.UUID `json:"id"`
+	UserID               pgtype.UUID `json:"user_id"`
+}
+
+type DisableAccountAndClearCredentialsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Provider     string             `json:"provider"`
+	RemoteID     string             `json:"remote_id"`
+	DisplayName  string             `json:"display_name"`
+	Capabilities []byte             `json:"capabilities"`
+	SyncState    string             `json:"sync_state"`
+	DisabledAt   pgtype.Timestamptz `json:"disabled_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) DisableAccountAndClearCredentials(ctx context.Context, arg DisableAccountAndClearCredentialsParams) (DisableAccountAndClearCredentialsRow, error) {
+	row := q.db.QueryRow(ctx, disableAccountAndClearCredentials,
+		arg.EncryptedCredentials,
+		arg.CredentialNonce,
+		arg.ID,
+		arg.UserID,
+	)
+	var i DisableAccountAndClearCredentialsRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.RemoteID,
+		&i.DisplayName,
+		&i.Capabilities,
+		&i.SyncState,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getAccountByProviderRemote = `-- name: GetAccountByProviderRemote :one
 SELECT id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
 FROM accounts

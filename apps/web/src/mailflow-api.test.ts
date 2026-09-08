@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   accountSupports,
   checkpointDraft,
+  connectIMAPAccount,
   createDraft,
   createGoogleAuthorization,
   createMailActions,
@@ -13,6 +14,7 @@ import {
   loadInboxPage,
   loadMailNavigation,
   type MailDraft,
+  probeIMAPAccount,
   searchMail,
   sendDraft,
 } from "./mailflow-api";
@@ -154,7 +156,7 @@ describe("Mailflow API client", () => {
     expect(fetch.mock.calls[7]?.[0]).toContain("/threads/thread-1?accountId=account-1");
   });
 
-  it("loads Google and Microsoft account capabilities without including IMAP", async () => {
+  it("loads Google, Microsoft, and IMAP account capabilities", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/auth/token")) return json({ token: "short-jwt" });
@@ -193,7 +195,36 @@ describe("Mailflow API client", () => {
     const result = await loadAccountConnections();
 
     expect(result.status.microsoft.configured).toBe(true);
-    expect(result.accounts.map((account) => account.provider)).toEqual(["google", "microsoft"]);
+    expect(result.accounts.map((account) => account.provider)).toEqual([
+      "google",
+      "microsoft",
+      "imap",
+    ]);
+  });
+
+  it("tests and connects IMAP settings through authenticated JSON requests", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ capabilities: { "imap.idle": true } }))
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ id: "imap", provider: "imap" }, 201));
+    vi.stubGlobal("fetch", fetch);
+    const input = {
+      displayName: "Personal",
+      username: "owner@example.test",
+      password: "app-password",
+      imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" as const },
+      smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" as const },
+    };
+
+    await probeIMAPAccount(input);
+    await connectIMAPAccount(input);
+
+    expect(fetch.mock.calls[1]?.[0]).toBe("/api/v1/accounts/imap/probe");
+    expect(fetch.mock.calls[3]?.[0]).toBe("/api/v1/accounts/imap");
+    expect(fetch.mock.calls[1]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetch.mock.calls[3]?.[1]?.body))).toEqual(input);
   });
 
   it("encodes account-scoped search expressions and cursors", async () => {

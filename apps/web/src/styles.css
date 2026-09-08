@@ -1100,6 +1100,130 @@ select:focus-visible {
   color: inherit;
 }
 
+.imap-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.imap-form-heading,
+.imap-form > .settings-actions,
+.imap-security-note {
+  grid-column: 1 / -1;
+}
+
+.imap-form-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.imap-form-heading h2,
+.imap-form-heading p,
+.imap-security-note {
+  margin: 0;
+}
+
+.imap-form-heading p,
+.imap-security-note {
+  color: var(--muted-foreground);
+}
+
+.imap-form label,
+.imap-form fieldset {
+  display: grid;
+  gap: 8px;
+}
+
+.imap-form fieldset {
+  grid-template-columns: minmax(0, 1fr) 100px minmax(120px, 0.6fr);
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+}
+
+.imap-form input,
+.imap-form select {
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.imap-security-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.imap-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.imap-form-heading,
+.imap-form fieldset,
+.imap-security-note,
+.imap-form > .settings-actions,
+.imap-form > .settings-notice {
+  grid-column: 1 / -1;
+}
+
+.imap-form-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.imap-form-heading h2 {
+  margin: 0 0 6px;
+}
+.imap-form-heading p,
+.imap-security-note {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+.imap-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.imap-form input,
+.imap-form select {
+  min-height: 38px;
+  padding: 0 10px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.imap-form fieldset {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.imap-security-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .account-list {
   margin-top: 24px;
 }
@@ -1129,6 +1253,10 @@ select:focus-visible {
   }
   .account-list article button {
     grid-column: span 2;
+  }
+  .imap-form,
+  .imap-form fieldset {
+    grid-template-columns: 1fr;
   }
 }
 .admin-header {

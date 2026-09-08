@@ -21,6 +21,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowimap "github.com/Tutitoos/mailflow/services/api/internal/modules/imap"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
@@ -221,6 +222,11 @@ func main() {
 		options.ActionState = options.Inbox
 		options.Mailboxes = mail.NewMailboxLabelRepository(queries)
 		options.Accounts = accountService
+		options.IMAP, err = mailflowimap.NewService(accountService, mailflowimap.DefaultNetworkProber())
+		if err != nil {
+			logger.Error("IMAP provider configuration failed", "event", "mail.provider_unavailable", "error", err)
+			os.Exit(1)
+		}
 	}
 	var redisClient *redis.Client
 	var queueStore *queue.RedisStore

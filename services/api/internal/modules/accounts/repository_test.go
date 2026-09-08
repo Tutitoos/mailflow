@@ -131,4 +131,23 @@ func TestRepositoryEncryptsAndScopesAccounts(t *testing.T) {
 	if err != nil || !bytes.Contains(replacement, []byte("replacement-secret")) || bytes.Contains(replacement, []byte("provider-secret")) {
 		t.Fatalf("replacement credentials were not stored safely: %v", err)
 	}
+
+	imapAccount, err := repository.Create(ctx, CreateInput{
+		UserID: userID.String(), Provider: ProviderIMAP, RemoteID: "imap:hashed-owner", DisplayName: "IMAP",
+		Capabilities: map[string]bool{"imap.idle": true}, Credentials: json.RawMessage(`{"password":"imap-secret"}`),
+	})
+	if err != nil {
+		t.Fatalf("create IMAP account: %v", err)
+	}
+	cleared, err := repository.DisableAndClearCredentials(ctx, userID.String(), imapAccount.ID)
+	if err != nil || cleared.SyncState != SyncDisabled || cleared.DisabledAt == nil || len(cleared.Capabilities) != 0 {
+		t.Fatalf("clear IMAP account: account=%+v error=%v", cleared, err)
+	}
+	clearedCredentials, err := repository.Credentials(ctx, userID.String(), imapAccount.ID)
+	if err != nil || string(clearedCredentials) != "{}" {
+		t.Fatalf("IMAP credentials not cleared: value=%q error=%v", clearedCredentials, err)
+	}
+	if _, err := repository.DisableAndClearCredentials(ctx, otherUser, imapAccount.ID); !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("cross-owner credential clear error = %v", err)
+	}
 }

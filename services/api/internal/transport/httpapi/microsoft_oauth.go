@@ -6,6 +6,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowimap "github.com/Tutitoos/mailflow/services/api/internal/modules/imap"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/gofiber/fiber/v3"
@@ -87,7 +88,7 @@ func refreshAccount(accountStore AccountLister, google *googleoauth.Service, mic
 	}
 }
 
-func disconnectOAuthAccount(accountStore AccountLister, google *googleoauth.Service, microsoft *microsoftoauth.Service) fiber.Handler {
+func disconnectOAuthAccount(accountStore AccountLister, google *googleoauth.Service, microsoft *microsoftoauth.Service, imapService *mailflowimap.Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		user, ok := authbridge.UserFromContext(c.Context())
 		if !ok {
@@ -111,6 +112,15 @@ func disconnectOAuthAccount(accountStore AccountLister, google *googleoauth.Serv
 			result, err := microsoft.Disconnect(c.Context(), user.ID, account.ID)
 			if err != nil {
 				return microsoftOAuthProblem(err)
+			}
+			return c.JSON(result)
+		case accounts.ProviderIMAP:
+			if imapService == nil {
+				return newProblem(fiber.StatusServiceUnavailable, "imap_unavailable", "IMAP is unavailable", "IMAP account management is temporarily unavailable.")
+			}
+			result, err := imapService.Disconnect(c.Context(), user.ID, account.ID)
+			if err != nil {
+				return imapProblem(err)
 			}
 			return c.JSON(result)
 		default:

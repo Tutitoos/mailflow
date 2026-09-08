@@ -7,6 +7,16 @@ export type MailAccount = {
   capabilities: Record<string, boolean>;
 };
 
+export type MailTLSMode = "implicit" | "starttls";
+
+export type IMAPAccountInput = {
+  displayName: string;
+  username: string;
+  password: string;
+  imap: { host: string; port: number; tlsMode: MailTLSMode };
+  smtp: { host: string; port: number; tlsMode: MailTLSMode };
+};
+
 const legacyMailCapabilities = new Set([
   "actions",
   "attachments",
@@ -414,10 +424,22 @@ export async function loadAccountConnections(signal?: AbortSignal) {
   ]);
   return {
     status: { google, microsoft },
-    accounts: accounts.items.filter(
-      (account) => account.provider === "google" || account.provider === "microsoft",
-    ),
+    accounts: accounts.items,
   };
+}
+
+export async function probeIMAPAccount(input: IMAPAccountInput) {
+  return request<{ capabilities: Record<string, boolean> }>("/accounts/imap/probe", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function connectIMAPAccount(input: IMAPAccountInput) {
+  return request<MailAccount>("/accounts/imap", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function createGoogleAuthorization(reconsent = false) {
@@ -447,12 +469,14 @@ export async function startMicrosoftConnection(reconsent = false) {
 }
 
 export async function disconnectAccount(accountId: string) {
-  return request<{ account: MailAccount; remoteRevoked: boolean; revocationUrl?: string }>(
-    `/accounts/${accountId}`,
-    {
-      method: "DELETE",
-    },
-  );
+  return request<{
+    account: MailAccount;
+    remoteRevoked: boolean;
+    credentialsRemoved?: boolean;
+    revocationUrl?: string;
+  }>(`/accounts/${accountId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function refreshAccountCredentials(accountId: string) {

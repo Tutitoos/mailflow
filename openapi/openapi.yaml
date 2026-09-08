@@ -168,6 +168,36 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "500": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+  /accounts/imap/probe:
+    post:
+      operationId: probeIMAPAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IMAPAccountInput" }
+      responses:
+        "200":
+          description: Secure connectivity and bounded server capabilities verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IMAPProbeResult" }
+        default: { $ref: "#/components/responses/Problem" }
+  /accounts/imap:
+    post:
+      operationId: connectIMAPAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IMAPAccountInput" }
+      responses:
+        "201":
+          description: IMAP account connected with encrypted credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/sync:
     post:
       operationId: synchronizeAccount
@@ -209,6 +239,7 @@ paths:
                 properties:
                   account: { $ref: "#/components/schemas/Account" }
                   remoteRevoked: { type: boolean }
+                  credentialsRemoved: { type: boolean }
                   revocationUrl: { type: string, format: uri }
         default: { $ref: "#/components/responses/Problem" }
   /oauth/google/status:
@@ -1235,6 +1266,31 @@ components:
         disabledAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    MailServerConfig:
+      type: object
+      additionalProperties: false
+      required: [host, port, tlsMode]
+      properties:
+        host: { type: string, minLength: 1, maxLength: 253 }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        tlsMode: { type: string, enum: [implicit, starttls] }
+    IMAPAccountInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, username, password, imap, smtp]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        username: { type: string, minLength: 1, maxLength: 320 }
+        password: { type: string, format: password, writeOnly: true, minLength: 1, maxLength: 4096 }
+        imap: { $ref: "#/components/schemas/MailServerConfig" }
+        smtp: { $ref: "#/components/schemas/MailServerConfig" }
+    IMAPProbeResult:
+      type: object
+      required: [capabilities]
+      properties:
+        capabilities:
+          type: object
+          additionalProperties: { type: boolean }
     SyncRunAccepted:
       type: object
       required: [status]

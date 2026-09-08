@@ -39,8 +39,10 @@ import { installTranslationCatalog, type Locale, type TranslationKey, translate 
 import {
   APIError,
   accountSupports,
+  connectIMAPAccount,
   createMailActions,
   disconnectAccount,
+  type IMAPAccountInput,
   type InboxThread,
   loadAccountConnections,
   loadInboxPage,
@@ -52,6 +54,7 @@ import {
   type Mailbox,
   type MailCategory,
   type MailLabel,
+  probeIMAPAccount,
   refreshAccountCredentials,
   type SearchResult,
   searchMail,
@@ -1222,7 +1225,20 @@ export function AccountsPage({ locale }: { locale: Locale }) {
   const [configured, setConfigured] = useState({ google: false, microsoft: false });
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<"generic" | "reconsent" | "tenant" | null>(null);
+  const [error, setError] = useState<
+    "generic" | "reconsent" | "tenant" | "tls" | "timeout" | "authentication" | "capability" | null
+  >(null);
+  const [showIMAP, setShowIMAP] = useState(false);
+  const [imapStatus, setIMAPStatus] = useState<"idle" | "testing" | "verified" | "connecting">(
+    "idle",
+  );
+  const [imapInput, setIMAPInput] = useState<IMAPAccountInput>({
+    displayName: "",
+    username: "",
+    password: "",
+    imap: { host: "", port: 993, tlsMode: "implicit" },
+    smtp: { host: "", port: 587, tlsMode: "starttls" },
+  });
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -1269,7 +1285,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
 
   const refresh = async (accountId: string) => {
     setError(null);
-    let refreshError: "generic" | "reconsent" | "tenant" | null = null;
+    let refreshError: ReturnType<typeof accountError> | null = null;
     try {
       await refreshAccountCredentials(accountId);
     } catch (cause) {
@@ -1277,6 +1293,36 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     } finally {
       await reload();
       if (refreshError) setError(refreshError);
+    }
+  };
+
+  const resetIMAP = () => {
+    setShowIMAP(false);
+    setIMAPStatus("idle");
+    setIMAPInput({
+      displayName: "",
+      username: "",
+      password: "",
+      imap: { host: "", port: 993, tlsMode: "implicit" },
+      smtp: { host: "", port: 587, tlsMode: "starttls" },
+    });
+  };
+
+  const submitIMAP = async (mode: "probe" | "connect") => {
+    setError(null);
+    setIMAPStatus(mode === "probe" ? "testing" : "connecting");
+    try {
+      if (mode === "probe") {
+        await probeIMAPAccount(imapInput);
+        setIMAPStatus("verified");
+      } else {
+        await connectIMAPAccount(imapInput);
+        resetIMAP();
+        await reload();
+      }
+    } catch (cause) {
+      setIMAPStatus("idle");
+      setError(accountError(cause));
     }
   };
 
@@ -1310,8 +1356,140 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             >
               <Plus size={16} /> {t("connectMicrosoft")}
             </Button>
+            <Button variant="outline" disabled={loading} onClick={() => setShowIMAP(true)}>
+              <Plus size={16} /> {t("connectIMAP")}
+            </Button>
           </div>
         </div>
+        {showIMAP && (
+          <form
+            className="imap-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitIMAP("connect");
+            }}
+          >
+            <div className="imap-form-heading">
+              <div>
+                <h2>{t("imapSetupTitle")}</h2>
+                <p>{t("imapSetupDescription")}</p>
+              </div>
+              <Button type="button" variant="outline" onClick={resetIMAP}>
+                {t("cancel")}
+              </Button>
+            </div>
+            <label>
+              {t("accountName")}
+              <input
+                required
+                maxLength={120}
+                value={imapInput.displayName}
+                onChange={(event) =>
+                  setIMAPInput({ ...imapInput, displayName: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              {t("username")}
+              <input
+                required
+                maxLength={320}
+                autoComplete="username"
+                value={imapInput.username}
+                onChange={(event) => setIMAPInput({ ...imapInput, username: event.target.value })}
+              />
+            </label>
+            <label>
+              {t("password")}
+              <input
+                required
+                maxLength={4096}
+                type="password"
+                autoComplete="current-password"
+                value={imapInput.password}
+                onChange={(event) => setIMAPInput({ ...imapInput, password: event.target.value })}
+              />
+            </label>
+            {(["imap", "smtp"] as const).map((protocol) => (
+              <fieldset key={protocol}>
+                <legend>{protocol.toUpperCase()}</legend>
+                <label>
+                  {t("serverHost")}
+                  <input
+                    required
+                    maxLength={253}
+                    value={imapInput[protocol].host}
+                    onChange={(event) =>
+                      setIMAPInput({
+                        ...imapInput,
+                        [protocol]: { ...imapInput[protocol], host: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {t("serverPort")}
+                  <input
+                    required
+                    min={1}
+                    max={65535}
+                    type="number"
+                    value={imapInput[protocol].port}
+                    onChange={(event) =>
+                      setIMAPInput({
+                        ...imapInput,
+                        [protocol]: { ...imapInput[protocol], port: Number(event.target.value) },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {t("tlsMode")}
+                  <select
+                    value={imapInput[protocol].tlsMode}
+                    onChange={(event) =>
+                      setIMAPInput({
+                        ...imapInput,
+                        [protocol]: {
+                          ...imapInput[protocol],
+                          tlsMode: event.target.value as "implicit" | "starttls",
+                        },
+                      })
+                    }
+                  >
+                    <option value="implicit">{t("tlsImplicit")}</option>
+                    <option value="starttls">STARTTLS</option>
+                  </select>
+                </label>
+              </fieldset>
+            ))}
+            <p className="imap-security-note">
+              <Info size={16} /> {t("imapSecurityNote")}
+            </p>
+            {imapStatus === "verified" && (
+              <p className="settings-notice" role="status">
+                {t("imapConnectionVerified")}
+              </p>
+            )}
+            <div className="settings-actions">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={imapStatus === "testing" || imapStatus === "connecting"}
+                onClick={() => void submitIMAP("probe")}
+              >
+                {t("testConnection")}
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={imapStatus === "testing" || imapStatus === "connecting"}
+              >
+                {t("connectIMAP")}
+              </Button>
+            </div>
+          </form>
+        )}
         {new URLSearchParams(window.location.search).get("google") === "connected" && (
           <p className="settings-notice" role="status">
             {t("googleConnected")}
@@ -1346,7 +1524,15 @@ export function AccountsPage({ locale }: { locale: Locale }) {
               ? t("microsoftReconsentRequired")
               : error === "tenant"
                 ? t("microsoftTenantPolicy")
-                : t("connectionFailed")}
+                : error === "tls"
+                  ? t("imapTLSFailed")
+                  : error === "timeout"
+                    ? t("imapTimeout")
+                    : error === "authentication"
+                      ? t("imapAuthenticationFailed")
+                      : error === "capability"
+                        ? t("imapCapabilityFailed")
+                        : t("connectionFailed")}
           </p>
         )}
         <section className="account-list" aria-busy={loading}>
@@ -1354,29 +1540,35 @@ export function AccountsPage({ locale }: { locale: Locale }) {
           {!loading && accounts.length === 0 && <p>{t("noConnectedProviderAccounts")}</p>}
           {accounts.map((account) => (
             <article key={account.id}>
-              <span className="provider-icon">{account.provider === "google" ? "G" : "M"}</span>
+              <span className="provider-icon">
+                {account.provider === "google" ? "G" : account.provider === "microsoft" ? "M" : "I"}
+              </span>
               <div>
                 <strong>{account.displayName}</strong>
                 <small>{account.syncState}</small>
               </div>
-              <Button
-                variant="outline"
-                disabled={
-                  account.provider === "google" ? !configured.google : !configured.microsoft
-                }
-                onClick={() =>
-                  void connect(account.provider === "google" ? "google" : "microsoft", true)
-                }
-              >
-                {account.provider === "google" ? t("reconnectGoogle") : t("reconnectMicrosoft")}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={account.syncState === "disabled"}
-                onClick={() => void refresh(account.id)}
-              >
-                <RefreshCw size={15} /> {t("refreshAccess")}
-              </Button>
+              {account.provider !== "imap" && (
+                <Button
+                  variant="outline"
+                  disabled={
+                    account.provider === "google" ? !configured.google : !configured.microsoft
+                  }
+                  onClick={() =>
+                    void connect(account.provider === "google" ? "google" : "microsoft", true)
+                  }
+                >
+                  {account.provider === "google" ? t("reconnectGoogle") : t("reconnectMicrosoft")}
+                </Button>
+              )}
+              {account.provider !== "imap" && (
+                <Button
+                  variant="outline"
+                  disabled={account.syncState === "disabled"}
+                  onClick={() => void refresh(account.id)}
+                >
+                  <RefreshCw size={15} /> {t("refreshAccess")}
+                </Button>
+              )}
               <Button variant="outline" onClick={() => void disconnect(account.id)}>
                 <Trash2 size={15} /> {t("disconnect")}
               </Button>
@@ -1388,9 +1580,16 @@ export function AccountsPage({ locale }: { locale: Locale }) {
   );
 }
 
-function accountError(cause: unknown): "generic" | "reconsent" | "tenant" {
+function accountError(
+  cause: unknown,
+): "generic" | "reconsent" | "tenant" | "tls" | "timeout" | "authentication" | "capability" {
   if (cause instanceof APIError && cause.code === "microsoft_reconsent_required")
     return "reconsent";
   if (cause instanceof APIError && cause.code === "microsoft_tenant_policy") return "tenant";
+  if (cause instanceof APIError && cause.code === "mail_tls_identity_failed") return "tls";
+  if (cause instanceof APIError && cause.code === "mail_server_timeout") return "timeout";
+  if (cause instanceof APIError && cause.code === "mail_authentication_failed")
+    return "authentication";
+  if (cause instanceof APIError && cause.code === "mail_capability_failed") return "capability";
   return "generic";
 }

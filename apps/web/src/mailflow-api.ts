@@ -269,6 +269,38 @@ export type AdminBackupStatus = {
   }>;
 };
 
+export type AdminAlertStatus = {
+  configured: boolean;
+  incidents: Array<{
+    id: string;
+    policy:
+      | "provider_auth"
+      | "sync_backlog"
+      | "disk"
+      | "backup"
+      | "sentry_ingestion"
+      | "service_health"
+      | "test";
+    source: string;
+    code: string;
+    state: "active" | "recovered";
+    openedAt: string;
+    lastSeenAt: string;
+    recoveredAt?: string;
+    cooldownUntil: string;
+  }>;
+  deliveries: Array<{
+    id: string;
+    incidentId: string;
+    kind: "incident" | "reminder" | "recovery" | "test";
+    channel: "smtp" | "connected_account";
+    status: "pending" | "sent" | "failed" | "suppressed";
+    errorCode?: string;
+    createdAt: string;
+    completedAt?: string;
+  }>;
+};
+
 export type AdminMetric = {
   bucket: string;
   resolution: "minute" | "hour" | "day";
@@ -401,6 +433,18 @@ export async function loadAdminCDNStatus(signal?: AbortSignal) {
 
 export async function loadAdminBackups(signal?: AbortSignal) {
   return request<AdminBackupStatus>("/admin/backups?limit=25", { signal });
+}
+
+export async function loadAdminAlerts(signal?: AbortSignal) {
+  return request<AdminAlertStatus>("/admin/alerts", { signal });
+}
+
+export async function testAdminAlert(idempotencyKey: string) {
+  return request<AdminAlertStatus["incidents"][number]>("/admin/alerts/test", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ confirmation: "send" }),
+  });
 }
 
 export async function loadAdminMetrics(signal?: AbortSignal) {

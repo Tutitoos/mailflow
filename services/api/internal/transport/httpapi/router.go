@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/alerts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
@@ -32,6 +33,7 @@ type Dependencies struct {
 	Actions       *mail.PendingActionService
 	ActionState   mail.ActionStateStore
 	Admin         *admin.Service
+	Alerts        *alerts.Service
 	Attachments   AttachmentService
 	AuthAudience  string
 	AuthIssuer    string
@@ -216,6 +218,8 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Post("/queue/retry", retryAdminQueue(deps.Admin, deps.Sync))
 	adminRoutes.Get("/cdn", adminCDNStatus(deps.Admin))
 	adminRoutes.Get("/backups", adminBackups(deps.Backups))
+	adminRoutes.Get("/alerts", adminAlerts(deps.Alerts))
+	adminRoutes.Post("/alerts/test", testAdminAlert(deps.Alerts))
 	adminRoutes.Get("/metrics", adminMetrics(deps.Admin))
 	adminRoutes.Get("/logs", adminLogs(deps.Logs))
 	adminRoutes.Get("/logs/debug", logDebugStatus(deps.Logs))

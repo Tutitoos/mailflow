@@ -5,6 +5,7 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/alerts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
@@ -24,6 +25,7 @@ type Options struct {
 	Accounts      *accounts.Service
 	Actions       *mail.PendingActionService
 	Admin         *admin.Service
+	Alerts        *alerts.Service
 	ActionState   mail.ActionStateStore
 	Attachments   *cdn.Service
 	AuthAudience  string
@@ -77,6 +79,7 @@ func Build(version string, options ...Options) *fiber.App {
 		ActionState:   runtimeOptions.ActionState,
 		Attachments:   attachmentService,
 		Admin:         runtimeOptions.Admin,
+		Alerts:        runtimeOptions.Alerts,
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,

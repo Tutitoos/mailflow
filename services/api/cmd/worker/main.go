@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/alerts"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
@@ -103,6 +106,7 @@ func main() {
 	var actionDone chan struct{}
 	var metricsDone chan struct{}
 	var logsDone chan struct{}
+	var alertsDone chan struct{}
 	if runtimeConfig.DatabaseURL != "" {
 		pool, err := database.Open(ctx, runtimeConfig.DatabaseURL)
 		if err != nil {
@@ -161,6 +165,61 @@ func main() {
 			logger.Error("sync event store configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
+		var alertSender alerts.Sender
+		if runtimeConfig.AlertSMTPHost != "" {
+			alertSender, err = alerts.NewSMTPSender(alerts.SMTPConfig{Host: runtimeConfig.AlertSMTPHost, Port: runtimeConfig.AlertSMTPPort, Username: runtimeConfig.AlertSMTPUsername, Password: runtimeConfig.AlertSMTPPassword, From: runtimeConfig.AlertSMTPFrom, To: runtimeConfig.AlertSMTPTo, ImplicitTLS: runtimeConfig.AlertSMTPImplicitTLS})
+			if err != nil {
+				logger.Error("alert configuration failed", "event", "alerts.config_invalid")
+				os.Exit(1)
+			}
+		}
+		alertService, err := alerts.NewService(pool, alertSender, nil, alerts.Config{Cooldown: alerts.DefaultCooldown, FallbackEnabled: runtimeConfig.AlertFallbackEnabled, Service: "worker"})
+		if err != nil {
+			logger.Error("alert service unavailable", "event", "alerts.unavailable")
+			os.Exit(1)
+		}
+		alertService.SetMetrics(registry)
+		alertService.SetOwnerResolver(func(resolveContext context.Context) (string, error) {
+			var owner string
+			queryErr := pool.QueryRow(resolveContext, `select id::text from users order by created_at limit 1`).Scan(&owner)
+			return owner, queryErr
+		})
+		alertService.SetPublisher(func(publishContext context.Context, userID, eventType string, payload json.RawMessage) error {
+			_, publishErr := eventStore.Publish(publishContext, userID, eventType, payload)
+			return publishErr
+		})
+		backupRepository := backups.NewRepository(pool)
+		alertsDone = make(chan struct{})
+		go func() {
+			defer close(alertsDone)
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				stats, statsErr := store.Stats(ctx)
+				snapshot := alerts.Snapshot{DiskFreePercent: diskFreePercent(runtimeConfig.CDNRoot)}
+				if statsErr == nil {
+					snapshot.SyncRetryJobs = stats.Retry
+					snapshot.SyncDeadJobs = stats.Dead
+				}
+				if backupStatus, statusErr := backupRepository.Status(ctx, time.Now().UTC(), 1); statusErr == nil {
+					if len(backupStatus.Runs) > 0 {
+						snapshot.BackupFailed = backupStatus.Runs[0].State == "failed"
+					}
+					snapshot.BackupOverdue = backupStatus.LastSuccessAt != nil && time.Since(*backupStatus.LastSuccessAt) > 26*time.Hour
+					if backupStatus.LastSuccessAt == nil && backupStatus.Runtime != nil {
+						snapshot.BackupOverdue = time.Now().After(backupStatus.Runtime.NextRunAt.Add(time.Hour))
+					}
+				}
+				if reconcileErr := alertService.Reconcile(ctx, snapshot); reconcileErr != nil && !errors.Is(reconcileErr, context.Canceled) {
+					logger.Error("alert reconciliation failed", "event", "alerts.reconcile_failed")
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		logPipeline.SetStream(func(streamContext context.Context, entry logs.Entry) error {
 			var ownerID string
 			if err := pool.QueryRow(streamContext, `select id::text from users order by created_at limit 1`).Scan(&ownerID); err != nil {
@@ -291,12 +350,23 @@ func main() {
 	if logsDone != nil {
 		<-logsDone
 	}
+	if alertsDone != nil {
+		<-alertsDone
+	}
 	<-heartbeatDone
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)
 		os.Exit(1)
 	}
 	logger.Info("worker stopped", "event", "worker.stopped")
+}
+
+func diskFreePercent(path string) int {
+	var stats syscall.Statfs_t
+	if syscall.Statfs(path, &stats) != nil || stats.Blocks == 0 {
+		return 100
+	}
+	return int((uint64(stats.Bavail) * 100) / uint64(stats.Blocks))
 }
 
 type gmailActionProviderResolver struct {

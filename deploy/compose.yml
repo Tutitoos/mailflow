@@ -104,7 +104,15 @@ services:
       GOOGLE_OAUTH_CLIENT_SECRET_FILE: /run/secrets/google_oauth_client_secret
       GOOGLE_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/google/callback
       MAILFLOW_SENTRY_REPLAY_ENABLED: ${MAILFLOW_SENTRY_REPLAY_ENABLED:-false}
-    secrets: [google_oauth_client_secret, master_key, postgres_password]
+      MAILFLOW_ALERT_SMTP_HOST: ${MAILFLOW_ALERT_SMTP_HOST:-}
+      MAILFLOW_ALERT_SMTP_PORT: ${MAILFLOW_ALERT_SMTP_PORT:-587}
+      MAILFLOW_ALERT_SMTP_USERNAME: ${MAILFLOW_ALERT_SMTP_USERNAME:-}
+      MAILFLOW_ALERT_SMTP_FROM: ${MAILFLOW_ALERT_SMTP_FROM:-}
+      MAILFLOW_ALERT_SMTP_TO: ${MAILFLOW_ALERT_SMTP_TO:-}
+      MAILFLOW_ALERT_SMTP_IMPLICIT_TLS: ${MAILFLOW_ALERT_SMTP_IMPLICIT_TLS:-false}
+      MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK: ${MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK:-false}
+      MAILFLOW_ALERT_SMTP_PASSWORD_FILE: /run/secrets/alert_smtp_password
+    secrets: [alert_smtp_password, google_oauth_client_secret, master_key, postgres_password]
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`${MAILFLOW_DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))
@@ -143,12 +151,20 @@ services:
       MAILFLOW_QUEUE_CLAIM_TIMEOUT: 6m
       MAILFLOW_QUEUE_HANDLE_TIMEOUT: 5m
       MAILFLOW_QUEUE_SHUTDOWN_GRACE: 15s
+      MAILFLOW_ALERT_SMTP_HOST: ${MAILFLOW_ALERT_SMTP_HOST:-}
+      MAILFLOW_ALERT_SMTP_PORT: ${MAILFLOW_ALERT_SMTP_PORT:-587}
+      MAILFLOW_ALERT_SMTP_USERNAME: ${MAILFLOW_ALERT_SMTP_USERNAME:-}
+      MAILFLOW_ALERT_SMTP_FROM: ${MAILFLOW_ALERT_SMTP_FROM:-}
+      MAILFLOW_ALERT_SMTP_TO: ${MAILFLOW_ALERT_SMTP_TO:-}
+      MAILFLOW_ALERT_SMTP_IMPLICIT_TLS: ${MAILFLOW_ALERT_SMTP_IMPLICIT_TLS:-false}
+      MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK: ${MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK:-false}
+      MAILFLOW_ALERT_SMTP_PASSWORD_FILE: /run/secrets/alert_smtp_password
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     volumes:
       - mailflow-cdn:/data/cdn
-    secrets: [master_key, postgres_password]
+    secrets: [alert_smtp_password, master_key, postgres_password]
     restart: unless-stopped
 
   postgres-preflight:
@@ -241,6 +257,8 @@ secrets:
     file: ./secrets/master_key
   google_oauth_client_secret:
     file: ./secrets/google_oauth_client_secret
+  alert_smtp_password:
+    file: ./secrets/alert_smtp_password
 
 volumes:
   traefik-acme:

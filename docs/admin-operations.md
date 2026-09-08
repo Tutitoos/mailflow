@@ -9,7 +9,9 @@ than 45 seconds is stale; the key expires after two minutes.
 
 The section routes expose existing first-party metrics, redacted logs, grouped
 Sentry issues, EN/ES translation revisions, aggregate CDN usage, and bounded
-backup scheduler history. `GET /api/v1/admin/backups` is read-only; execution
+backup scheduler and operational-alert history. The Alerts section exposes only
+allowlisted incident codes and delivery outcomes; its test action uses a
+fixed template and an idempotency key. `GET /api/v1/admin/backups` is read-only; execution
 and restore remain operator commands documented in [Encrypted backups and
 restore](backups.md). Server updates remain informational. Admin never receives
 Docker socket access, arbitrary SQL, or a privileged update command.
@@ -33,6 +35,8 @@ bodies, subjects, recipients, provider payloads, credentials, tokens, cookies,
 signed URLs, object paths, or raw account identifiers. Metrics and log retention
 remain defined in [Internal metrics](metrics.md) and [Operational logs](logs.md);
 Sentry retention remains defined in [Sentry-compatible ingestion](sentry-ingestion.md).
+Alert delivery, cooldowns and its 90-day incident retention are defined in
+[Operational alerts](alerts.md).
 
 If PostgreSQL or Redis is unavailable, status reports the affected component as
 blocked and mutation endpoints return RFC 9457 Problem Details. A missing worker

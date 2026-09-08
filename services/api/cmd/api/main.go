@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/alerts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
@@ -122,6 +124,19 @@ func main() {
 			os.Exit(1)
 		}
 		queries := dbgen.New(pool)
+		var alertSender alerts.Sender
+		if runtimeConfig.AlertSMTPHost != "" {
+			alertSender, err = alerts.NewSMTPSender(alerts.SMTPConfig{Host: runtimeConfig.AlertSMTPHost, Port: runtimeConfig.AlertSMTPPort, Username: runtimeConfig.AlertSMTPUsername, Password: runtimeConfig.AlertSMTPPassword, From: runtimeConfig.AlertSMTPFrom, To: runtimeConfig.AlertSMTPTo, ImplicitTLS: runtimeConfig.AlertSMTPImplicitTLS})
+			if err != nil {
+				logger.Error("alert configuration failed", "event", "alerts.config_invalid")
+				os.Exit(1)
+			}
+		}
+		options.Alerts, err = alerts.NewService(pool, alertSender, nil, alerts.Config{Cooldown: alerts.DefaultCooldown, FallbackEnabled: runtimeConfig.AlertFallbackEnabled})
+		if err != nil {
+			logger.Error("alert service unavailable", "event", "alerts.unavailable")
+			os.Exit(1)
+		}
 		logStore, err := logs.NewStore(pool)
 		if err != nil {
 			logger.Error("log persistence unavailable", "event", "logs.persistence_unavailable")
@@ -135,6 +150,7 @@ func main() {
 		go func() { defer close(logsDone); _ = logPipeline.Run(logsContext) }()
 		metricService := metrics.NewService(metrics.NewRegistry(), pool, "api")
 		options.Metrics = metricService
+		options.Alerts.SetMetrics(metricService.Registry())
 		metricsDone = make(chan struct{})
 		metricsContext, cancelMetrics := context.WithCancel(shutdown)
 		metricsCancel = cancelMetrics
@@ -268,6 +284,17 @@ func main() {
 		var translationPublisher translations.Publisher
 		if options.Events != nil {
 			translationPublisher = options.Events
+			if options.Alerts != nil {
+				options.Alerts.SetOwnerResolver(func(ctx context.Context) (string, error) {
+					var owner string
+					queryErr := databasePool.QueryRow(ctx, `select id::text from users order by created_at limit 1`).Scan(&owner)
+					return owner, queryErr
+				})
+				options.Alerts.SetPublisher(func(ctx context.Context, userID, eventType string, payload json.RawMessage) error {
+					_, publishErr := options.Events.Publish(ctx, userID, eventType, payload)
+					return publishErr
+				})
+			}
 		}
 		options.Translations, err = translations.NewPersistentCatalog(translationsContext, databasePool, translationPublisher)
 		cancelTranslations()

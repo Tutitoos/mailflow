@@ -116,6 +116,7 @@ El pipeline de [logs operativos](logs.md) redacta antes de stdout, PostgreSQL y 
 El módulo de [traducciones](translations.md) mantiene snapshots inmutables EN/ES en PostgreSQL, con inglés como fuente y fallback, validación ICU previa y eventos de invalidación versionados.
 El [panel de operaciones Admin](admin-operations.md) combina estos módulos detrás de la autenticación del propietario, expone salud real con heartbeat del worker y limita las acciones a comandos confirmados, idempotentes y auditados sin payloads.
 El servicio aislado de [backups cifrados](backups.md) prepara volcados consistentes y CDN, aplica retención Restic y publica únicamente estado operativo redactado en Admin.
+El módulo de [alertas operativas](alerts.md) correlaciona incidentes, aplica cooldown y entrega plantillas fijas mediante SMTP TLS sin almacenar direcciones ni respuestas del proveedor.
 
 ## Contratos
 
@@ -245,6 +246,7 @@ Mailflow tendrá observabilidad local y sencilla.
 - Fiber usará el adaptador oficial Sentry para capturar errores del transporte cuando exista un DSN.
 - Los eventos tienen 30 días de retención, las trazas y perfiles 7 días, y Replay 3 días. Replay está desactivado por defecto, usa una cuota propia y solo persiste segmentos enmascarados en el namespace Sentry del CDN local.
 - No se usarán Prometheus, Grafana, Loki ni R2.
+- Las alertas críticas usan SMTP operativo independiente; el fallback por una cuenta conectada es opt-in y nunca recurre al proveedor que originó el incidente.
 
 ## Backups
 

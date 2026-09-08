@@ -649,6 +649,38 @@ paths:
               schema: { $ref: "#/components/schemas/AdminBackupStatus" }
         "400": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+  /admin/alerts:
+    get:
+      operationId: getAdminAlerts
+      responses:
+        "200":
+          description: Bounded operational incidents and delivery outcomes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminAlertStatus" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /admin/alerts/test:
+    post:
+      operationId: testAdminAlert
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation]
+              properties:
+                confirmation: { type: string, const: send }
+      responses:
+        "202":
+          description: Idempotent test delivery accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminAlertIncident" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /admin/metrics:
     get:
       operationId: getAdminMetrics
@@ -964,6 +996,44 @@ components:
           type: array
           maxItems: 100
           items: { $ref: "#/components/schemas/AdminBackupRun" }
+    AdminAlertIncident:
+      type: object
+      required: [id, policy, source, code, state, openedAt, lastSeenAt, cooldownUntil]
+      properties:
+        id: { type: string, format: uuid }
+        policy: { type: string, enum: [provider_auth, sync_backlog, disk, backup, sentry_ingestion, service_health, test] }
+        source: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" }
+        code: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" }
+        state: { type: string, enum: [active, recovered] }
+        openedAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        recoveredAt: { type: string, format: date-time }
+        cooldownUntil: { type: string, format: date-time }
+    AdminAlertDelivery:
+      type: object
+      required: [id, incidentId, kind, channel, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        incidentId: { type: string, format: uuid }
+        kind: { type: string, enum: [incident, reminder, recovery, test] }
+        channel: { type: string, enum: [smtp, connected_account] }
+        status: { type: string, enum: [pending, sent, failed, suppressed] }
+        errorCode: { type: string, enum: [smtp_unavailable, smtp_rejected, fallback_disabled, fallback_recursion, fallback_failed] }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+    AdminAlertStatus:
+      type: object
+      required: [configured, incidents, deliveries]
+      properties:
+        configured: { type: boolean }
+        incidents:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/AdminAlertIncident" }
+        deliveries:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/AdminAlertDelivery" }
     SentryReceipt:
       type: object
       required: [id]

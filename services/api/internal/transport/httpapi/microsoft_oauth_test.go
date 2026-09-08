@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
+	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/transport/httpapi"
 )
 
@@ -114,11 +115,12 @@ func (store *microsoftAccountStore) Disable(_ context.Context, userID, accountID
 
 func TestMicrosoftOAuthHTTPFlowIsAuthenticatedAndReplaySafe(t *testing.T) {
 	store := &microsoftAccountStore{}
+	syncer := &microsoftSyncRequester{}
 	service := microsoftoauth.NewService(
 		microsoftoauth.Config{ClientID: "installation-client", ClientSecret: "sanitized-secret", RedirectURL: "https://mail.example.test/api/v1/oauth/microsoft/callback"},
 		&microsoftStates{}, &microsoftProvider{}, store,
 	)
-	app, token := authenticatedAdminApp(t, httpapi.Dependencies{Accounts: store, MicrosoftOAuth: service})
+	app, token := authenticatedAdminApp(t, httpapi.Dependencies{Accounts: store, MicrosoftOAuth: service, Sync: syncer})
 
 	start := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/microsoft/start", strings.NewReader(`{"reconsent":true}`))
 	start.Header.Set("Content-Type", "application/json")
@@ -136,6 +138,9 @@ func TestMicrosoftOAuthHTTPFlowIsAuthenticatedAndReplaySafe(t *testing.T) {
 	response, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/oauth/microsoft/callback?state="+url.QueryEscape(state)+"&code=sanitized-code", nil))
 	if err != nil || response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings/accounts?microsoft=connected" {
 		t.Fatalf("callback status=%d location=%q err=%v", response.StatusCode, response.Header.Get("Location"), err)
+	}
+	if syncer.calls != 1 || syncer.user == "" || syncer.account != store.account.ID {
+		t.Fatalf("initial sync calls=%d user=%q account=%q", syncer.calls, syncer.user, syncer.account)
 	}
 	response, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/oauth/microsoft/callback?state="+url.QueryEscape(state)+"&code=sanitized-code", nil))
 	if err != nil || response.StatusCode != http.StatusBadRequest {
@@ -166,3 +171,19 @@ func TestMicrosoftOAuthHTTPFlowIsAuthenticatedAndReplaySafe(t *testing.T) {
 
 var _ httpapi.AccountLister = (*microsoftAccountStore)(nil)
 var _ microsoftoauth.Accounts = (*microsoftAccountStore)(nil)
+
+type microsoftSyncRequester struct {
+	calls   int
+	user    string
+	account string
+}
+
+func (*microsoftSyncRequester) Request(context.Context, string, string) (mailflowsync.Run, error) {
+	return mailflowsync.Run{}, nil
+}
+
+func (syncer *microsoftSyncRequester) StartInitial(_ context.Context, user, account string) (mailflowsync.Run, error) {
+	syncer.calls++
+	syncer.user, syncer.account = user, account
+	return mailflowsync.Run{ID: "0199ed3b-c950-7000-8000-000000000021"}, nil
+}

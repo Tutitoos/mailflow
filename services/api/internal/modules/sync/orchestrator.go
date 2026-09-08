@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/queue"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
 type SyncPage struct {
+	Provider     mail.ProviderKind
 	Checkpoint   json.RawMessage
 	AppliedCount int64
 	HasMore      bool
@@ -67,10 +69,16 @@ type runJobPayload struct {
 	Version   int64  `json:"version"`
 }
 
-type syncJobError struct{ code string }
+type syncJobError struct {
+	code       string
+	retryAfter time.Duration
+}
 
 func (err syncJobError) Error() string        { return err.code }
 func (err syncJobError) JobErrorCode() string { return err.code }
+func (err syncJobError) RetryDelay() time.Duration {
+	return err.retryAfter
+}
 
 func NewOrchestrator(runs RunStore, jobs JobEnqueuer, leases AccountLeases, executor PageExecutor, publisher EventPublisher, metrics MetricSink) (*Orchestrator, error) {
 	if runs == nil || jobs == nil || leases == nil || executor == nil {
@@ -154,11 +162,13 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 		return syncJobError{code: "sync_start_failed"}
 	}
 	page, err := orchestrator.executor.FetchPage(ctx, payload.UserID, run)
+	provider := page.Provider
 	if err != nil {
+		provider = providerKindFromError(err)
 		if errors.Is(err, ErrRemoteCursorInvalid) {
 			_, _ = orchestrator.runs.CancelRun(ctx, payload.UserID, payload.AccountID, payload.RunID, orchestrator.now())
 			_, startErr := orchestrator.StartInitial(ctx, payload.UserID, payload.AccountID)
-			orchestrator.observe(run.Phase, "resync")
+			orchestrator.observe(run.Phase, provider, "resync")
 			orchestrator.publish(payload.UserID, run, "resync_required")
 			if startErr != nil && !errors.Is(startErr, ErrRunExists) {
 				return syncJobError{code: "sync_recovery_failed"}
@@ -166,9 +176,9 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 			return nil
 		}
 		orchestrator.requeue(payload)
-		orchestrator.observe(run.Phase, "retry")
+		orchestrator.observe(run.Phase, provider, "retry")
 		orchestrator.publish(payload.UserID, run, "queued")
-		return syncJobError{code: "sync_provider_failed"}
+		return syncJobError{code: "sync_provider_failed", retryAfter: retryDelay(err)}
 	}
 	if !validPage(page) {
 		orchestrator.requeue(payload)
@@ -185,7 +195,7 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 		orchestrator.requeue(payload)
 		return syncJobError{code: "sync_commit_failed"}
 	}
-	orchestrator.observe(run.Phase, "success")
+	orchestrator.observe(run.Phase, provider, "success")
 	orchestrator.publish(payload.UserID, committed, string(committed.State))
 	if committed.State == RunQueued {
 		return orchestrator.enqueue(ctx, payload.UserID, committed)
@@ -268,9 +278,12 @@ func (orchestrator *Orchestrator) publish(user string, run Run, state string) {
 	_, _ = orchestrator.events.Publish(context.Background(), user, "sync.progress", payload)
 }
 
-func (orchestrator *Orchestrator) observe(phase RunPhase, result string) {
+func (orchestrator *Orchestrator) observe(phase RunPhase, provider mail.ProviderKind, result string) {
 	if orchestrator.metrics != nil {
-		_ = orchestrator.metrics.Add("mailflow_sync_pages_total", 1, map[string]string{"module": "sync", "operation": string(phase), "provider": "google", "result": result, "service": "worker"})
+		if provider != mail.ProviderGoogle && provider != mail.ProviderMicrosoft && provider != mail.ProviderIMAP {
+			provider = "unknown"
+		}
+		_ = orchestrator.metrics.Add("mailflow_sync_pages_total", 1, map[string]string{"module": "sync", "operation": string(phase), "provider": string(provider), "result": result, "service": "worker"})
 	}
 }
 

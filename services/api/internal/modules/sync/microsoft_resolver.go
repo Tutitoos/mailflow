@@ -13,11 +13,6 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 )
 
-type MicrosoftGraphProvider interface {
-	mail.Provider
-	mail.AttachmentProvider
-}
-
 type MicrosoftAccountStore interface {
 	Get(context.Context, string, string) (accounts.Account, error)
 	Credentials(context.Context, string, string) (json.RawMessage, error)
@@ -42,7 +37,7 @@ func NewMicrosoftAccountResolver(accountStore MicrosoftAccountStore, tokens Micr
 	return &MicrosoftAccountResolver{accounts: accountStore, tokens: tokens, http: client, normalizer: normalizer, now: func() time.Time { return time.Now().UTC() }}, nil
 }
 
-func (resolver *MicrosoftAccountResolver) ResolveMicrosoft(ctx context.Context, user, accountID string) (MicrosoftGraphProvider, error) {
+func (resolver *MicrosoftAccountResolver) ResolveMicrosoft(ctx context.Context, user, accountID string) (MicrosoftProvider, error) {
 	account, err := resolver.accounts.Get(ctx, user, accountID)
 	if err != nil || account.Provider != accounts.ProviderMicrosoft || account.DisabledAt != nil {
 		return nil, errors.New("Microsoft account is unavailable")

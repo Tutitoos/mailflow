@@ -59,11 +59,57 @@ func graphFixture(t *testing.T) (*Provider, *httptest.Server, *graphFixtureState
 				"@odata.nextLink": serverLink(request, "/v1.0/me/mailFolders?%24skiptoken=folders-2"),
 				"value": []any{
 					map[string]any{"id": "inbox-folder-id", "displayName": "Inbox", "totalItemCount": 8, "unreadItemCount": 2},
-					map[string]any{"id": "custom-folder-id", "displayName": "Projects", "totalItemCount": 3, "unreadItemCount": 1},
+					map[string]any{"id": "custom-folder-id", "displayName": "Projects", "childFolderCount": 1, "totalItemCount": 3, "unreadItemCount": 1},
 				},
 			})
 		case path == "/mailFolders" && request.URL.Query().Get("$skiptoken") == "folders-2":
 			writeFixtureJSON(response, map[string]any{"value": []any{map[string]any{"id": "archive-folder-id", "displayName": "Archive", "totalItemCount": 4, "unreadItemCount": 0}}})
+		case path == "/mailFolders/custom-folder-id/childFolders":
+			writeFixtureJSON(response, map[string]any{"value": []any{map[string]any{"id": "nested-folder-id", "displayName": "Nested", "totalItemCount": 1, "unreadItemCount": 1}}})
+		case path == "/mailFolders/expired-folder/messages/delta":
+			response.WriteHeader(http.StatusGone)
+			writeFixtureJSON(response, map[string]any{"error": map[string]string{"code": "SyncStateNotFound", "message": "sanitized fixture"}})
+		case path == "/mailFolders/throttled-folder/messages/delta":
+			response.Header().Set("Retry-After", "7")
+			response.WriteHeader(http.StatusTooManyRequests)
+			writeFixtureJSON(response, map[string]any{"error": map[string]string{"code": "TooManyRequests", "message": "private provider detail"}})
+		case path == "/mailFolders/partial-folder/messages/delta":
+			writeFixtureJSON(response, map[string]any{
+				"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/partial-folder/messages/delta?%24deltatoken=partial-stable"),
+				"value": []any{
+					graphMessageFixture("consumer-message-1", "consumer-conversation-1", "partial-folder"),
+					graphMessageFixture("broken-message", "broken-conversation", "partial-folder"),
+				},
+			})
+		case path == "/mailFolders/inbox-folder-id/messages/delta" && request.URL.Query().Get("$skiptoken") == "" && request.URL.Query().Get("$deltatoken") == "":
+			writeFixtureJSON(response, map[string]any{
+				"@odata.nextLink": serverLink(request, "/v1.0/me/mailFolders/inbox-folder-id/messages/delta?%24skiptoken=inbox-2"),
+				"value":           []any{graphMessageFixture("consumer-message-1", "consumer-conversation-1", "inbox-folder-id")},
+			})
+		case path == "/mailFolders/inbox-folder-id/messages/delta" && request.URL.Query().Get("$skiptoken") == "inbox-2":
+			writeFixtureJSON(response, map[string]any{
+				"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/inbox-folder-id/messages/delta?%24deltatoken=inbox-stable"),
+				"value": []any{
+					map[string]any{"id": "moved-message", "@removed": map[string]string{"reason": "deleted"}},
+					map[string]any{"id": "deleted-message", "@removed": map[string]string{"reason": "deleted"}},
+				},
+			})
+		case path == "/mailFolders/inbox-folder-id/messages/delta" && request.URL.Query().Get("$deltatoken") == "inbox-stable":
+			writeFixtureJSON(response, map[string]any{"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/inbox-folder-id/messages/delta?%24deltatoken=inbox-next"), "value": []any{}})
+		case path == "/mailFolders/custom-folder-id/messages/delta":
+			writeFixtureJSON(response, map[string]any{"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/custom-folder-id/messages/delta?%24deltatoken=custom-stable"), "value": []any{}})
+		case path == "/mailFolders/archive-folder-id/messages/delta":
+			writeFixtureJSON(response, map[string]any{
+				"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/archive-folder-id/messages/delta?%24deltatoken=archive-stable"),
+				"value":            []any{graphMessageFixture("m365-message-2", "m365-conversation-2", "archive-folder-id")},
+			})
+		case path == "/mailFolders/nested-folder-id/messages/delta":
+			writeFixtureJSON(response, map[string]any{"@odata.deltaLink": serverLink(request, "/v1.0/me/mailFolders/nested-folder-id/messages/delta?%24deltatoken=nested-stable"), "value": []any{}})
+		case path == "/messages/moved-message" && request.Method == http.MethodGet:
+			writeFixtureJSON(response, graphMessageFixture("moved-message", "moved-conversation", "archive-folder-id"))
+		case path == "/messages/deleted-message" && request.Method == http.MethodGet:
+			response.WriteHeader(http.StatusNotFound)
+			writeFixtureJSON(response, map[string]any{"error": map[string]string{"code": "ErrorItemNotFound"}})
 		case strings.HasPrefix(path, "/mailFolders/") && request.Method == http.MethodGet:
 			wellKnown := strings.TrimPrefix(path, "/mailFolders/")
 			ids := map[string]string{
@@ -89,6 +135,9 @@ func graphFixture(t *testing.T) (*Provider, *httptest.Server, *graphFixtureState
 		case path == "/messages" && request.Method == http.MethodGet:
 			base := requestBase(request) + "/v1.0/me"
 			_, _ = response.Write([]byte(strings.ReplaceAll(string(consumer), "{{BASE_URL}}", base)))
+		case path == "/messages/broken-message/$value":
+			response.WriteHeader(http.StatusServiceUnavailable)
+			writeFixtureJSON(response, map[string]any{"error": map[string]string{"code": "ErrorServerBusy", "message": "private provider detail"}})
 		case strings.HasSuffix(path, "/$value") && !strings.Contains(path, "/attachments/"):
 			response.Header().Set("Content-Type", "message/rfc822")
 			if strings.Contains(path, "m365-message-2") {
@@ -165,8 +214,12 @@ func TestProviderMapsConsumerAndMicrosoft365Contracts(t *testing.T) {
 		t.Fatalf("first catalog = %+v, %v", firstCatalog, err)
 	}
 	secondCatalog, err := newGraphFixtureProvider(t, server).Catalog(ctx, firstCatalog.NextCursor)
-	if err != nil || secondCatalog.HasMore || len(secondCatalog.Mailboxes) != 1 || secondCatalog.Mailboxes[0].Role != mail.MailboxArchive || len(secondCatalog.Labels) != 0 {
+	if err != nil || !secondCatalog.HasMore || len(secondCatalog.Mailboxes) != 1 || secondCatalog.Mailboxes[0].Role != mail.MailboxArchive || len(secondCatalog.Labels) != 0 {
 		t.Fatalf("second catalog = %+v, %v", secondCatalog, err)
+	}
+	thirdCatalog, err := newGraphFixtureProvider(t, server).Catalog(ctx, secondCatalog.NextCursor)
+	if err != nil || thirdCatalog.HasMore || len(thirdCatalog.Mailboxes) != 1 || thirdCatalog.Mailboxes[0].RemoteID != "nested-folder-id" || thirdCatalog.Mailboxes[0].Role != "" {
+		t.Fatalf("third catalog = %+v, %v", thirdCatalog, err)
 	}
 	after := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	before := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
@@ -185,13 +238,64 @@ func TestProviderMapsConsumerAndMicrosoft365Contracts(t *testing.T) {
 	if !requestsContain(state.snapshot(), "%24filter=receivedDateTime+ge+2026-09-01T00%3A00%3A00Z+and+receivedDateTime+lt+2026-09-09T00%3A00%3A00Z") {
 		t.Fatalf("backfill filter missing: %+v", state.snapshot())
 	}
-	if countRequests(state.snapshot(), http.MethodGet, "/mailFolders/") != len(standardFolders) {
+	if countWellKnownRequests(state.snapshot()) != len(standardFolders) {
 		t.Fatalf("well-known folder IDs were fetched again across page cursors: %+v", state.snapshot())
 	}
 	for _, request := range state.snapshot() {
 		if request.Prefer != `IdType="ImmutableId"` {
 			t.Fatalf("request omitted immutable ID preference: %+v", request)
 		}
+	}
+}
+
+func TestProviderTracksPerFolderDeltaAndResolvesMoveTombstones(t *testing.T) {
+	provider, server, state := graphFixture(t)
+	defer server.Close()
+	cursor, err := NewDeltaCursor([]string{"inbox-folder-id", "custom-folder-id", "archive-folder-id", "nested-folder-id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := provider.Changes(context.Background(), cursor)
+	if err != nil || !first.HasMore || len(first.Messages) != 1 || first.Messages[0].RemoteID != "consumer-message-1" {
+		t.Fatalf("first delta page = %+v, %v", first, err)
+	}
+	second, err := newGraphFixtureProvider(t, server).Changes(context.Background(), first.NextCursor)
+	if err != nil || !second.HasMore || len(second.Messages) != 1 || second.Messages[0].RemoteID != "moved-message" || len(second.DeletedRemoteIDs) != 1 || second.DeletedRemoteIDs[0] != "deleted-message" {
+		t.Fatalf("second delta page = %+v, %v", second, err)
+	}
+	third, err := newGraphFixtureProvider(t, server).Changes(context.Background(), second.NextCursor)
+	if err != nil || !third.HasMore || len(third.Messages) != 0 {
+		t.Fatalf("third delta page = %+v, %v", third, err)
+	}
+	fourth, err := newGraphFixtureProvider(t, server).Changes(context.Background(), third.NextCursor)
+	if err != nil || !fourth.HasMore || len(fourth.Messages) != 1 || fourth.Messages[0].RemoteID != "m365-message-2" {
+		t.Fatalf("fourth delta page = %+v, %v", fourth, err)
+	}
+	fifth, err := newGraphFixtureProvider(t, server).Changes(context.Background(), fourth.NextCursor)
+	if err != nil || fifth.HasMore || len(fifth.Messages) != 0 || !requestsContain(state.snapshot(), "/mailFolders/custom-folder-id/childFolders") {
+		t.Fatalf("completed delta round = %+v, %v", fifth, err)
+	}
+	sixth, err := newGraphFixtureProvider(t, server).Changes(context.Background(), fifth.NextCursor)
+	if err != nil || !sixth.HasMore || len(sixth.Messages) != 0 || !requestsContain(state.snapshot(), "%24deltatoken=inbox-stable") {
+		t.Fatalf("next delta round = %+v, %v", sixth, err)
+	}
+	expired, _ := NewDeltaCursor([]string{"expired-folder"})
+	if _, err := provider.Changes(context.Background(), expired); !errors.Is(err, ErrDeltaExpired) {
+		t.Fatalf("expired delta = %v", err)
+	}
+	forged := mail.SyncCursor{Kind: "microsoft_delta", Value: []byte(`{"folders":[{"id":"inbox-folder-id","link":"https://attacker.example/v1.0/me/mailFolders/inbox-folder-id/messages/delta?%24deltatoken=private"}]}`)}
+	if _, err := provider.Changes(context.Background(), forged); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("forged delta = %v", err)
+	}
+	throttled, _ := NewDeltaCursor([]string{"throttled-folder"})
+	_, err = provider.Changes(context.Background(), throttled)
+	var throttledError *ProviderError
+	if !errors.As(err, &throttledError) || throttledError.Kind != ErrorQuota || throttledError.RetryAfter != 7*time.Second || strings.Contains(err.Error(), "private") {
+		t.Fatalf("throttled delta = %+v", err)
+	}
+	partial, _ := NewDeltaCursor([]string{"partial-folder"})
+	if page, err := provider.Changes(context.Background(), partial); err == nil || len(page.NextCursor.Value) != 0 {
+		t.Fatalf("partial delta advanced checkpoint: page=%+v error=%v", page, err)
 	}
 }
 
@@ -333,4 +437,25 @@ func findRequest(requests []recordedRequest, method, fragment string) recordedRe
 	return recordedRequest{}
 }
 
+func countWellKnownRequests(requests []recordedRequest) int {
+	count := 0
+	for _, request := range requests {
+		for _, folder := range standardFolders {
+			if request.Method == http.MethodGet && strings.HasPrefix(request.URI, "/v1.0/me/mailFolders/"+folder.WellKnown+"?") {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func timePointer(value time.Time) *time.Time { return &value }
+
+func graphMessageFixture(id, conversationID, folderID string) map[string]any {
+	return map[string]any{
+		"id": id, "conversationId": conversationID, "parentFolderId": folderID,
+		"receivedDateTime": "2026-09-08T10:00:00Z", "sentDateTime": "2026-09-08T09:59:00Z",
+		"isRead": false, "importance": "normal", "categories": []string{}, "hasAttachments": false,
+		"flag": map[string]string{"flagStatus": "notFlagged"},
+	}
+}

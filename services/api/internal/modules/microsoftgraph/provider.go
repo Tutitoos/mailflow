@@ -17,7 +17,11 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 )
 
-const defaultBaseURL = "https://graph.microsoft.com/v1.0/me"
+const (
+	defaultBaseURL        = "https://graph.microsoft.com/v1.0/me"
+	folderMetadataSelect  = "id,displayName,childFolderCount,totalItemCount,unreadItemCount,isHidden"
+	messageMetadataSelect = "id,conversationId,receivedDateTime,sentDateTime,isRead,flag,importance,categories,parentFolderId,hasAttachments"
+)
 
 type ErrorKind string
 
@@ -29,8 +33,7 @@ const (
 )
 
 var (
-	ErrInvalidCursor       = errors.New("invalid Microsoft Graph cursor")
-	ErrDeltaNotImplemented = errors.New("Microsoft Graph delta synchronization is not configured")
+	ErrInvalidCursor = errors.New("invalid Microsoft Graph cursor")
 )
 
 type ProviderError struct {
@@ -43,6 +46,8 @@ type ProviderError struct {
 func (providerError *ProviderError) Error() string {
 	return "microsoft graph provider " + string(providerError.Kind)
 }
+
+func (providerError *ProviderError) RetryDelay() time.Duration { return providerError.RetryAfter }
 
 type Provider struct {
 	accessToken string
@@ -138,29 +143,57 @@ func (provider *Provider) Catalog(ctx context.Context, cursor mail.SyncCursor) (
 		var response folderCollection
 		path, query := state.FoldersNext, url.Values(nil)
 		if path == "" {
-			path = "/mailFolders"
+			switch {
+			case !state.FoldersStarted:
+				path = "/mailFolders"
+				state.FoldersStarted = true
+			case len(state.FolderQueue) > 0:
+				parent := state.FolderQueue[0]
+				state.FolderQueue = state.FolderQueue[1:]
+				path = "/mailFolders/" + url.PathEscape(parent) + "/childFolders"
+			default:
+				state.FoldersDone = true
+			}
+		}
+		if !state.FoldersDone {
 			query = url.Values{
-				"$select":              {"id,displayName,childFolderCount,totalItemCount,unreadItemCount,isHidden"},
+				"$select":              {folderMetadataSelect},
 				"$top":                 {"100"},
 				"includeHiddenFolders": {"true"},
 			}
-		}
-		if err := provider.json(ctx, http.MethodGet, path, query, nil, "", &response); err != nil {
-			return mail.CatalogPage{}, err
-		}
-		for _, folder := range response.Value {
-			mapped, ok := mapFolder(folder, provider.roleForFolder(folder.ID))
-			if !ok {
-				return mail.CatalogPage{}, permanentError()
+			if state.FoldersNext != "" {
+				query = nil
 			}
-			page.Mailboxes = append(page.Mailboxes, mapped)
-			provider.rememberFolder(mapped.RemoteID, mapped.Role)
+			if err := provider.json(ctx, http.MethodGet, path, query, nil, "", &response); err != nil {
+				return mail.CatalogPage{}, err
+			}
+			for _, folder := range response.Value {
+				mapped, ok := mapFolder(folder, provider.roleForFolder(folder.ID))
+				if !ok || folder.ChildFolderCount < 0 {
+					return mail.CatalogPage{}, permanentError()
+				}
+				if containsString(state.FolderSeen, mapped.RemoteID) {
+					continue
+				}
+				state.FolderSeen = append(state.FolderSeen, mapped.RemoteID)
+				if !validFolderIDs(state.FolderSeen, 512) {
+					return mail.CatalogPage{}, permanentError()
+				}
+				page.Mailboxes = append(page.Mailboxes, mapped)
+				provider.rememberFolder(mapped.RemoteID, mapped.Role)
+				if folder.ChildFolderCount > 0 {
+					state.FolderQueue = append(state.FolderQueue, mapped.RemoteID)
+					if !validFolderIDs(state.FolderQueue, 512) {
+						return mail.CatalogPage{}, permanentError()
+					}
+				}
+			}
+			state.FoldersNext, err = provider.relativeNextLink(response.NextLink)
+			if err != nil {
+				return mail.CatalogPage{}, err
+			}
+			state.FoldersDone = state.FoldersNext == "" && len(state.FolderQueue) == 0
 		}
-		state.FoldersNext, err = provider.relativeNextLink(response.NextLink)
-		if err != nil {
-			return mail.CatalogPage{}, err
-		}
-		state.FoldersDone = state.FoldersNext == ""
 	}
 	if !state.CategoriesDone {
 		var response categoryCollection
@@ -193,10 +226,6 @@ func (provider *Provider) Catalog(ctx context.Context, cursor mail.SyncCursor) (
 	return page, err
 }
 
-func (*Provider) Changes(context.Context, mail.SyncCursor) (mail.ChangePage, error) {
-	return mail.ChangePage{}, ErrDeltaNotImplemented
-}
-
 func (provider *Provider) Backfill(ctx context.Context, cursor mail.SyncCursor, after, before *time.Time, limit int) (mail.ChangePage, error) {
 	if (after == nil && before == nil) || (after != nil && after.IsZero()) || (before != nil && before.IsZero()) || (after != nil && before != nil && !after.Before(*before)) || limit < 1 || limit > 500 {
 		return mail.ChangePage{}, ErrInvalidCursor
@@ -227,7 +256,7 @@ func (provider *Provider) Backfill(ctx context.Context, cursor mail.SyncCursor, 
 		query = url.Values{
 			"$filter":  {strings.Join(filters, " and ")},
 			"$orderby": {"receivedDateTime desc"},
-			"$select":  {"id,conversationId,receivedDateTime,sentDateTime,isRead,flag,importance,categories,parentFolderId,hasAttachments"},
+			"$select":  {messageMetadataSelect},
 			"$top":     {strconv.Itoa(limit)},
 		}
 	}
@@ -651,6 +680,15 @@ func uniqueStrings(values []string) []string {
 		result = append(result, value)
 	}
 	return result
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func permanentError() *ProviderError { return &ProviderError{Kind: ErrorPermanent} }

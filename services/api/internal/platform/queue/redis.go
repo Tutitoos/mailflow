@@ -179,7 +179,15 @@ func (store *RedisStore) Retry(ctx context.Context, claimed ClaimedJob, cause er
 	if err != nil {
 		return false, err
 	}
-	due := time.Now().Add(store.backoff(claimed.Attempt)).UnixMilli()
+	delay := store.backoff(claimed.Attempt)
+	var hinted interface{ RetryDelay() time.Duration }
+	if errors.As(cause, &hinted) && hinted.RetryDelay() > delay {
+		delay = hinted.RetryDelay()
+		if delay > store.config.MaxBackoff {
+			delay = store.config.MaxBackoff
+		}
+	}
+	due := time.Now().Add(delay).UnixMilli()
 	if err := store.evalReceipt(ctx, retryScript, []string{store.ready, store.retry}, claimed, due, string(encoded)); err != nil {
 		return false, err
 	}

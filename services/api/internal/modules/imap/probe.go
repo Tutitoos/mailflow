@@ -235,8 +235,12 @@ func writeIMAPCommand(writer *bufio.Writer, command string) error {
 }
 
 func readIMAPResponse(reader *bufio.Reader, tag string, authenticating bool) ([]string, error) {
+	return readIMAPResponseLimit(reader, tag, authenticating, 128)
+}
+
+func readIMAPResponseLimit(reader *bufio.Reader, tag string, authenticating bool, maximum int) ([]string, error) {
 	lines := make([]string, 0, 8)
-	for range 128 {
+	for range maximum {
 		line, err := readBoundedLine(reader)
 		if err != nil {
 			return nil, err

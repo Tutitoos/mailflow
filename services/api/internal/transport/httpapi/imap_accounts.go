@@ -37,6 +37,23 @@ func connectIMAPAccount(service *mailflowimap.Service) fiber.Handler {
 	}
 }
 
+func discoverIMAPFolders(service *mailflowimap.Service) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if service == nil {
+			return newProblem(fiber.StatusServiceUnavailable, "imap_unavailable", "IMAP is unavailable", "IMAP account management is temporarily unavailable.")
+		}
+		user, ok := authbridge.UserFromContext(c.Context())
+		if !ok {
+			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
+		}
+		result, err := service.DiscoverFolders(c.Context(), user.ID, c.Params("accountId"))
+		if err != nil {
+			return imapProblem(err)
+		}
+		return c.JSON(result)
+	}
+}
+
 func bindIMAPInput(c fiber.Ctx, service *mailflowimap.Service) (mailflowimap.ConnectInput, error) {
 	if service == nil {
 		return mailflowimap.ConnectInput{}, newProblem(fiber.StatusServiceUnavailable, "imap_unavailable", "IMAP is unavailable", "IMAP account management is temporarily unavailable.")
@@ -67,6 +84,14 @@ func imapProblem(err error) error {
 		return newProblem(fiber.StatusUnprocessableEntity, "mail_capability_failed", "Mail server capabilities are unsupported", "The server did not expose the secure protocol capabilities Mailflow requires.")
 	case errors.Is(err, mailflowimap.ErrProtocol):
 		return newProblem(fiber.StatusBadGateway, "mail_protocol_failed", "Mail server protocol failed", "The server returned an invalid IMAP or SMTP response.")
+	case errors.Is(err, mailflowimap.ErrFolderDiscovery):
+		return newProblem(fiber.StatusBadGateway, "imap_folder_discovery_failed", "IMAP folder discovery failed", "The server returned invalid or incomplete folder metadata.")
+	case errors.Is(err, mailflowimap.ErrFolderLimit):
+		return newProblem(fiber.StatusUnprocessableEntity, "imap_folder_limit_exceeded", "IMAP folder limit exceeded", "The account exposes more folders than Mailflow can safely process.")
+	case errors.Is(err, mailflowimap.ErrFolderIdentityConflict):
+		return newProblem(fiber.StatusConflict, "imap_folder_identity_conflict", "IMAP folder identity is ambiguous", "Mailflow could not safely match a renamed folder. Review the account before retrying.")
+	case errors.Is(err, mailflowimap.ErrFolderPersistence):
+		return newProblem(fiber.StatusInternalServerError, "imap_folder_persistence_failed", "IMAP folder state could not be saved", "No partial folder reconciliation was committed.")
 	case errors.Is(err, mailflowimap.ErrWrongProvider):
 		return newProblem(fiber.StatusBadRequest, "account_provider_invalid", "Invalid account provider", "This operation is available only for IMAP accounts.")
 	case errors.Is(err, accounts.ErrAccountNotFound):

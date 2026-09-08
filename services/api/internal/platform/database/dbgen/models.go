@@ -200,6 +200,24 @@ type DraftRecipient struct {
 	Address     string      `json:"address"`
 }
 
+type ImapFolderCursor struct {
+	MailboxID          pgtype.UUID        `json:"mailbox_id"`
+	AccountID          pgtype.UUID        `json:"account_id"`
+	IdentityKey        string             `json:"identity_key"`
+	NamespacePrefix    string             `json:"namespace_prefix"`
+	Delimiter          pgtype.Text        `json:"delimiter"`
+	Subscribed         bool               `json:"subscribed"`
+	UidNext            pgtype.Int8        `json:"uid_next"`
+	UidValidity        pgtype.Int8        `json:"uid_validity"`
+	NextUid            pgtype.Int8        `json:"next_uid"`
+	State              string             `json:"state"`
+	Version            int64              `json:"version"`
+	InvalidatedAt      pgtype.Timestamptz `json:"invalidated_at"`
+	InvalidationReason pgtype.Text        `json:"invalidation_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Label struct {
 	ID             pgtype.UUID        `json:"id"`
 	AccountID      pgtype.UUID        `json:"account_id"`

@@ -8,6 +8,7 @@ import {
   createMailActions,
   createMicrosoftAuthorization,
   disconnectAccount,
+  discoverIMAPFolders,
   loadAccountConnections,
   loadConversationPage,
   loadGoogleAccounts,
@@ -225,6 +226,22 @@ describe("Mailflow API client", () => {
     expect(fetch.mock.calls[3]?.[0]).toBe("/api/v1/accounts/imap");
     expect(fetch.mock.calls[1]?.[1]?.method).toBe("POST");
     expect(JSON.parse(String(fetch.mock.calls[3]?.[1]?.body))).toEqual(input);
+  });
+
+  it("reconciles IMAP folders through the account-scoped endpoint", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "mail-jwt" }))
+      .mockResolvedValueOnce(json({ folders: [], reconciliationRequired: false }));
+    vi.stubGlobal("fetch", fetch);
+
+    const result = await discoverIMAPFolders("account/with spaces");
+
+    expect(result).toEqual({ folders: [], reconciliationRequired: false });
+    expect(fetch.mock.calls[1]?.[0]).toBe(
+      "/api/v1/accounts/account%2Fwith%20spaces/imap/folders/discover",
+    );
+    expect(fetch.mock.calls[1]?.[1]?.method).toBe("POST");
   });
 
   it("encodes account-scoped search expressions and cursors", async () => {

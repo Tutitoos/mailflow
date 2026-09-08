@@ -222,7 +222,12 @@ func main() {
 		options.ActionState = options.Inbox
 		options.Mailboxes = mail.NewMailboxLabelRepository(queries)
 		options.Accounts = accountService
-		options.IMAP, err = mailflowimap.NewService(accountService, mailflowimap.DefaultNetworkProber())
+		imapProber := mailflowimap.DefaultNetworkProber()
+		options.IMAP, err = mailflowimap.NewService(
+			accountService,
+			imapProber,
+			mailflowimap.WithFolderDiscovery(mailflowimap.NewFolderRepository(pool), imapProber),
+		)
 		if err != nil {
 			logger.Error("IMAP provider configuration failed", "event", "mail.provider_unavailable", "error", err)
 			os.Exit(1)

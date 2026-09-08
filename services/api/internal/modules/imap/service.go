@@ -32,8 +32,10 @@ type Prober interface {
 }
 
 type Service struct {
-	accounts Accounts
-	prober   Prober
+	accounts         Accounts
+	prober           Prober
+	folderRepository FolderRepository
+	folderDiscoverer FolderDiscoverer
 }
 
 type ProbeResult struct {
@@ -46,11 +48,17 @@ type DisconnectResult struct {
 	CredentialsRemoved bool             `json:"credentialsRemoved"`
 }
 
-func NewService(accountService Accounts, prober Prober) (*Service, error) {
+func NewService(accountService Accounts, prober Prober, options ...FolderOption) (*Service, error) {
 	if accountService == nil || prober == nil {
 		return nil, errors.New("IMAP setup requires accounts and a protocol prober")
 	}
-	return &Service{accounts: accountService, prober: prober}, nil
+	service := &Service{accounts: accountService, prober: prober}
+	for _, option := range options {
+		if option == nil || option(service) != nil {
+			return nil, ErrInvalidConfiguration
+		}
+	}
+	return service, nil
 }
 
 func (service *Service) Probe(ctx context.Context, input ConnectInput) (ProbeResult, error) {

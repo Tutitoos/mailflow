@@ -198,6 +198,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Account" }
         default: { $ref: "#/components/responses/Problem" }
+  /accounts/{accountId}/imap/folders/discover:
+    post:
+      operationId: discoverIMAPFolders
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Current IMAP folder hierarchy and per-folder cursor state reconciled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IMAPFolderDiscoveryResult" }
+        default: { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/sync:
     post:
       operationId: synchronizeAccount
@@ -1291,6 +1303,34 @@ components:
         capabilities:
           type: object
           additionalProperties: { type: boolean }
+    IMAPFolderState:
+      type: object
+      required: [mailboxId, remoteId, name, role, selectable, subscribed, namespacePrefix, delimiter, uidNext, uidValidity, nextUid, cursorState, cursorVersion, invalidatedAt, invalidationReason]
+      properties:
+        mailboxId: { type: string, format: uuid }
+        remoteId: { type: string, pattern: "^imap:(role|path):[A-Za-z0-9_-]+$" }
+        name: { type: string, minLength: 1, maxLength: 1024 }
+        role: { type: string, enum: [inbox, sent, drafts, trash, junk, archive, all, ""] }
+        selectable: { type: boolean }
+        subscribed: { type: boolean }
+        namespacePrefix: { type: string, maxLength: 1024 }
+        delimiter: { type: [string, "null"], minLength: 1, maxLength: 1 }
+        uidNext: { type: [integer, "null"], format: int64, minimum: 1 }
+        uidValidity: { type: [integer, "null"], format: int64, minimum: 1 }
+        nextUid: { type: [integer, "null"], format: int64, minimum: 1 }
+        cursorState: { type: string, enum: [active, resync_required, not_selectable, missing] }
+        cursorVersion: { type: integer, format: int64, minimum: 1 }
+        invalidatedAt: { type: [string, "null"], format: date-time }
+        invalidationReason: { type: [string, "null"], enum: [uid_validity_changed, null] }
+    IMAPFolderDiscoveryResult:
+      type: object
+      required: [folders, reconciliationRequired]
+      properties:
+        folders:
+          type: array
+          maxItems: 5000
+          items: { $ref: "#/components/schemas/IMAPFolderState" }
+        reconciliationRequired: { type: boolean }
     SyncRunAccepted:
       type: object
       required: [status]

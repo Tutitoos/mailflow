@@ -10,44 +10,51 @@ import (
 )
 
 type Config struct {
-	AlertSMTPHost           string
-	AlertSMTPPort           int
-	AlertSMTPUsername       string
-	AlertSMTPPassword       string
-	AlertSMTPFrom           string
-	AlertSMTPTo             string
-	AlertSMTPImplicitTLS    bool
-	AlertFallbackEnabled    bool
-	AuthAudience            string
-	AuthIssuer              string
-	AuthJWKSURL             string
-	Address                 string
-	CDNMaxBytes             int64
-	CDNRoot                 string
-	DatabaseURL             string
-	MasterKey               []byte
-	RedisAddress            string
-	GoogleOAuthClientID     string
-	GoogleOAuthClientSecret string
-	GoogleOAuthRedirectURL  string
+	AlertSMTPHost              string
+	AlertSMTPPort              int
+	AlertSMTPUsername          string
+	AlertSMTPPassword          string
+	AlertSMTPFrom              string
+	AlertSMTPTo                string
+	AlertSMTPImplicitTLS       bool
+	AlertFallbackEnabled       bool
+	AuthAudience               string
+	AuthIssuer                 string
+	AuthJWKSURL                string
+	Address                    string
+	CDNMaxBytes                int64
+	CDNRoot                    string
+	DatabaseURL                string
+	MasterKey                  []byte
+	RedisAddress               string
+	GoogleOAuthClientID        string
+	GoogleOAuthClientSecret    string
+	GoogleOAuthRedirectURL     string
+	MicrosoftOAuthClientID     string
+	MicrosoftOAuthClientSecret string
+	MicrosoftOAuthRedirectURL  string
+	MicrosoftOAuthAuthority    string
 }
 
 func Load() (Config, error) {
 	config := Config{
-		AlertSMTPHost:          os.Getenv("MAILFLOW_ALERT_SMTP_HOST"),
-		AlertSMTPUsername:      os.Getenv("MAILFLOW_ALERT_SMTP_USERNAME"),
-		AlertSMTPFrom:          os.Getenv("MAILFLOW_ALERT_SMTP_FROM"),
-		AlertSMTPTo:            os.Getenv("MAILFLOW_ALERT_SMTP_TO"),
-		AlertSMTPImplicitTLS:   strings.EqualFold(os.Getenv("MAILFLOW_ALERT_SMTP_IMPLICIT_TLS"), "true"),
-		AlertFallbackEnabled:   strings.EqualFold(os.Getenv("MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK"), "true"),
-		AuthAudience:           valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
-		AuthIssuer:             os.Getenv("MAILFLOW_AUTH_ISSUER"),
-		Address:                valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
-		AuthJWKSURL:            os.Getenv("AUTH_JWKS_URL"),
-		CDNRoot:                valueOrDefault("MAILFLOW_CDN_ROOT", "/data/cdn"),
-		RedisAddress:           os.Getenv("REDIS_ADDRESS"),
-		GoogleOAuthClientID:    os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
-		GoogleOAuthRedirectURL: os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+		AlertSMTPHost:             os.Getenv("MAILFLOW_ALERT_SMTP_HOST"),
+		AlertSMTPUsername:         os.Getenv("MAILFLOW_ALERT_SMTP_USERNAME"),
+		AlertSMTPFrom:             os.Getenv("MAILFLOW_ALERT_SMTP_FROM"),
+		AlertSMTPTo:               os.Getenv("MAILFLOW_ALERT_SMTP_TO"),
+		AlertSMTPImplicitTLS:      strings.EqualFold(os.Getenv("MAILFLOW_ALERT_SMTP_IMPLICIT_TLS"), "true"),
+		AlertFallbackEnabled:      strings.EqualFold(os.Getenv("MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK"), "true"),
+		AuthAudience:              valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
+		AuthIssuer:                os.Getenv("MAILFLOW_AUTH_ISSUER"),
+		Address:                   valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
+		AuthJWKSURL:               os.Getenv("AUTH_JWKS_URL"),
+		CDNRoot:                   valueOrDefault("MAILFLOW_CDN_ROOT", "/data/cdn"),
+		RedisAddress:              os.Getenv("REDIS_ADDRESS"),
+		GoogleOAuthClientID:       os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleOAuthRedirectURL:    os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+		MicrosoftOAuthClientID:    os.Getenv("MICROSOFT_OAUTH_CLIENT_ID"),
+		MicrosoftOAuthRedirectURL: os.Getenv("MICROSOFT_OAUTH_REDIRECT_URL"),
+		MicrosoftOAuthAuthority:   valueOrDefault("MICROSOFT_OAUTH_AUTHORITY", "common"),
 	}
 	alertPort, err := strconv.Atoi(valueOrDefault("MAILFLOW_ALERT_SMTP_PORT", "587"))
 	if err != nil || alertPort < 1 || alertPort > 65535 {
@@ -67,6 +74,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("read Google OAuth client secret: %w", err)
 		}
 		config.GoogleOAuthClientSecret = strings.TrimSpace(string(secret))
+	}
+	if secretFile := os.Getenv("MICROSOFT_OAUTH_CLIENT_SECRET_FILE"); secretFile != "" {
+		secret, err := os.ReadFile(secretFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("read Microsoft OAuth client secret: %w", err)
+		}
+		config.MicrosoftOAuthClientSecret = strings.TrimSpace(string(secret))
 	}
 	maxBytes, err := strconv.ParseInt(valueOrDefault("MAILFLOW_CDN_MAX_BYTES", "26214400"), 10, 64)
 	if err != nil || maxBytes <= 0 {

@@ -37,10 +37,11 @@ import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
+  APIError,
   createMailActions,
   disconnectAccount,
   type InboxThread,
-  loadGoogleAccounts,
+  loadAccountConnections,
   loadInboxPage,
   loadMailAccounts,
   loadMailNavigation,
@@ -50,9 +51,11 @@ import {
   type Mailbox,
   type MailCategory,
   type MailLabel,
+  refreshAccountCredentials,
   type SearchResult,
   searchMail,
   startGoogleConnection,
+  startMicrosoftConnection,
   subscribeMailEvents,
 } from "./mailflow-api";
 import { type SearchSyntaxError, searchSuggestions, validateSearchSyntax } from "./search-syntax";
@@ -1180,20 +1183,23 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
 export function AccountsPage({ locale }: { locale: Locale }) {
   const navigate = useNavigate();
   const t: Translator = (key) => translate(locale, key);
-  const [configured, setConfigured] = useState(false);
+  const [configured, setConfigured] = useState({ google: false, microsoft: false });
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"generic" | "reconsent" | "tenant" | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    setError(false);
+    setError(null);
     try {
-      const result = await loadGoogleAccounts(signal);
-      setConfigured(result.status.configured);
+      const result = await loadAccountConnections(signal);
+      setConfigured({
+        google: result.status.google.configured,
+        microsoft: result.status.microsoft.configured,
+      });
       setAccounts(result.accounts);
     } catch {
-      if (!signal?.aborted) setError(true);
+      if (!signal?.aborted) setError("generic");
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -1205,22 +1211,36 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     return () => controller.abort();
   }, [reload]);
 
-  const connect = async (reconsent: boolean) => {
-    setError(false);
+  const connect = async (provider: "google" | "microsoft", reconsent: boolean) => {
+    setError(null);
     try {
-      await startGoogleConnection(reconsent);
-    } catch {
-      setError(true);
+      if (provider === "google") await startGoogleConnection(reconsent);
+      else await startMicrosoftConnection(reconsent);
+    } catch (cause) {
+      setError(accountError(cause));
     }
   };
 
   const disconnect = async (accountId: string) => {
-    setError(false);
+    setError(null);
     try {
       await disconnectAccount(accountId);
       await reload();
-    } catch {
-      setError(true);
+    } catch (cause) {
+      setError(accountError(cause));
+    }
+  };
+
+  const refresh = async (accountId: string) => {
+    setError(null);
+    let refreshError: "generic" | "reconsent" | "tenant" | null = null;
+    try {
+      await refreshAccountCredentials(accountId);
+    } catch (cause) {
+      refreshError = accountError(cause);
+    } finally {
+      await reload();
+      if (refreshError) setError(refreshError);
     }
   };
 
@@ -1239,20 +1259,34 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             <h1 id="accounts-title">{t("connectedAccounts")}</h1>
             <p>{t("connectedAccountsDescription")}</p>
           </div>
-          <Button
-            variant="primary"
-            disabled={!configured || loading}
-            onClick={() => void connect(false)}
-          >
-            <Plus size={16} /> {t("connectGoogle")}
-          </Button>
+          <div className="settings-actions">
+            <Button
+              variant="primary"
+              disabled={!configured.google || loading}
+              onClick={() => void connect("google", false)}
+            >
+              <Plus size={16} /> {t("connectGoogle")}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!configured.microsoft || loading}
+              onClick={() => void connect("microsoft", false)}
+            >
+              <Plus size={16} /> {t("connectMicrosoft")}
+            </Button>
+          </div>
         </div>
         {new URLSearchParams(window.location.search).get("google") === "connected" && (
           <p className="settings-notice" role="status">
             {t("googleConnected")}
           </p>
         )}
-        {!configured && !loading && (
+        {new URLSearchParams(window.location.search).get("microsoft") === "connected" && (
+          <p className="settings-notice" role="status">
+            {t("microsoftConnected")}
+          </p>
+        )}
+        {!configured.google && !loading && (
           <div className="settings-notice warning">
             <Info size={17} />
             <span>{t("googleNotConfigured")}</span>
@@ -1261,23 +1295,51 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             </a>
           </div>
         )}
+        {!configured.microsoft && !loading && (
+          <div className="settings-notice warning">
+            <Info size={17} />
+            <span>{t("microsoftNotConfigured")}</span>
+            <a href="https://github.com/Tutitoos/mailflow/blob/main/docs/providers/microsoft.md">
+              {t("microsoftSetupGuide")}
+            </a>
+          </div>
+        )}
         {error && (
           <p className="auth-error" role="alert">
-            {t("connectionFailed")}
+            {error === "reconsent"
+              ? t("microsoftReconsentRequired")
+              : error === "tenant"
+                ? t("microsoftTenantPolicy")
+                : t("connectionFailed")}
           </p>
         )}
         <section className="account-list" aria-busy={loading}>
           {loading && <p>{t("loadingAccounts")}</p>}
-          {!loading && configured && accounts.length === 0 && <p>{t("noGoogleAccounts")}</p>}
+          {!loading && accounts.length === 0 && <p>{t("noConnectedProviderAccounts")}</p>}
           {accounts.map((account) => (
             <article key={account.id}>
-              <span className="provider-icon">G</span>
+              <span className="provider-icon">{account.provider === "google" ? "G" : "M"}</span>
               <div>
                 <strong>{account.displayName}</strong>
                 <small>{account.syncState}</small>
               </div>
-              <Button variant="outline" disabled={!configured} onClick={() => void connect(true)}>
-                {t("reconnectGoogle")}
+              <Button
+                variant="outline"
+                disabled={
+                  account.provider === "google" ? !configured.google : !configured.microsoft
+                }
+                onClick={() =>
+                  void connect(account.provider === "google" ? "google" : "microsoft", true)
+                }
+              >
+                {account.provider === "google" ? t("reconnectGoogle") : t("reconnectMicrosoft")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={account.syncState === "disabled"}
+                onClick={() => void refresh(account.id)}
+              >
+                <RefreshCw size={15} /> {t("refreshAccess")}
               </Button>
               <Button variant="outline" onClick={() => void disconnect(account.id)}>
                 <Trash2 size={15} /> {t("disconnect")}
@@ -1288,4 +1350,11 @@ export function AccountsPage({ locale }: { locale: Locale }) {
       </main>
     </div>
   );
+}
+
+function accountError(cause: unknown): "generic" | "reconsent" | "tenant" {
+  if (cause instanceof APIError && cause.code === "microsoft_reconsent_required")
+    return "reconsent";
+  if (cause instanceof APIError && cause.code === "microsoft_tenant_policy") return "tenant";
+  return "generic";
 }

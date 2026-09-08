@@ -384,6 +384,20 @@ export async function loadGoogleAccounts(signal?: AbortSignal) {
   return { status, accounts: accounts.items.filter((account) => account.provider === "google") };
 }
 
+export async function loadAccountConnections(signal?: AbortSignal) {
+  const [google, microsoft, accounts] = await Promise.all([
+    request<{ configured: boolean; setup: string }>("/oauth/google/status", { signal }),
+    request<{ configured: boolean; setup: string }>("/oauth/microsoft/status", { signal }),
+    request<{ items: MailAccount[] }>("/accounts", { signal }),
+  ]);
+  return {
+    status: { google, microsoft },
+    accounts: accounts.items.filter(
+      (account) => account.provider === "google" || account.provider === "microsoft",
+    ),
+  };
+}
+
 export async function createGoogleAuthorization(reconsent = false) {
   const result = await request<{ authorizationUrl: string }>("/oauth/google/start", {
     method: "POST",
@@ -397,10 +411,30 @@ export async function startGoogleConnection(reconsent = false) {
   window.location.assign(authorizationUrl);
 }
 
-export async function disconnectAccount(accountId: string) {
-  return request<{ account: MailAccount; remoteRevoked: boolean }>(`/accounts/${accountId}`, {
-    method: "DELETE",
+export async function createMicrosoftAuthorization(reconsent = false) {
+  const result = await request<{ authorizationUrl: string }>("/oauth/microsoft/start", {
+    method: "POST",
+    body: JSON.stringify({ reconsent }),
   });
+  return result.authorizationUrl;
+}
+
+export async function startMicrosoftConnection(reconsent = false) {
+  const authorizationUrl = await createMicrosoftAuthorization(reconsent);
+  window.location.assign(authorizationUrl);
+}
+
+export async function disconnectAccount(accountId: string) {
+  return request<{ account: MailAccount; remoteRevoked: boolean; revocationUrl?: string }>(
+    `/accounts/${accountId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function refreshAccountCredentials(accountId: string) {
+  return request<MailAccount>(`/accounts/${accountId}/refresh`, { method: "POST" });
 }
 
 export async function loadMailAccounts(signal?: AbortSignal) {

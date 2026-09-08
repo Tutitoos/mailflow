@@ -12,6 +12,9 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await page.route("**/api/v1/oauth/google/status", (route) =>
     route.fulfill({ json: { configured: true, setup: "docs/providers/google.md" } }),
   );
+  await page.route("**/api/v1/oauth/microsoft/status", (route) =>
+    route.fulfill({ json: { configured: true, setup: "docs/providers/microsoft.md" } }),
+  );
   await page.route("**/api/v1/accounts", (route) => route.fulfill({ json: { items: [] } }));
   await page.route("**/api/v1/translations/en", (route) =>
     route.fulfill({
@@ -122,7 +125,9 @@ test("mail shell and admin remain operable", async ({ page }) => {
   }
   await expect(page).toHaveURL(/\/settings\/accounts$/);
   await expect(page.getByRole("heading", { name: "Connected accounts" })).toBeVisible();
-  await expect(page.getByText("No Google accounts connected yet.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Google" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Connect Microsoft" })).toBeEnabled();
+  await expect(page.getByText("No Google or Microsoft accounts connected yet.")).toBeVisible();
 
   const accountResults = await new AxeBuilder({ page }).analyze();
   expect(

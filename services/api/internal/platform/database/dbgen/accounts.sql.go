@@ -274,6 +274,49 @@ func (q *Queries) ListAccountsByUser(ctx context.Context, userID pgtype.UUID) ([
 	return items, nil
 }
 
+const markAccountError = `-- name: MarkAccountError :one
+UPDATE accounts
+SET sync_state = 'error', updated_at = now()
+WHERE id = $1 AND user_id = $2 AND disabled_at IS NULL
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at
+`
+
+type MarkAccountErrorParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+type MarkAccountErrorRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Provider     string             `json:"provider"`
+	RemoteID     string             `json:"remote_id"`
+	DisplayName  string             `json:"display_name"`
+	Capabilities []byte             `json:"capabilities"`
+	SyncState    string             `json:"sync_state"`
+	DisabledAt   pgtype.Timestamptz `json:"disabled_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) MarkAccountError(ctx context.Context, arg MarkAccountErrorParams) (MarkAccountErrorRow, error) {
+	row := q.db.QueryRow(ctx, markAccountError, arg.ID, arg.UserID)
+	var i MarkAccountErrorRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.RemoteID,
+		&i.DisplayName,
+		&i.Capabilities,
+		&i.SyncState,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const replaceAccountCredentials = `-- name: ReplaceAccountCredentials :one
 UPDATE accounts
 SET encrypted_credentials = $1,

@@ -14,6 +14,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -22,32 +23,33 @@ import (
 )
 
 type Options struct {
-	Accounts      *accounts.Service
-	Actions       *mail.PendingActionService
-	Admin         *admin.Service
-	Alerts        *alerts.Service
-	ActionState   mail.ActionStateStore
-	Attachments   *cdn.Service
-	AuthAudience  string
-	AuthIssuer    string
-	AuthJWKSURL   string
-	Backups       *backups.Repository
-	CurrentUsers  authbridge.UserResolver
-	Delivery      *mail.DeliveryService
-	Events        *events.Store
-	GoogleOAuth   *googleoauth.Service
-	Inbox         *mail.ThreadRepositoryStore
-	Mailboxes     *mail.MailboxLabelRepositoryStore
-	Logs          *logs.Pipeline
-	Metrics       *metrics.Service
-	Search        *mail.ThreadRepositoryStore
-	Sentry        *sentry.Service
-	Threads       *mail.ThreadRepositoryStore
-	Translations  *translations.Catalog
-	Readiness     func(context.Context) error
-	SentryEnabled bool
-	Shutdown      context.Context
-	Sync          *mailflowsync.Scheduler
+	Accounts       *accounts.Service
+	Actions        *mail.PendingActionService
+	Admin          *admin.Service
+	Alerts         *alerts.Service
+	ActionState    mail.ActionStateStore
+	Attachments    *cdn.Service
+	AuthAudience   string
+	AuthIssuer     string
+	AuthJWKSURL    string
+	Backups        *backups.Repository
+	CurrentUsers   authbridge.UserResolver
+	Delivery       *mail.DeliveryService
+	Events         *events.Store
+	GoogleOAuth    *googleoauth.Service
+	MicrosoftOAuth *microsoftoauth.Service
+	Inbox          *mail.ThreadRepositoryStore
+	Mailboxes      *mail.MailboxLabelRepositoryStore
+	Logs           *logs.Pipeline
+	Metrics        *metrics.Service
+	Search         *mail.ThreadRepositoryStore
+	Sentry         *sentry.Service
+	Threads        *mail.ThreadRepositoryStore
+	Translations   *translations.Catalog
+	Readiness      func(context.Context) error
+	SentryEnabled  bool
+	Shutdown       context.Context
+	Sync           *mailflowsync.Scheduler
 }
 
 func Build(version string, options ...Options) *fiber.App {
@@ -74,31 +76,32 @@ func Build(version string, options ...Options) *fiber.App {
 	}
 	_ = metricService.Registry().Set("mailflow_build_info", "gauge", 1, map[string]string{"service": "api", "result": "ready"})
 	return httpapi.New(httpapi.Dependencies{
-		Accounts:      runtimeOptions.Accounts,
-		Actions:       runtimeOptions.Actions,
-		ActionState:   runtimeOptions.ActionState,
-		Attachments:   attachmentService,
-		Admin:         runtimeOptions.Admin,
-		Alerts:        runtimeOptions.Alerts,
-		AuthAudience:  runtimeOptions.AuthAudience,
-		AuthIssuer:    runtimeOptions.AuthIssuer,
-		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,
-		Backups:       runtimeOptions.Backups,
-		CurrentUsers:  runtimeOptions.CurrentUsers,
-		Delivery:      runtimeOptions.Delivery,
-		Events:        runtimeOptions.Events,
-		GoogleOAuth:   runtimeOptions.GoogleOAuth,
-		Inbox:         runtimeOptions.Inbox,
-		Mailboxes:     runtimeOptions.Mailboxes,
-		Logs:          runtimeOptions.Logs,
-		Metrics:       metricService.Registry(),
-		Search:        runtimeOptions.Search,
-		Threads:       runtimeOptions.Threads,
-		Readiness:     runtimeOptions.Readiness,
-		Sentry:        runtimeOptions.Sentry,
-		Translations:  runtimeOptions.Translations,
-		CaptureSentry: runtimeOptions.SentryEnabled,
-		Shutdown:      runtimeOptions.Shutdown,
-		Sync:          runtimeOptions.Sync,
+		Accounts:       runtimeOptions.Accounts,
+		Actions:        runtimeOptions.Actions,
+		ActionState:    runtimeOptions.ActionState,
+		Attachments:    attachmentService,
+		Admin:          runtimeOptions.Admin,
+		Alerts:         runtimeOptions.Alerts,
+		AuthAudience:   runtimeOptions.AuthAudience,
+		AuthIssuer:     runtimeOptions.AuthIssuer,
+		AuthJWKSURL:    runtimeOptions.AuthJWKSURL,
+		Backups:        runtimeOptions.Backups,
+		CurrentUsers:   runtimeOptions.CurrentUsers,
+		Delivery:       runtimeOptions.Delivery,
+		Events:         runtimeOptions.Events,
+		GoogleOAuth:    runtimeOptions.GoogleOAuth,
+		MicrosoftOAuth: runtimeOptions.MicrosoftOAuth,
+		Inbox:          runtimeOptions.Inbox,
+		Mailboxes:      runtimeOptions.Mailboxes,
+		Logs:           runtimeOptions.Logs,
+		Metrics:        metricService.Registry(),
+		Search:         runtimeOptions.Search,
+		Threads:        runtimeOptions.Threads,
+		Readiness:      runtimeOptions.Readiness,
+		Sentry:         runtimeOptions.Sentry,
+		Translations:   runtimeOptions.Translations,
+		CaptureSentry:  runtimeOptions.SentryEnabled,
+		Shutdown:       runtimeOptions.Shutdown,
+		Sync:           runtimeOptions.Sync,
 	})
 }

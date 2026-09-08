@@ -102,10 +102,17 @@ func TestRepositoryEncryptsAndScopesAccounts(t *testing.T) {
 	if _, err := repository.UpdateCapabilities(ctx, otherUser, first.ID, map[string]bool{"send": true}); !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("cross-owner update error = %v", err)
 	}
+	if _, err := repository.MarkError(ctx, otherUser, first.ID); !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("cross-owner mark error = %v", err)
+	}
 	if _, err := repository.Disable(ctx, otherUser, first.ID); !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("cross-owner disable error = %v", err)
 	}
 
+	failed, err := repository.MarkError(ctx, userID.String(), first.ID)
+	if err != nil || failed.SyncState != SyncError {
+		t.Fatalf("mark account error: account=%+v error=%v", failed, err)
+	}
 	disabled, err := repository.Disable(ctx, userID.String(), first.ID)
 	if err != nil || disabled.DisabledAt == nil || disabled.SyncState != SyncDisabled {
 		t.Fatalf("disable account: account=%+v error=%v", disabled, err)

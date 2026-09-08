@@ -4,7 +4,9 @@ import {
   createDraft,
   createGoogleAuthorization,
   createMailActions,
+  createMicrosoftAuthorization,
   disconnectAccount,
+  loadAccountConnections,
   loadConversationPage,
   loadGoogleAccounts,
   loadInboxPage,
@@ -74,6 +76,23 @@ describe("Mailflow API client", () => {
     expect(result.remoteRevoked).toBe(true);
   });
 
+  it("starts Microsoft OAuth with an explicit re-consent request", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ token: "short-jwt" }))
+      .mockResolvedValueOnce(
+        json({
+          authorizationUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        }),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    const authorizationUrl = await createMicrosoftAuthorization(true);
+
+    expect(authorizationUrl).toContain("login.microsoftonline.com");
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ reconsent: true });
+  });
+
   it("loads account-scoped navigation and opaque inbox pages", async () => {
     const fetch = vi
       .fn()
@@ -124,6 +143,48 @@ describe("Mailflow API client", () => {
     expect(fetch.mock.calls[2]?.[0]).toContain("accountId=account-1");
     expect(fetch.mock.calls[5]?.[0]).toContain("cursor=previous-cursor");
     expect(fetch.mock.calls[7]?.[0]).toContain("/threads/thread-1?accountId=account-1");
+  });
+
+  it("loads Google and Microsoft account capabilities without including IMAP", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/token")) return json({ token: "short-jwt" });
+      if (url.includes("/oauth/google/status"))
+        return json({ configured: true, setup: "docs/providers/google.md" });
+      if (url.includes("/oauth/microsoft/status"))
+        return json({ configured: true, setup: "docs/providers/microsoft.md" });
+      return json({
+        items: [
+          {
+            id: "google",
+            provider: "google",
+            displayName: "Personal",
+            syncState: "idle",
+            disabledAt: null,
+          },
+          {
+            id: "microsoft",
+            provider: "microsoft",
+            displayName: "Work",
+            syncState: "idle",
+            disabledAt: null,
+          },
+          {
+            id: "imap",
+            provider: "imap",
+            displayName: "Later",
+            syncState: "idle",
+            disabledAt: null,
+          },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    const result = await loadAccountConnections();
+
+    expect(result.status.microsoft.configured).toBe(true);
+    expect(result.accounts.map((account) => account.provider)).toEqual(["google", "microsoft"]);
   });
 
   it("encodes account-scoped search expressions and cursors", async () => {

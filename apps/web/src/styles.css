@@ -105,7 +105,7 @@ select:focus-visible {
   position: relative;
   height: 44px;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
   gap: 10px;
   padding: 0 4px 0 15px;
@@ -1058,6 +1058,12 @@ select:focus-visible {
   gap: 24px;
   padding-bottom: 28px;
   border-bottom: 1px solid var(--border);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .settings-heading span,

@@ -782,7 +782,7 @@ export type SynchronizeAccountResponses = {
 
 export type SynchronizeAccountResponse = SynchronizeAccountResponses[keyof SynchronizeAccountResponses];
 
-export type RefreshGoogleAccountData = {
+export type RefreshAccountCredentialsData = {
     body?: never;
     path: {
         accountId: string;
@@ -791,23 +791,23 @@ export type RefreshGoogleAccountData = {
     url: '/accounts/{accountId}/refresh';
 };
 
-export type RefreshGoogleAccountErrors = {
+export type RefreshAccountCredentialsErrors = {
     /**
      * RFC 9457 problem details
      */
     default: Problem;
 };
 
-export type RefreshGoogleAccountError = RefreshGoogleAccountErrors[keyof RefreshGoogleAccountErrors];
+export type RefreshAccountCredentialsError = RefreshAccountCredentialsErrors[keyof RefreshAccountCredentialsErrors];
 
-export type RefreshGoogleAccountResponses = {
+export type RefreshAccountCredentialsResponses = {
     /**
      * Account credentials refreshed without exposing provider tokens
      */
     200: Account;
 };
 
-export type RefreshGoogleAccountResponse = RefreshGoogleAccountResponses[keyof RefreshGoogleAccountResponses];
+export type RefreshAccountCredentialsResponse = RefreshAccountCredentialsResponses[keyof RefreshAccountCredentialsResponses];
 
 export type DisconnectAccountData = {
     body?: never;
@@ -829,11 +829,12 @@ export type DisconnectAccountError = DisconnectAccountErrors[keyof DisconnectAcc
 
 export type DisconnectAccountResponses = {
     /**
-     * Local access disabled and remote revocation attempted
+     * Local access disabled; supported providers also attempt remote revocation
      */
     200: {
         account: Account;
         remoteRevoked: boolean;
+        revocationUrl?: string;
     };
 };
 
@@ -927,6 +928,104 @@ export type CompleteGoogleOAuthErrors = {
 };
 
 export type CompleteGoogleOAuthError = CompleteGoogleOAuthErrors[keyof CompleteGoogleOAuthErrors];
+
+export type GetMicrosoftOAuthStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/oauth/microsoft/status';
+};
+
+export type GetMicrosoftOAuthStatusErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+};
+
+export type GetMicrosoftOAuthStatusError = GetMicrosoftOAuthStatusErrors[keyof GetMicrosoftOAuthStatusErrors];
+
+export type GetMicrosoftOAuthStatusResponses = {
+    /**
+     * Per-installation Microsoft OAuth capability
+     */
+    200: {
+        configured: boolean;
+        setup: string;
+    };
+};
+
+export type GetMicrosoftOAuthStatusResponse = GetMicrosoftOAuthStatusResponses[keyof GetMicrosoftOAuthStatusResponses];
+
+export type StartMicrosoftOAuthData = {
+    body?: {
+        reconsent?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/oauth/microsoft/start';
+};
+
+export type StartMicrosoftOAuthErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type StartMicrosoftOAuthError = StartMicrosoftOAuthErrors[keyof StartMicrosoftOAuthErrors];
+
+export type StartMicrosoftOAuthResponses = {
+    /**
+     * Short-lived single-use Microsoft authorization transaction
+     */
+    200: {
+        authorizationUrl: string;
+        expiresAt: string;
+    };
+};
+
+export type StartMicrosoftOAuthResponse = StartMicrosoftOAuthResponses[keyof StartMicrosoftOAuthResponses];
+
+export type CompleteMicrosoftOAuthData = {
+    body?: never;
+    path?: never;
+    query: {
+        state: string;
+        code?: string;
+        error?: string;
+    };
+    url: '/oauth/microsoft/callback';
+};
+
+export type CompleteMicrosoftOAuthErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    400: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    401: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    403: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    502: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type CompleteMicrosoftOAuthError = CompleteMicrosoftOAuthErrors[keyof CompleteMicrosoftOAuthErrors];
 
 export type StreamEventsData = {
     body?: never;

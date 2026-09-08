@@ -103,6 +103,10 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET_FILE: /run/secrets/google_oauth_client_secret
       GOOGLE_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/google/callback
+      MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_SECRET_FILE: /run/secrets/microsoft_oauth_client_secret
+      MICROSOFT_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/microsoft/callback
+      MICROSOFT_OAUTH_AUTHORITY: ${MICROSOFT_OAUTH_AUTHORITY:-common}
       MAILFLOW_SENTRY_REPLAY_ENABLED: ${MAILFLOW_SENTRY_REPLAY_ENABLED:-false}
       MAILFLOW_ALERT_SMTP_HOST: ${MAILFLOW_ALERT_SMTP_HOST:-}
       MAILFLOW_ALERT_SMTP_PORT: ${MAILFLOW_ALERT_SMTP_PORT:-587}
@@ -112,7 +116,7 @@ services:
       MAILFLOW_ALERT_SMTP_IMPLICIT_TLS: ${MAILFLOW_ALERT_SMTP_IMPLICIT_TLS:-false}
       MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK: ${MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK:-false}
       MAILFLOW_ALERT_SMTP_PASSWORD_FILE: /run/secrets/alert_smtp_password
-    secrets: [alert_smtp_password, google_oauth_client_secret, master_key, postgres_password]
+    secrets: [alert_smtp_password, google_oauth_client_secret, master_key, microsoft_oauth_client_secret, postgres_password]
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`${MAILFLOW_DOMAIN}`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))
@@ -257,6 +261,8 @@ secrets:
     file: ./secrets/master_key
   google_oauth_client_secret:
     file: ./secrets/google_oauth_client_secret
+  microsoft_oauth_client_secret:
+    file: ./secrets/microsoft_oauth_client_secret
   alert_smtp_password:
     file: ./secrets/alert_smtp_password
 

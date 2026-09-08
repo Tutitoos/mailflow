@@ -17,6 +17,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -29,36 +30,38 @@ import (
 )
 
 type Dependencies struct {
-	Accounts      AccountLister
-	Actions       *mail.PendingActionService
-	ActionState   mail.ActionStateStore
-	Admin         *admin.Service
-	Alerts        *alerts.Service
-	Attachments   AttachmentService
-	AuthAudience  string
-	AuthIssuer    string
-	AuthJWKSURL   string
-	Backups       *backups.Repository
-	CurrentUsers  authbridge.UserResolver
-	Delivery      DraftService
-	Events        EventStream
-	GoogleOAuth   *googleoauth.Service
-	Inbox         InboxReader
-	Mailboxes     MailboxLabelReader
-	Logs          *logs.Pipeline
-	Metrics       *metrics.Registry
-	Search        SearchReader
-	Threads       ThreadReader
-	Readiness     func(context.Context) error
-	Sentry        *mailflowsentry.Service
-	Translations  *translations.Catalog
-	CaptureSentry bool
-	Shutdown      context.Context
-	Sync          SyncRequester
+	Accounts       AccountLister
+	Actions        *mail.PendingActionService
+	ActionState    mail.ActionStateStore
+	Admin          *admin.Service
+	Alerts         *alerts.Service
+	Attachments    AttachmentService
+	AuthAudience   string
+	AuthIssuer     string
+	AuthJWKSURL    string
+	Backups        *backups.Repository
+	CurrentUsers   authbridge.UserResolver
+	Delivery       DraftService
+	Events         EventStream
+	GoogleOAuth    *googleoauth.Service
+	MicrosoftOAuth *microsoftoauth.Service
+	Inbox          InboxReader
+	Mailboxes      MailboxLabelReader
+	Logs           *logs.Pipeline
+	Metrics        *metrics.Registry
+	Search         SearchReader
+	Threads        ThreadReader
+	Readiness      func(context.Context) error
+	Sentry         *mailflowsentry.Service
+	Translations   *translations.Catalog
+	CaptureSentry  bool
+	Shutdown       context.Context
+	Sync           SyncRequester
 }
 
 type AccountLister interface {
 	List(context.Context, string) ([]accounts.Account, error)
+	Get(context.Context, string, string) (accounts.Account, error)
 }
 
 type SyncRequester interface {
@@ -149,6 +152,7 @@ func New(deps Dependencies) *fiber.App {
 		return c.JSON(catalog)
 	})
 	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth, deps.Sync))
+	v1.Get("/oauth/microsoft/callback", microsoftOAuthCallback(deps.MicrosoftOAuth))
 	if deps.AuthJWKSURL != "" {
 		if deps.AuthAudience == "" || deps.AuthIssuer == "" || deps.CurrentUsers == nil {
 			panic("authenticated API requires audience, issuer, and current-user resolver")
@@ -206,9 +210,13 @@ func New(deps Dependencies) *fiber.App {
 		return c.JSON(fiber.Map{"configured": deps.GoogleOAuth != nil && deps.GoogleOAuth.Configured(), "setup": "docs/providers/google.md"})
 	})
 	v1.Post("/oauth/google/start", googleOAuthStart(deps.GoogleOAuth))
-	v1.Post("/accounts/:accountId/refresh", googleOAuthRefresh(deps.GoogleOAuth))
+	v1.Get("/oauth/microsoft/status", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"configured": deps.MicrosoftOAuth != nil && deps.MicrosoftOAuth.Configured(), "setup": "docs/providers/microsoft.md"})
+	})
+	v1.Post("/oauth/microsoft/start", microsoftOAuthStart(deps.MicrosoftOAuth))
+	v1.Post("/accounts/:accountId/refresh", refreshAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth))
 	v1.Post("/accounts/:accountId/sync", synchronizeAccount(deps.Sync))
-	v1.Delete("/accounts/:accountId", googleOAuthDisconnect(deps.GoogleOAuth))
+	v1.Delete("/accounts/:accountId", disconnectOAuthAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth))
 	v1.Post("/attachments", attachmentUpload(deps.Attachments))
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")

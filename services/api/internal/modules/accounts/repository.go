@@ -169,6 +169,21 @@ func (repository *RepositoryStore) UpdateCapabilities(ctx context.Context, user,
 	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
 }
 
+func (repository *RepositoryStore) MarkError(ctx context.Context, user, account string) (Account, error) {
+	userID, accountID, err := scopedIDs(user, account)
+	if err != nil {
+		return Account{}, ErrAccountNotFound
+	}
+	row, err := repository.queries.MarkAccountError(ctx, dbgen.MarkAccountErrorParams{ID: accountID, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	if err != nil {
+		return Account{}, fmt.Errorf("mark account error: %w", err)
+	}
+	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
+}
+
 func (repository *RepositoryStore) Disable(ctx context.Context, user, account string) (Account, error) {
 	userID, accountID, err := scopedIDs(user, account)
 	if err != nil {

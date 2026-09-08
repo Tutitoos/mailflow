@@ -166,8 +166,11 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 
 ### Microsoft
 
-- OAuth configurado por la instalación.
-- Microsoft Graph.
+- OAuth configurado por la propia instalación según [la guía de Microsoft](providers/microsoft.md), con client secret montado como Docker Secret y autoridad `common`, `consumers`, `organizations` o un tenant concreto.
+- PKCE S256 y `state` aleatorio de un solo uso, los mismos límites de callback que Google y scopes delegados fijos `User.Read`, `Mail.ReadWrite` y `Mail.Send`.
+- Mailflow distingue cuentas personales y organizativas por tenant, cifra el refresh token, valida los scopes concedidos y marca como error las cuentas cuyo consentimiento se ha revocado o requiere interacción.
+- Desconectar corta el acceso local sin solicitar el permiso global para revocar todas las sesiones del usuario; la revocación completa del grant queda disponible en Microsoft My Apps.
+- Microsoft Graph para correo se incorpora en la siguiente unidad de la fase.
 - Delta queries mediante polling adaptativo y reconciliación diaria.
 
 ### iCloud e IMAP

@@ -46,6 +46,12 @@ SET capabilities = $3, updated_at = now()
 WHERE id = $1 AND user_id = $2 AND disabled_at IS NULL
 RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at;
 
+-- name: MarkAccountError :one
+UPDATE accounts
+SET sync_state = 'error', updated_at = now()
+WHERE id = $1 AND user_id = $2 AND disabled_at IS NULL
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at;
+
 -- name: DisableAccount :one
 UPDATE accounts
 SET disabled_at = COALESCE(disabled_at, now()), sync_state = 'disabled', updated_at = now()

@@ -95,6 +95,9 @@ func main() {
 	options.AuthJWKSURL = runtimeConfig.AuthJWKSURL
 	var accountService *accounts.Service
 	var databasePool *pgxpool.Pool
+	var queries *dbgen.Queries
+	var normalizer mail.MIMEMessageNormalizer
+	var cdnStore *cdn.Store
 	var metricsDone chan struct{}
 	var metricsCancel context.CancelFunc
 	var logsDone chan struct{}
@@ -127,7 +130,7 @@ func main() {
 			logger.Error("account vault configuration failed", "event", "config.invalid", "error", err)
 			os.Exit(1)
 		}
-		queries := dbgen.New(pool)
+		queries = dbgen.New(pool)
 		var alertSender alerts.Sender
 		if runtimeConfig.AlertSMTPHost != "" {
 			alertSender, err = alerts.NewSMTPSender(alerts.SMTPConfig{Host: runtimeConfig.AlertSMTPHost, Port: runtimeConfig.AlertSMTPPort, Username: runtimeConfig.AlertSMTPUsername, Password: runtimeConfig.AlertSMTPPassword, From: runtimeConfig.AlertSMTPFrom, To: runtimeConfig.AlertSMTPTo, ImplicitTLS: runtimeConfig.AlertSMTPImplicitTLS})
@@ -167,8 +170,8 @@ func main() {
 			}
 		}()
 		accountService = accounts.NewService(accounts.NewRepository(queries, vault))
-		normalizer, normalizerErr := mail.NewNormalizer(mail.DefaultMIMEPolicy())
-		if normalizerErr != nil {
+		normalizer, err = mail.NewNormalizer(mail.DefaultMIMEPolicy())
+		if err != nil {
 			logger.Error("mail content configuration failed", "event", "mail.content_unavailable")
 			os.Exit(1)
 		}
@@ -177,7 +180,7 @@ func main() {
 			logger.Error("Gmail provider configuration failed", "event", "mail.provider_unavailable")
 			os.Exit(1)
 		}
-		cdnStore, err := cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
+		cdnStore, err = cdn.NewStore(runtimeConfig.CDNRoot, runtimeConfig.CDNMaxBytes)
 		if err != nil {
 			logger.Error("CDN storage configuration failed", "event", "cdn.storage_unavailable", "error", err)
 			os.Exit(1)
@@ -204,13 +207,12 @@ func main() {
 		sentryContext, cancelSentry := context.WithCancel(shutdown)
 		sentryCancel = cancelSentry
 		go func() { defer close(sentryDone); _ = sentryService.Run(sentryContext) }()
-		cdnService, err := cdn.NewService(cdnStore, queries, cdn.DefaultRetention, gmailAttachmentProviderResolver{gmailResolver})
+		options.Attachments, err = cdn.NewService(cdnStore, queries, cdn.DefaultRetention)
 		if err != nil {
 			logger.Error("CDN service configuration failed", "event", "cdn.service_unavailable", "error", err)
 			os.Exit(1)
 		}
 		options.Readiness = pool.Ping
-		options.Attachments = cdnService
 		options.CurrentUsers = authbridge.NewRepository(queries)
 		options.Backups = backups.NewRepository(pool)
 		options.Inbox = mail.NewThreadRepository(pool)
@@ -254,8 +256,22 @@ func main() {
 	if redisClient != nil && accountService != nil {
 		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleClient, accountService)
 		options.MicrosoftOAuth = microsoftoauth.NewService(microsoftConfig, microsoftoauth.NewRedisStateStore(redisClient, "mailflow"), microsoftClient, accountService)
-		var resolverErr error
-		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), gmailOutgoingProviderResolver{gmailResolver}, options.Events, options.Attachments)
+		microsoftResolver, resolverErr := mailflowsync.NewMicrosoftAccountResolver(accountService, options.MicrosoftOAuth, nil, normalizer)
+		if resolverErr != nil {
+			logger.Error("Microsoft provider configuration failed", "event", "mail.provider_unavailable")
+			os.Exit(1)
+		}
+		workflows, resolverErr := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver)
+		if resolverErr != nil {
+			logger.Error("mail workflow routing failed", "event", "mail.provider_unavailable")
+			os.Exit(1)
+		}
+		options.Attachments, resolverErr = cdn.NewService(cdnStore, queries, cdn.DefaultRetention, workflowAttachmentProviderResolver{workflows})
+		if resolverErr != nil {
+			logger.Error("CDN service configuration failed", "event", "cdn.service_unavailable", "error", resolverErr)
+			os.Exit(1)
+		}
+		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), workflowOutgoingProviderResolver{workflows}, options.Events, options.Attachments)
 		if resolverErr != nil {
 			logger.Error("mail delivery configuration failed", "event", "mail.delivery_unavailable")
 			os.Exit(1)
@@ -369,18 +385,18 @@ func main() {
 	}
 }
 
-type gmailOutgoingProviderResolver struct {
-	resolver *mailflowsync.GmailAccountResolver
+type workflowOutgoingProviderResolver struct {
+	resolver *mailflowsync.WorkflowProviderResolver
 }
 
-func (resolver gmailOutgoingProviderResolver) ResolveOutgoingProvider(ctx context.Context, userID, accountID string) (mail.OutgoingProvider, error) {
-	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
+func (resolver workflowOutgoingProviderResolver) ResolveOutgoingProvider(ctx context.Context, userID, accountID string) (mail.OutgoingProvider, error) {
+	return resolver.resolver.Resolve(ctx, userID, accountID, "drafts", "send")
 }
 
-type gmailAttachmentProviderResolver struct {
-	resolver *mailflowsync.GmailAccountResolver
+type workflowAttachmentProviderResolver struct {
+	resolver *mailflowsync.WorkflowProviderResolver
 }
 
-func (resolver gmailAttachmentProviderResolver) ResolveAttachmentProvider(ctx context.Context, userID, accountID string) (cdn.AttachmentProvider, error) {
-	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
+func (resolver workflowAttachmentProviderResolver) ResolveAttachmentProvider(ctx context.Context, userID, accountID string) (cdn.AttachmentProvider, error) {
+	return resolver.resolver.Resolve(ctx, userID, accountID, "attachments")
 }

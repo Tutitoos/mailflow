@@ -53,9 +53,11 @@ function readableBytes(value: number) {
 function MessageAttachmentCard({
   attachment,
   locale,
+  enabled,
 }: {
   attachment: ConversationMessage["attachments"][number];
   locale: Locale;
+  enabled: boolean;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null);
@@ -111,7 +113,12 @@ function MessageAttachmentCard({
           <X size={15} />
         </Button>
       ) : (
-        <Button size="icon" aria-label={t("downloadAttachment")} onClick={() => void download()}>
+        <Button
+          size="icon"
+          aria-label={t("downloadAttachment")}
+          onClick={() => void download()}
+          disabled={!enabled}
+        >
           <Download size={16} />
         </Button>
       )}
@@ -127,6 +134,8 @@ function MessageCard({
   onReply,
   onForward,
   locale,
+  canCompose,
+  canAttachments,
 }: {
   message: ConversationMessage;
   expanded: boolean;
@@ -135,6 +144,8 @@ function MessageCard({
   onReply: () => void;
   onForward: () => void;
   locale: Locale;
+  canCompose: boolean;
+  canAttachments: boolean;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const from = sender(message);
@@ -190,18 +201,21 @@ function MessageCard({
                   key={attachment.id}
                   attachment={attachment}
                   locale={locale}
+                  enabled={canAttachments}
                 />
               ))}
             </ul>
           )}
-          <div className="reply-actions">
-            <Button variant="outline" onClick={onReply}>
-              <Reply size={16} /> {t("reply")}
-            </Button>
-            <Button variant="outline" onClick={onForward}>
-              <Forward size={16} /> {t("forward")}
-            </Button>
-          </div>
+          {canCompose && (
+            <div className="reply-actions">
+              <Button variant="outline" onClick={onReply}>
+                <Reply size={16} /> {t("reply")}
+              </Button>
+              <Button variant="outline" onClick={onForward}>
+                <Forward size={16} /> {t("forward")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </article>
@@ -215,6 +229,10 @@ export function ConversationView({
   onBack,
   onCompose,
   onAction,
+  canActions,
+  canCompose,
+  canAttachments,
+  canLabels,
 }: {
   accountId: string;
   threadId: string;
@@ -222,6 +240,10 @@ export function ConversationView({
   onBack: () => void;
   onCompose: (context: ComposeContext) => void;
   onAction: (kind: MailActionKind) => void;
+  canActions: boolean;
+  canCompose: boolean;
+  canAttachments: boolean;
+  canLabels: boolean;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [page, setPage] = useState<ConversationPage | null>(null);
@@ -275,21 +297,31 @@ export function ConversationView({
         <Button size="icon" aria-label={t("back")} onClick={onBack}>
           <ArrowLeft size={18} />
         </Button>
-        <Button size="icon" aria-label={t("archive")} onClick={() => onAction("archive")}>
-          <Archive size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("delete")} onClick={() => onAction("move_to_trash")}>
-          <Trash2 size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("markUnread")} onClick={() => onAction("mark_unread")}>
-          <Mail size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("labels")}>
-          <Tag size={17} />
-        </Button>
-        <Button size="icon" aria-label={t("more")}>
-          <MoreHorizontal size={18} />
-        </Button>
+        {canActions && (
+          <>
+            <Button size="icon" aria-label={t("archive")} onClick={() => onAction("archive")}>
+              <Archive size={17} />
+            </Button>
+            <Button size="icon" aria-label={t("delete")} onClick={() => onAction("move_to_trash")}>
+              <Trash2 size={17} />
+            </Button>
+            <Button
+              size="icon"
+              aria-label={t("markUnread")}
+              onClick={() => onAction("mark_unread")}
+            >
+              <Mail size={17} />
+            </Button>
+            {canLabels && (
+              <Button size="icon" aria-label={t("labels")}>
+                <Tag size={17} />
+              </Button>
+            )}
+            <Button size="icon" aria-label={t("more")}>
+              <MoreHorizontal size={18} />
+            </Button>
+          </>
+        )}
       </div>
       <div className="conversation-heading" data-sentry-block>
         <h1 id="conversation-title">{subject || t("noSubject")}</h1>
@@ -357,6 +389,8 @@ export function ConversationView({
               });
             }}
             locale={locale}
+            canCompose={canCompose}
+            canAttachments={canAttachments}
           />
         ))}
         {page && page.messages.length === 0 && (

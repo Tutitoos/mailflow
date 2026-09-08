@@ -4,7 +4,29 @@ export type MailAccount = {
   displayName: string;
   syncState: "pending" | "syncing" | "idle" | "error" | "disabled";
   disabledAt: string | null;
+  capabilities: Record<string, boolean>;
 };
+
+const legacyMailCapabilities = new Set([
+  "actions",
+  "attachments",
+  "categories",
+  "drafts",
+  "folders",
+  "labels",
+  "search",
+  "send",
+  "threads",
+]);
+
+export function accountSupports(
+  account: Pick<MailAccount, "provider"> & { capabilities?: Record<string, boolean> },
+  capability: string,
+) {
+  const declared = account.capabilities?.[capability];
+  if (typeof declared === "boolean") return declared;
+  return account.provider !== "imap" && legacyMailCapabilities.has(capability);
+}
 
 export type MailCategory = "primary" | "promotions" | "social" | "notifications" | "forums";
 

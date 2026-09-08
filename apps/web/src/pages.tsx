@@ -38,6 +38,7 @@ import { ConversationView } from "./conversation";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
   APIError,
+  accountSupports,
   createMailActions,
   disconnectAccount,
   type InboxThread,
@@ -237,6 +238,7 @@ function Sidebar({
   mailboxes,
   labels,
   t,
+  canCompose,
 }: {
   collapsed: boolean;
   onCompose: () => void;
@@ -246,6 +248,7 @@ function Sidebar({
   mailboxes: Mailbox[];
   labels: MailLabel[];
   t: Translator;
+  canCompose: boolean;
 }) {
   const mailboxByRole = new Map(mailboxes.map((mailbox) => [mailbox.role, mailbox]));
   return (
@@ -255,6 +258,7 @@ function Sidebar({
         variant="primary"
         aria-label={t("compose")}
         onClick={onCompose}
+        disabled={!canCompose}
       >
         <Pencil size={18} />
         <span>{t("compose")}</span>
@@ -335,6 +339,8 @@ function MailToolbar({
   onUnread,
   onLabel,
   t,
+  actionsEnabled,
+  labelsEnabled,
 }: {
   allSelected: boolean;
   onSelectAll: () => void;
@@ -350,6 +356,8 @@ function MailToolbar({
   onUnread: () => void;
   onLabel: () => void;
   t: Translator;
+  actionsEnabled: boolean;
+  labelsEnabled: boolean;
 }) {
   return (
     <div className="mail-toolbar">
@@ -366,7 +374,7 @@ function MailToolbar({
         <Button size="icon" aria-label={t("refresh")} onClick={onRefresh}>
           <RefreshCw size={17} />
         </Button>
-        {selectedCount > 0 && (
+        {selectedCount > 0 && actionsEnabled && (
           <>
             <Button size="icon" aria-label={t("archive")} onClick={onArchive}>
               <Archive size={17} />
@@ -377,9 +385,11 @@ function MailToolbar({
             <Button size="icon" aria-label={t("markUnread")} onClick={onUnread}>
               <Mail size={17} />
             </Button>
-            <Button size="icon" aria-label={t("applyLabel")} onClick={onLabel}>
-              <Tag size={17} />
-            </Button>
+            {labelsEnabled && (
+              <Button size="icon" aria-label={t("applyLabel")} onClick={onLabel}>
+                <Tag size={17} />
+              </Button>
+            )}
           </>
         )}
         <Button size="icon" aria-label="More actions">
@@ -451,6 +461,7 @@ function MessageRow({
   onUnread,
   onImportant,
   openLabel,
+  actionsEnabled,
 }: {
   message: InboxThread;
   selected: boolean;
@@ -463,6 +474,7 @@ function MessageRow({
   onUnread: () => void;
   onImportant: () => void;
   openLabel: string;
+  actionsEnabled: boolean;
 }) {
   return (
     <article
@@ -481,6 +493,7 @@ function MessageRow({
         type="button"
         onClick={onStar}
         aria-label={`Star ${message.subject || message.senderName}`}
+        disabled={!actionsEnabled}
       >
         <Star size={16} fill={starred ? "currentColor" : "none"} />
       </button>
@@ -489,6 +502,7 @@ function MessageRow({
         type="button"
         aria-label={`Mark ${message.subject || message.senderName} important`}
         onClick={onImportant}
+        disabled={!actionsEnabled}
       >
         <ChevronsUpDown size={16} />
       </button>
@@ -513,17 +527,19 @@ function MessageRow({
           )}
         </time>
       </button>
-      <div className="quick-actions">
-        <Button size="icon" aria-label="Archive" onClick={onArchive}>
-          <Archive size={16} />
-        </Button>
-        <Button size="icon" aria-label="Delete" onClick={onTrash}>
-          <Trash2 size={16} />
-        </Button>
-        <Button size="icon" aria-label="Mark unread" onClick={onUnread}>
-          <Mail size={16} />
-        </Button>
-      </div>
+      {actionsEnabled && (
+        <div className="quick-actions">
+          <Button size="icon" aria-label="Archive" onClick={onArchive}>
+            <Archive size={16} />
+          </Button>
+          <Button size="icon" aria-label="Delete" onClick={onTrash}>
+            <Trash2 size={16} />
+          </Button>
+          <Button size="icon" aria-label="Mark unread" onClick={onUnread}>
+            <Mail size={16} />
+          </Button>
+        </div>
+      )}
     </article>
   );
 }
@@ -557,6 +573,7 @@ function VirtualMessageList({
   onOpen,
   onAction,
   t,
+  actionsEnabled,
 }: {
   messages: InboxThread[];
   selected: Set<string>;
@@ -566,6 +583,7 @@ function VirtualMessageList({
   onOpen: (id: string) => void;
   onAction: (kind: MailActionKind, ids: string[]) => void;
   t: Translator;
+  actionsEnabled: boolean;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -605,6 +623,7 @@ function VirtualMessageList({
                   ])
                 }
                 openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
+                actionsEnabled={actionsEnabled}
               />
             </div>
           );
@@ -657,6 +676,14 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [composeMaximized, setComposeMaximized] = useState(false);
   const [composeContext, setComposeContext] = useState<ComposeContext>({ mode: "new" });
   const t: Translator = (key) => translate(locale, key);
+  const activeAccount = accounts.find((account) => account.id === activeAccountId);
+  const canActions = activeAccount ? accountSupports(activeAccount, "actions") : false;
+  const canCompose = activeAccount
+    ? accountSupports(activeAccount, "drafts") && accountSupports(activeAccount, "send")
+    : false;
+  const canAttachments = activeAccount ? accountSupports(activeAccount, "attachments") : false;
+  const canCategories = activeAccount ? accountSupports(activeAccount, "categories") : false;
+  const canLabels = activeAccount ? accountSupports(activeAccount, "labels") : false;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -864,7 +891,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                       : "";
 
   const runAction = async (kind: MailActionKind, targetIds: string[], labelId?: string) => {
-    if (!activeAccountId || targetIds.length === 0) return;
+    if (!activeAccountId || !canActions || targetIds.length === 0) return;
     if (!online) {
       setActionNotice("failed");
       return;
@@ -935,7 +962,8 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       if (
         event.target instanceof HTMLInputElement ||
         event.target instanceof HTMLTextAreaElement ||
-        selected.size === 0
+        selected.size === 0 ||
+        !canActions
       )
         return;
       if (event.key.toLowerCase() === "e") {
@@ -992,6 +1020,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
           mailboxes={mailboxes}
           labels={labels}
           t={t}
+          canCompose={canCompose}
         />
         <main className="mail-surface">
           {activeThreadId && activeAccountId ? (
@@ -1009,6 +1038,10 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                 void runAction(kind, [activeThreadId]);
                 if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
               }}
+              canActions={canActions}
+              canCompose={canCompose}
+              canAttachments={canAttachments}
+              canLabels={canLabels}
             />
           ) : (
             <>
@@ -1062,8 +1095,10 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   if (label) void runAction("add_label", [...selected], label.id);
                 }}
                 t={t}
+                actionsEnabled={canActions}
+                labelsEnabled={canLabels}
               />
-              {!searching && (
+              {!searching && canCategories && (
                 <CategoryTabs
                   active={category}
                   onChange={(nextCategory) => {
@@ -1151,6 +1186,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   onAction={(kind, ids) => void runAction(kind, ids)}
                   t={t}
                   onStar={(id) => void runAction(starred.has(id) ? "unstar" : "star", [id])}
+                  actionsEnabled={canActions}
                 />
               ) : (
                 <div className="empty-state" role="status">
@@ -1163,7 +1199,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         </main>
         <ContextRail t={t} />
       </div>
-      {composeOpen && activeAccountId && (
+      {composeOpen && activeAccountId && canCompose && (
         <ComposePanel
           accountId={activeAccountId}
           context={composeContext}

@@ -164,6 +164,11 @@ func main() {
 			logger.Error("Microsoft resolver configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
+		workflows, err := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver)
+		if err != nil {
+			logger.Error("mail workflow routing failed", "event", "mail.actions_unavailable", "error", err)
+			os.Exit(1)
+		}
 		microsoftExecutor, err := mailflowsync.NewMicrosoftExecutor(microsoftResolver, pageWriter)
 		if err != nil {
 			logger.Error("Microsoft executor configuration failed", "event", "sync.unavailable", "error", err)
@@ -261,7 +266,7 @@ func main() {
 		}
 		orchestrator.SetActivityTracker(mailflowsync.NewRedisActivityTracker(client, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
 		actionService := mail.NewPendingActionService(mail.NewPendingActionRepository(pool), eventStore)
-		actionProcessor, err := mail.NewActionProcessor(actionService, gmailActionProviderResolver{gmailResolver}, mail.NewThreadRepository(pool), mail.NewThreadRepository(pool))
+		actionProcessor, err := mail.NewActionProcessor(actionService, workflowActionProviderResolver{workflows}, mail.NewThreadRepository(pool), mail.NewThreadRepository(pool))
 		if err != nil {
 			logger.Error("mail action processor configuration failed", "event", "mail.actions_unavailable", "error", err)
 			os.Exit(1)
@@ -275,15 +280,19 @@ func main() {
 				var userID string
 				if queryErr := pool.QueryRow(ctx, `select id::text from users order by created_at limit 1`).Scan(&userID); queryErr == nil {
 					for {
-						processed, processErr := actionProcessor.ProcessNext(ctx, userID)
+						result, processErr := actionProcessor.ProcessNext(ctx, userID)
+						provider := string(result.Provider)
+						if provider == "" {
+							provider = "unknown"
+						}
 						if processErr != nil && !errors.Is(processErr, context.Canceled) {
-							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": "google", "operation": "apply", "result": "failure"})
+							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": provider, "operation": "apply", "result": "failure"})
 							logger.Error("mail action processing failed", "event", "mail.action_failed")
 						}
-						if processed && processErr == nil {
-							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": "google", "operation": "apply", "result": "success"})
+						if result.Processed && processErr == nil {
+							_ = registry.Add("mailflow_mail_actions_total", 1, map[string]string{"service": "worker", "module": "mail", "provider": provider, "operation": "apply", "result": result.Result})
 						}
-						if !processed || processErr != nil {
+						if !result.Processed || processErr != nil {
 							break
 						}
 					}
@@ -395,12 +404,12 @@ func diskFreePercent(path string) int {
 	return int((uint64(stats.Bavail) * 100) / uint64(stats.Blocks))
 }
 
-type gmailActionProviderResolver struct {
-	resolver *mailflowsync.GmailAccountResolver
+type workflowActionProviderResolver struct {
+	resolver *mailflowsync.WorkflowProviderResolver
 }
 
-func (resolver gmailActionProviderResolver) ResolveActionProvider(ctx context.Context, userID, accountID string) (mail.ActionProvider, error) {
-	return resolver.resolver.ResolveGmail(ctx, userID, accountID)
+func (resolver workflowActionProviderResolver) ResolveActionProvider(ctx context.Context, userID, accountID string) (mail.ActionProvider, error) {
+	return resolver.resolver.Resolve(ctx, userID, accountID, "actions")
 }
 
 func consumerName() (string, error) {

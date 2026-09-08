@@ -312,10 +312,15 @@ func hasRequiredScopes(scope string) bool {
 func capabilities(token Token) map[string]bool {
 	granted := grantedScopes(token.Scope)
 	return map[string]bool{
+		"actions":              granted["mail.readwrite"],
+		"attachments":          granted["mail.readwrite"],
+		"categories":           granted["mail.readwrite"],
 		"drafts":               granted["mail.readwrite"],
 		"folders":              granted["mail.readwrite"],
+		"labels":               granted["mail.readwrite"],
 		"search":               granted["mail.readwrite"],
 		"send":                 granted["mail.send"],
+		"threads":              granted["mail.readwrite"],
 		"account.consumer":     token.AccountKind == AccountConsumer,
 		"account.organization": token.AccountKind == AccountOrganization,
 	}

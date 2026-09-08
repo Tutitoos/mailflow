@@ -65,7 +65,7 @@ func NewWithBaseURL(accessToken, baseURL string, client *http.Client, normalizer
 func (*Provider) Kind() mail.ProviderKind { return mail.ProviderGoogle }
 
 func (*Provider) Capabilities(context.Context) (map[string]bool, error) {
-	return map[string]bool{"attachments": true, "drafts": true, "labels": true, "search": true, "send": true, "threads": true}, nil
+	return map[string]bool{"actions": true, "attachments": true, "categories": true, "drafts": true, "folders": true, "labels": true, "search": true, "send": true, "threads": true}, nil
 }
 
 func (provider *Provider) Profile(ctx context.Context) (mail.ProviderProfile, error) {
@@ -298,17 +298,35 @@ func (provider *Provider) Send(ctx context.Context, message mail.OutgoingMessage
 	if message.ThreadID != "" {
 		payload["threadId"] = message.ThreadID
 	}
-	body, _ := json.Marshal(payload)
+	bodyPayload := any(payload)
+	path := "/messages/send"
+	if message.DraftID != "" {
+		bodyPayload = map[string]any{"id": message.DraftID, "message": payload}
+		path = "/drafts/send"
+	}
+	body, _ := json.Marshal(bodyPayload)
 	var response struct {
 		ID string `json:"id"`
 	}
-	if err := provider.json(ctx, http.MethodPost, "/messages/send", nil, body, &response); err != nil {
+	if err := provider.json(ctx, http.MethodPost, path, nil, body, &response); err != nil {
 		return "", err
 	}
 	if response.ID == "" {
 		return "", &ProviderError{Kind: ErrorPermanent}
 	}
 	return response.ID, nil
+}
+
+func (provider *Provider) DeleteDraft(ctx context.Context, draftID string) error {
+	if strings.TrimSpace(draftID) == "" || len(draftID) > 512 {
+		return &ProviderError{Kind: ErrorPermanent}
+	}
+	err := provider.json(ctx, http.MethodDelete, "/drafts/"+url.PathEscape(draftID), nil, nil, nil)
+	var providerError *ProviderError
+	if errors.As(err, &providerError) && providerError.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return err
 }
 
 func (provider *Provider) DownloadAttachment(ctx context.Context, messageID, attachmentID string) (io.ReadCloser, error) {

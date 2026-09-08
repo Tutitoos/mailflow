@@ -162,8 +162,22 @@ func graphFixture(t *testing.T) (*Provider, *httptest.Server, *graphFixtureState
 			state.mu.Unlock()
 			response.WriteHeader(http.StatusCreated)
 			writeFixtureJSON(response, map[string]string{"id": id})
+		case (strings.HasSuffix(path, "/createReply") || strings.HasSuffix(path, "/createForward")) && request.Method == http.MethodPost:
+			decoded, err := base64.StdEncoding.DecodeString(string(body))
+			if err != nil || !strings.Contains(string(decoded), "Sanitized Graph fixture") {
+				http.Error(response, "invalid MIME", http.StatusBadRequest)
+				return
+			}
+			state.mu.Lock()
+			state.drafts++
+			id := "draft-" + strconv.Itoa(state.drafts)
+			state.mu.Unlock()
+			response.WriteHeader(http.StatusCreated)
+			writeFixtureJSON(response, map[string]string{"id": id})
 		case strings.HasSuffix(path, "/send") && request.Method == http.MethodPost:
 			response.WriteHeader(http.StatusAccepted)
+		case path == "/messages/missing-draft" && request.Method == http.MethodDelete:
+			http.NotFound(response, request)
 		case request.Method == http.MethodDelete:
 			response.WriteHeader(http.StatusNoContent)
 		case request.Method == http.MethodGet && strings.HasPrefix(path, "/messages/"):
@@ -334,9 +348,23 @@ func TestProviderCreatesReplacesSendsAndDownloads(t *testing.T) {
 	if err != nil || draftID != "draft-1" {
 		t.Fatalf("draft = %q, %v", draftID, err)
 	}
-	sentID, err := provider.Send(context.Background(), mail.OutgoingMessage{Raw: strings.NewReader(payload)})
-	if err != nil || sentID != "draft-2" {
+	replyID, err := provider.SaveDraft(context.Background(), mail.OutgoingMessage{Mode: mail.ComposeReply, SourceMessageID: "source-message", Raw: strings.NewReader(payload)})
+	if err != nil || replyID != "draft-2" {
+		t.Fatalf("reply draft = %q, %v", replyID, err)
+	}
+	forwardID, err := provider.SaveDraft(context.Background(), mail.OutgoingMessage{Mode: mail.ComposeForward, SourceMessageID: "source-message", Raw: strings.NewReader(payload)})
+	if err != nil || forwardID != "draft-3" {
+		t.Fatalf("forward draft = %q, %v", forwardID, err)
+	}
+	sentID, err := provider.Send(context.Background(), mail.OutgoingMessage{DraftID: replyID, Mode: mail.ComposeReply, SourceMessageID: "source-message", Raw: strings.NewReader(payload)})
+	if err != nil || sentID != "draft-4" {
 		t.Fatalf("send = %q, %v", sentID, err)
+	}
+	if err := provider.DeleteDraft(context.Background(), "draft-3"); err != nil {
+		t.Fatalf("delete draft = %v", err)
+	}
+	if err := provider.DeleteDraft(context.Background(), "missing-draft"); err != nil {
+		t.Fatalf("idempotent missing draft delete = %v", err)
 	}
 	attachment, err := provider.DownloadAttachment(context.Background(), "consumer-message-1", "attachment-1")
 	if err != nil {
@@ -348,7 +376,7 @@ func TestProviderCreatesReplacesSendsAndDownloads(t *testing.T) {
 		t.Fatalf("attachment = %q, %v, %v", content, readErr, closeErr)
 	}
 	requests := state.snapshot()
-	if findRequest(requests, http.MethodPost, "/messages").ContentType != "text/plain" || findRequest(requests, http.MethodDelete, "/messages/old-draft").Method == "" || findRequest(requests, http.MethodPost, "/messages/draft-2/send").Method == "" {
+	if findRequest(requests, http.MethodPost, "/messages").ContentType != "text/plain" || findRequest(requests, http.MethodPost, "/messages/source-message/createReply").Method == "" || findRequest(requests, http.MethodPost, "/messages/source-message/createForward").Method == "" || findRequest(requests, http.MethodDelete, "/messages/old-draft").Method == "" || findRequest(requests, http.MethodDelete, "/messages/draft-3").Method == "" || findRequest(requests, http.MethodPost, "/messages/draft-4/send").Method == "" {
 		t.Fatalf("draft/send requests = %+v", requests)
 	}
 }

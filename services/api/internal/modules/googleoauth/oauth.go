@@ -150,7 +150,7 @@ func (service *Service) CallbackWithOwner(ctx context.Context, state, code strin
 	account, err := service.accounts.Connect(ctx, accounts.CreateInput{
 		UserID: transaction.UserID, Provider: accounts.ProviderGoogle, RemoteID: identity.Subject,
 		DisplayName: identity.Email, Credentials: encoded,
-		Capabilities: map[string]bool{"drafts": true, "labels": true, "search": true, "send": true},
+		Capabilities: googleCapabilities(),
 	})
 	return account, transaction.UserID, err
 }
@@ -189,7 +189,11 @@ func (service *Service) Refresh(ctx context.Context, userID, accountID string) (
 		return accounts.Account{}, ErrProvider
 	}
 	encoded, _ = json.Marshal(refreshed)
-	return service.accounts.ReplaceCredentials(ctx, userID, accountID, identity.Email, map[string]bool{"drafts": true, "labels": true, "search": true, "send": true}, encoded)
+	return service.accounts.ReplaceCredentials(ctx, userID, accountID, identity.Email, googleCapabilities(), encoded)
+}
+
+func googleCapabilities() map[string]bool {
+	return map[string]bool{"actions": true, "attachments": true, "categories": true, "drafts": true, "folders": true, "labels": true, "search": true, "send": true, "threads": true}
 }
 
 func (service *Service) Disconnect(ctx context.Context, userID, accountID string) (DisconnectResult, error) {

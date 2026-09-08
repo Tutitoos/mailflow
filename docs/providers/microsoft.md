@@ -30,7 +30,20 @@ Backfill pages select only the metadata required for local state and fetch each 
 
 Read, flag, importance, category, move-to-Trash, restore-to-Inbox, and archive mutations use idempotent `PATCH` or immutable-ID move operations. A conversation action resolves all message IDs through paginated Graph results before applying the mutation. Category updates read the current category set and merge it case-insensitively, so adding or removing one category never replaces unrelated Outlook categories.
 
-Draft and send contracts use Graph's documented base64 MIME input. Mailflow creates a draft first and then sends that immutable draft ID, which becomes the identifier of the Sent Items copy. Replacing a MIME draft creates the new authoritative draft before attempting to delete the previous one; reconciliation may remove an old orphan if that cleanup fails. Connecting these adapters to shared actions, drafts, attachments, and delivery remains a later Phase 5 unit.
+Draft and send contracts use Graph's documented base64 MIME input. Mailflow creates a draft first and then sends that immutable draft ID, which becomes the identifier of the Sent Items copy. Replies and forwards create provider-native drafts from the source message before Mailflow replaces their MIME content. Replacing a MIME draft creates the new authoritative draft before attempting to delete the previous one; reconciliation may remove an old orphan if that cleanup fails. Shared action, draft, attachment, and delivery services select the provider from the owner-scoped account and reject capabilities explicitly disabled for that account.
+
+## Compatibility matrix
+
+| Workflow | Outlook.com | Microsoft 365 | Mailflow behavior |
+| --- | --- | --- | --- |
+| Read, unread, flag, importance | Supported | Supported | Idempotent message or conversation action |
+| Move, archive, Trash, restore | Supported | Supported | Immutable IDs; restore targets Inbox |
+| Outlook categories | Supported | Supported | Case-insensitive merge without replacing unrelated categories |
+| New draft and send | Supported | Supported | Base64 MIME draft followed by send of the draft ID |
+| Reply and forward draft | Supported | Supported | Graph `createReply` or `createForward`, then shared composer workflow |
+| Attachment download | Supported | Supported | On-demand authenticated recovery into the local CDN cache |
+
+The repository fixtures exercise both consumer and Microsoft 365 shapes. Tenant consent policy and protected real-account behavior remain manual checks because CI must not contain installation credentials.
 
 Provider failures are reduced to `authorization`, `quota`, `transient`, or `permanent`. Machine-readable Graph error codes are accepted only when bounded to a safe character set, `Retry-After` is retained for scheduling, and provider messages or response bodies are never exposed. The repository contract suite uses sanitized Outlook.com and Microsoft 365 fixtures; real-account validation must run manually with protected installation credentials.
 

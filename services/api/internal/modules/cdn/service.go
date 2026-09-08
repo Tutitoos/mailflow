@@ -199,7 +199,7 @@ func (service *Service) OpenMessageAttachment(ctx context.Context, user, attachm
 			return cached, file, openErr
 		}
 	}
-	if service.resolver == nil || row.Provider != "google" || !row.RemoteID.Valid || row.MessageRemoteID == "" || row.SizeBytes > service.store.maxBytes {
+	if service.resolver == nil || !recoverableProvider(row.Provider) || !row.RemoteID.Valid || row.MessageRemoteID == "" || row.SizeBytes > service.store.maxBytes {
 		return Attachment{}, nil, ErrAttachmentUnavailable
 	}
 	accountID := uuid.UUID(row.AccountID.Bytes).String()
@@ -231,6 +231,10 @@ func (service *Service) OpenMessageAttachment(ctx context.Context, user, attachm
 		return Attachment{}, nil, ErrAttachmentNotFound
 	}
 	return service.OpenAttachment(ctx, user, stored.ObjectID, now)
+}
+
+func recoverableProvider(provider string) bool {
+	return provider == "google" || provider == "microsoft"
 }
 
 type contextReader struct {

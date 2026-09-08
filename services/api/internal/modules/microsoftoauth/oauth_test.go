@@ -103,7 +103,7 @@ func TestOAuthConnectsBothAccountKindsWithSingleUseState(t *testing.T) {
 	parsed, _ := url.Parse(started.AuthorizationURL)
 	state := parsed.Query().Get("state")
 	account, ownerID, err := service.CallbackWithOwner(context.Background(), state, "code", "")
-	if err != nil || ownerID == "" || account.RemoteID != ConsumerTenant+":graph-user" || accountStore.connected.Provider != accounts.ProviderMicrosoft || !accountStore.connected.Capabilities["account.consumer"] {
+	if err != nil || ownerID == "" || account.RemoteID != ConsumerTenant+":graph-user" || accountStore.connected.Provider != accounts.ProviderMicrosoft || !accountStore.connected.Capabilities["account.consumer"] || !accountStore.connected.Capabilities["actions"] || !accountStore.connected.Capabilities["attachments"] {
 		t.Fatalf("callback = %+v, input=%+v, err=%v", account, accountStore.connected, err)
 	}
 	if _, _, err := service.CallbackWithOwner(context.Background(), state, "code", ""); !errors.Is(err, ErrInvalidState) {

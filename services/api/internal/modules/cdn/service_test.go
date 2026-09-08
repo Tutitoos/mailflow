@@ -123,7 +123,7 @@ func TestAttachmentInputRejectsHeaderInjectionAndUnknownAccount(t *testing.T) {
 	}
 }
 
-func TestGmailAttachmentRecoveryCachesRenewsCancelsAndKeepsDomainIdentity(t *testing.T) {
+func TestMicrosoftAttachmentRecoveryCachesRenewsCancelsAndKeepsDomainIdentity(t *testing.T) {
 	_, databaseURL, userID, accountID := serviceFixture(t)
 	ctx := context.Background()
 	pool, err := database.Open(ctx, databaseURL)
@@ -131,14 +131,17 @@ func TestGmailAttachmentRecoveryCachesRenewsCancelsAndKeepsDomainIdentity(t *tes
 		t.Fatal(err)
 	}
 	defer pool.Close()
+	if _, err := pool.Exec(ctx, `update accounts set provider = 'microsoft' where id = $1`, accountID); err != nil {
+		t.Fatal(err)
+	}
 	threadID, messageID, attachmentID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	if _, err := pool.Exec(ctx, `insert into threads (id,account_id,remote_id,last_message_at) values ($1,$2,'thread',now())`, threadID, accountID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `insert into messages (id,thread_id,account_id,remote_id,sender,recipients,sent_at) values ($1,$2,$3,'gmail-message','{}','[]',now())`, messageID, threadID, accountID); err != nil {
+	if _, err := pool.Exec(ctx, `insert into messages (id,thread_id,account_id,remote_id,sender,recipients,sent_at) values ($1,$2,$3,'graph-message','{}','[]',now())`, messageID, threadID, accountID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `insert into message_attachments (id,message_id,account_id,position,remote_id,filename,media_type,disposition,size_bytes) values ($1,$2,$3,0,'gmail-part','fixture.txt','text/plain','attachment',8)`, attachmentID, messageID, accountID); err != nil {
+	if _, err := pool.Exec(ctx, `insert into message_attachments (id,message_id,account_id,position,remote_id,filename,media_type,disposition,size_bytes) values ($1,$2,$3,0,'graph-attachment','fixture.txt','text/plain','attachment',8)`, attachmentID, messageID, accountID); err != nil {
 		t.Fatal(err)
 	}
 	provider := &recoveryProvider{}

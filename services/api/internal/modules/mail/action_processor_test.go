@@ -47,6 +47,8 @@ type processorProvider struct {
 	action RemoteAction
 }
 
+func (*processorProvider) Kind() ProviderKind { return ProviderMicrosoft }
+
 func (provider *processorProvider) Apply(_ context.Context, action RemoteAction) error {
 	provider.action = action
 	return provider.err
@@ -80,15 +82,15 @@ func TestActionProcessorCompletesAndRestoresTerminalFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	processed, err := processor.ProcessNext(context.Background(), "owner")
-	if err != nil || !processed || !store.complete || provider.action.TargetIDs[0] != "remote-target" {
-		t.Fatalf("completed action: processed=%v complete=%v remote=%+v error=%v", processed, store.complete, provider.action, err)
+	result, err := processor.ProcessNext(context.Background(), "owner")
+	if err != nil || !result.Processed || result.Provider != ProviderMicrosoft || result.Result != "success" || !store.complete || provider.action.TargetIDs[0] != "remote-target" {
+		t.Fatalf("completed action: result=%+v complete=%v remote=%+v error=%v", result, store.complete, provider.action, err)
 	}
 
 	provider.err = errors.New("provider failure")
 	store.claim = ActionClaim{PendingAction: base}
-	processed, err = processor.ProcessNext(context.Background(), "owner")
-	if err != nil || !processed || !store.restored || !restored {
-		t.Fatalf("terminal action: processed=%v storeRestore=%v stateRestore=%v error=%v", processed, store.restored, restored, err)
+	result, err = processor.ProcessNext(context.Background(), "owner")
+	if err != nil || !result.Processed || result.Result != "conflict" || !store.restored || !restored {
+		t.Fatalf("terminal action: result=%+v storeRestore=%v stateRestore=%v error=%v", result, store.restored, restored, err)
 	}
 }

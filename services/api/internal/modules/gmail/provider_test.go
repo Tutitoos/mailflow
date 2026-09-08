@@ -52,8 +52,14 @@ func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
 			_, _ = response.Write([]byte(`{}`))
 		case path == "/drafts":
 			writeJSON(response, map[string]string{"id": "draft-1"})
+		case path == "/drafts/missing-draft" && request.Method == http.MethodDelete:
+			http.NotFound(response, request)
+		case strings.HasPrefix(path, "/drafts/") && request.Method == http.MethodDelete:
+			response.WriteHeader(http.StatusNoContent)
 		case path == "/messages/send":
 			writeJSON(response, map[string]string{"id": "sent-1"})
+		case path == "/drafts/send":
+			writeJSON(response, map[string]string{"id": "sent-draft-1"})
 		case path == "/messages/message-1/attachments/attachment-1":
 			writeJSON(response, map[string]string{"data": base64.RawURLEncoding.EncodeToString([]byte("attachment fixture"))})
 		default:
@@ -115,6 +121,16 @@ func TestProviderBackfillActionsDraftSendAndAttachment(t *testing.T) {
 	if err != nil || sentID != "sent-1" {
 		t.Fatalf("send = %q, %v", sentID, err)
 	}
+	sentDraftID, err := provider.Send(ctx, mail.OutgoingMessage{DraftID: draftID, Raw: strings.NewReader(sanitizedMessage)})
+	if err != nil || sentDraftID != "sent-draft-1" {
+		t.Fatalf("send draft = %q, %v", sentDraftID, err)
+	}
+	if err := provider.DeleteDraft(ctx, "draft-1"); err != nil {
+		t.Fatalf("delete draft = %v", err)
+	}
+	if err := provider.DeleteDraft(ctx, "missing-draft"); err != nil {
+		t.Fatalf("idempotent missing draft delete = %v", err)
+	}
 	attachment, err := provider.DownloadAttachment(ctx, "message-1", "attachment-1")
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +141,7 @@ func TestProviderBackfillActionsDraftSendAndAttachment(t *testing.T) {
 		t.Fatalf("attachment = %q", payload)
 	}
 	joined := strings.Join(*requests, "\n")
-	if !strings.Contains(joined, "before%3A1788825600") || !strings.Contains(joined, "/threads/thread-1/modify") {
+	if !strings.Contains(joined, "before%3A1788825600") || !strings.Contains(joined, "/threads/thread-1/modify") || !strings.Contains(joined, "DELETE /gmail/v1/users/me/drafts/draft-1") {
 		t.Fatalf("unexpected requests:\n%s", joined)
 	}
 }

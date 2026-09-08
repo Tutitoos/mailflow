@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  accountSupports,
   checkpointDraft,
   createDraft,
   createGoogleAuthorization,
@@ -22,6 +23,14 @@ const json = (value: unknown, status = 200) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Mailflow API client", () => {
+  it("honors declared capabilities and preserves legacy provider accounts", () => {
+    expect(accountSupports({ provider: "microsoft", capabilities: { send: false } }, "send")).toBe(
+      false,
+    );
+    expect(accountSupports({ provider: "microsoft" }, "attachments")).toBe(true);
+    expect(accountSupports({ provider: "imap" }, "attachments")).toBe(false);
+  });
+
   it("uses a short Better Auth JWT and exposes only public account fields", async () => {
     const fetch = vi
       .fn()

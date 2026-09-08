@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -253,15 +252,20 @@ func applyStatus(lines []string, folder *DiscoveredFolder) error {
 		}
 		values := map[string]int64{}
 		for index := 0; index < len(fields); index += 2 {
-			value, err := strconv.ParseInt(fields[index+1], 10, 64)
+			key := strings.ToUpper(fields[index])
+			bitSize := 64
+			if key == "MESSAGES" || key == "UNSEEN" {
+				bitSize = 32
+			}
+			value, err := strconv.ParseInt(fields[index+1], 10, bitSize)
 			if err != nil || value < 0 {
 				return ErrFolderDiscovery
 			}
-			values[strings.ToUpper(fields[index])] = value
+			values[key] = value
 		}
 		uidNext, uidNextOK := values["UIDNEXT"]
 		uidValidity, uidValidityOK := values["UIDVALIDITY"]
-		if !uidNextOK || !uidValidityOK || uidNext < 1 || uidValidity < 1 || values["MESSAGES"] > math.MaxInt32 || values["UNSEEN"] > math.MaxInt32 {
+		if !uidNextOK || !uidValidityOK || uidNext < 1 || uidValidity < 1 {
 			return ErrFolderDiscovery
 		}
 		folder.UIDNext, folder.UIDValidity = &uidNext, &uidValidity

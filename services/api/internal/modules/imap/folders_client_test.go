@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -59,6 +60,13 @@ func TestFolderParsingRejectsAmbiguousRolesAndKeepsIdentityAcrossDelimiters(t *t
 	second := []DiscoveredFolder{{WireName: "Projects.Invoices", Name: "Projects.Invoices", Delimiter: ".", Selectable: true, UIDNext: int64Pointer(2), UIDValidity: int64Pointer(42)}}
 	if normalizeDiscoveredFolders(first) != nil || normalizeDiscoveredFolders(second) != nil || first[0].IdentityKey != second[0].IdentityKey {
 		t.Fatalf("delimiter-stable identities = %q and %q", first[0].IdentityKey, second[0].IdentityKey)
+	}
+}
+
+func TestFolderStatusRejectsCountersOutsideInt32Range(t *testing.T) {
+	folder := DiscoveredFolder{}
+	if err := applyStatus([]string{`* STATUS "INBOX" (MESSAGES 2147483648 UNSEEN 0 UIDNEXT 2 UIDVALIDITY 1)`}, &folder); !errors.Is(err, ErrFolderDiscovery) {
+		t.Fatalf("oversized folder count error = %v", err)
 	}
 }
 

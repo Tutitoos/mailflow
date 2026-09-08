@@ -2,8 +2,7 @@ package imap
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -179,8 +178,7 @@ func folderIdentity(folder DiscoveredFolder) string {
 	if folder.Delimiter != "" {
 		relative = strings.ReplaceAll(relative, folder.Delimiter, "/")
 	}
-	digest := sha256.Sum256([]byte(relative))
-	return "imap:path:" + hex.EncodeToString(digest[:])
+	return "imap:path:v1_" + base64.RawURLEncoding.EncodeToString([]byte(relative))
 }
 
 func boundedAttributes(attributes []string) []string {

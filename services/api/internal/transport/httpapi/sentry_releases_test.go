@@ -56,7 +56,7 @@ func TestSentryCLIRoutesAndAdminIssueContract(t *testing.T) {
 	}
 	service.SetQueue(sentryReleaseQueue{})
 	registry := metrics.NewRegistry()
-	app := httpapi.New(httpapi.Dependencies{Admin: admin.NewService("test", registry), Metrics: registry, Sentry: service, Translations: translations.NewCatalog()})
+	app, adminToken := authenticatedAdminApp(t, httpapi.Dependencies{Admin: admin.NewService("test", registry), Metrics: registry, Sentry: service, Translations: translations.NewCatalog()})
 
 	releaseRequest := httptest.NewRequest(http.MethodPost, "/api/0/organizations/mailflow/releases/", bytes.NewBufferString(`{"version":"v1.2.3","projects":["web"]}`))
 	releaseRequest.Header.Set("Content-Type", "application/json")
@@ -89,7 +89,9 @@ func TestSentryCLIRoutesAndAdminIssueContract(t *testing.T) {
 	if _, err := service.Ingest(ctx, mailflowsentry.Request{QueryKey: projects[1].PublicKey, Body: envelope}); err != nil {
 		t.Fatal(err)
 	}
-	issuesResponse, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/admin/sentry?status=unresolved&limit=10", nil))
+	issuesRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/sentry?status=unresolved&limit=10", nil)
+	authorizeAdmin(issuesRequest, adminToken)
+	issuesResponse, err := app.Test(issuesRequest)
 	if err != nil || issuesResponse.StatusCode != http.StatusOK {
 		t.Fatalf("issues status=%d err=%v", issuesResponse.StatusCode, err)
 	}
@@ -101,6 +103,7 @@ func TestSentryCLIRoutesAndAdminIssueContract(t *testing.T) {
 	}
 	statusRequest := httptest.NewRequest(http.MethodPut, "/api/v1/admin/sentry/"+issues.Items[0].ID, bytes.NewBufferString(`{"status":"resolved"}`))
 	statusRequest.Header.Set("Content-Type", "application/json")
+	authorizeAdmin(statusRequest, adminToken)
 	statusResponse, err := app.Test(statusRequest)
 	if err != nil || statusResponse.StatusCode != http.StatusOK {
 		t.Fatalf("status update=%d err=%v", statusResponse.StatusCode, err)

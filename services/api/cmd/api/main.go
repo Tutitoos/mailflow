@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
@@ -198,6 +199,9 @@ func main() {
 		options.Accounts = accountService
 	}
 	var redisClient *redis.Client
+	var queueStore *queue.RedisStore
+	var adminHeartbeats *admin.Heartbeats
+	var queueErr error
 	if runtimeConfig.RedisAddress != "" {
 		client := redis.NewClient(&redis.Options{Addr: runtimeConfig.RedisAddress})
 		redisClient = client
@@ -237,7 +241,7 @@ func main() {
 		if prefix := os.Getenv("MAILFLOW_QUEUE_PREFIX"); prefix != "" {
 			queueConfig.Prefix = prefix
 		}
-		queueStore, queueErr := queue.NewRedisStore(context.Background(), redisClient, queueConfig)
+		queueStore, queueErr = queue.NewRedisStore(context.Background(), redisClient, queueConfig)
 		if queueErr != nil {
 			logger.Error("sync queue configuration failed", "event", "sync.unavailable", "error", queueErr)
 			os.Exit(1)
@@ -251,6 +255,11 @@ func main() {
 			os.Exit(1)
 		}
 		options.Sync.SetActivityTracker(mailflowsync.NewRedisActivityTracker(redisClient, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
+		adminHeartbeats, queueErr = admin.NewHeartbeats(redisClient, queueConfig.Prefix)
+		if queueErr != nil {
+			logger.Error("admin heartbeat configuration failed", "event", "admin.heartbeat_unavailable")
+			os.Exit(1)
+		}
 	}
 	if databasePool != nil {
 		translationsContext, cancelTranslations := context.WithTimeout(context.Background(), 10*time.Second)
@@ -264,6 +273,16 @@ func main() {
 			logger.Error("translation catalog configuration failed", "event", "translations.unavailable")
 			os.Exit(1)
 		}
+	}
+	if options.Metrics != nil && databasePool != nil {
+		adminOptions := admin.Options{DatabaseProbe: databasePool.Ping, Pool: databasePool}
+		if queueStore != nil {
+			adminOptions.Queue = queueStore
+		}
+		if adminHeartbeats != nil {
+			adminOptions.Heartbeats = adminHeartbeats
+		}
+		options.Admin = admin.NewServiceWithMetrics(version, options.Metrics, adminOptions)
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

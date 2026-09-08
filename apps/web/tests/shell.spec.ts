@@ -36,10 +36,58 @@ test("mail shell and admin remain operable", async ({ page }) => {
       },
     }),
   );
+  await page.route("**/api/v1/admin/status", (route) =>
+    route.fulfill({
+      json: {
+        state: "healthy",
+        version: "0.1.0",
+        goVersion: "go1.26",
+        checkedAt: "2026-09-07T12:00:00Z",
+        components: [
+          {
+            name: "api",
+            status: "healthy",
+            detail: "available",
+            checkedAt: "2026-09-07T12:00:00Z",
+          },
+        ],
+        queue: { ready: 0, pending: 0, retry: 0, dead: 0 },
+      },
+    }),
+  );
+  await page.route("**/api/v1/admin/queue", (route) =>
+    route.fulfill({
+      json: { stats: { ready: 0, pending: 0, retry: 0, dead: 0 }, operations: [] },
+    }),
+  );
+  await page.route("**/api/v1/admin/metrics?**", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/v1/admin/logs?**", (route) =>
+    route.fulfill({ json: { items: [], dropped: 0 } }),
+  );
+  await page.route("**/api/v1/admin/logs/debug", (route) =>
+    route.fulfill({ json: { enabled: false, enabledUntil: null } }),
+  );
+  await page.route("**/api/v1/admin/sentry?**", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/v1/admin/cdn", (route) =>
+    route.fulfill({
+      json: {
+        attachmentObjects: 4,
+        attachmentBytes: 2048,
+        sentryObjects: 2,
+        sentryBytes: 1024,
+        missingObjects: 0,
+      },
+    }),
+  );
   await page.route("**/api/v1/admin/translations", (route) =>
     route.fulfill({
       json: {
+        defaultLocale: "en",
         revision: 7,
+        catalogs: {
+          en: { inbox: { value: "Inbox", sourceHash: "hash" } },
+          es: { inbox: { value: "Recibidos", sourceHash: "hash" } },
+        },
         diagnostics: {
           missingEnglish: [],
           missingSpanish: ["optional.key"],
@@ -85,11 +133,27 @@ test("mail shell and admin remain operable", async ({ page }) => {
 
   await page.goto("/admin");
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Status" })).toBeVisible();
-  await expect(page.getByText("12 traces · 4 profiles · 24h")).toBeVisible();
-  await expect(page.getByText("Replay disabled")).toBeVisible();
-  await expect(page.getByText("Revision 7")).toBeVisible();
-  await expect(page.getByText("Complete", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByText("Available", { exact: true })).toBeVisible();
+  await expect(page.getByText("0.1.0")).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) > 900) {
+    await page.getByRole("button", { name: "Translations", exact: true }).click();
+  } else {
+    await page.locator(".admin-mobile-navigation select").selectOption("translations");
+  }
+  await expect(page).toHaveURL(/\/admin\/translations$/);
+  await expect(page.getByRole("heading", { name: "Translations", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "inbox" })).toBeAttached();
+  if ((page.viewportSize()?.width ?? 0) > 900) {
+    await page.getByRole("button", { name: "Logs", exact: true }).click();
+  } else {
+    await page.locator(".admin-mobile-navigation select").selectOption("logs");
+  }
+  await page.getByRole("button", { name: "Enable for 15 minutes" }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Change debug logging?" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toBeHidden();
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).color))
     .toBe("rgb(237, 237, 237)");

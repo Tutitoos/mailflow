@@ -39,6 +39,7 @@ import { installTranslationCatalog, type Locale, type TranslationKey, translate 
 import {
   APIError,
   accountSupports,
+  connectICloudAccount,
   connectIMAPAccount,
   createMailActions,
   disconnectAccount,
@@ -55,6 +56,7 @@ import {
   type Mailbox,
   type MailCategory,
   type MailLabel,
+  probeICloudAccount,
   probeIMAPAccount,
   refreshAccountCredentials,
   type SearchResult,
@@ -1227,9 +1229,17 @@ export function AccountsPage({ locale }: { locale: Locale }) {
   const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<
-    "generic" | "reconsent" | "tenant" | "tls" | "timeout" | "authentication" | "capability" | null
+    | "generic"
+    | "reconsent"
+    | "tenant"
+    | "tls"
+    | "timeout"
+    | "authentication"
+    | "icloudAuthentication"
+    | "capability"
+    | null
   >(null);
-  const [showIMAP, setShowIMAP] = useState(false);
+  const [mailSetup, setMailSetup] = useState<"imap" | "icloud" | null>(null);
   const [discoveringIMAP, setDiscoveringIMAP] = useState<string | null>(null);
   const [discoveredIMAP, setDiscoveredIMAP] = useState<Record<string, number>>({});
   const [imapStatus, setIMAPStatus] = useState<"idle" | "testing" | "verified" | "connecting">(
@@ -1313,7 +1323,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
   };
 
   const resetIMAP = () => {
-    setShowIMAP(false);
+    setMailSetup(null);
     setIMAPStatus("idle");
     setIMAPInput({
       displayName: "",
@@ -1321,6 +1331,19 @@ export function AccountsPage({ locale }: { locale: Locale }) {
       password: "",
       imap: { host: "", port: 993, tlsMode: "implicit" },
       smtp: { host: "", port: 587, tlsMode: "starttls" },
+    });
+  };
+
+  const openMailSetup = (mode: "imap" | "icloud") => {
+    setMailSetup(mode);
+    setError(null);
+    setIMAPStatus("idle");
+    setIMAPInput({
+      displayName: mode === "icloud" ? "iCloud" : "",
+      username: "",
+      password: "",
+      imap: { host: mode === "icloud" ? "imap.mail.me.com" : "", port: 993, tlsMode: "implicit" },
+      smtp: { host: mode === "icloud" ? "smtp.mail.me.com" : "", port: 587, tlsMode: "starttls" },
     });
   };
 
@@ -1333,11 +1356,18 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     setError(null);
     setIMAPStatus(mode === "probe" ? "testing" : "connecting");
     try {
+      const iCloudInput = {
+        displayName: imapInput.displayName,
+        email: imapInput.username,
+        appSpecificPassword: imapInput.password,
+      };
       if (mode === "probe") {
-        await probeIMAPAccount(imapInput);
+        if (mailSetup === "icloud") await probeICloudAccount(iCloudInput);
+        else await probeIMAPAccount(imapInput);
         setIMAPStatus("verified");
       } else {
-        await connectIMAPAccount(imapInput);
+        if (mailSetup === "icloud") await connectICloudAccount(iCloudInput);
+        else await connectIMAPAccount(imapInput);
         resetIMAP();
         await reload();
       }
@@ -1377,12 +1407,15 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             >
               <Plus size={16} /> {t("connectMicrosoft")}
             </Button>
-            <Button variant="outline" disabled={loading} onClick={() => setShowIMAP(true)}>
+            <Button variant="outline" disabled={loading} onClick={() => openMailSetup("icloud")}>
+              <Plus size={16} /> {t("connectICloud")}
+            </Button>
+            <Button variant="outline" disabled={loading} onClick={() => openMailSetup("imap")}>
               <Plus size={16} /> {t("connectIMAP")}
             </Button>
           </div>
         </div>
-        {showIMAP && (
+        {mailSetup && (
           <form
             className="imap-form"
             onSubmit={(event) => {
@@ -1392,8 +1425,10 @@ export function AccountsPage({ locale }: { locale: Locale }) {
           >
             <div className="imap-form-heading">
               <div>
-                <h2>{t("imapSetupTitle")}</h2>
-                <p>{t("imapSetupDescription")}</p>
+                <h2>{mailSetup === "icloud" ? t("icloudSetupTitle") : t("imapSetupTitle")}</h2>
+                <p>
+                  {mailSetup === "icloud" ? t("icloudSetupDescription") : t("imapSetupDescription")}
+                </p>
               </div>
               <Button type="button" variant="outline" onClick={resetIMAP}>
                 {t("cancel")}
@@ -1411,11 +1446,12 @@ export function AccountsPage({ locale }: { locale: Locale }) {
               />
             </label>
             <label>
-              {t("username")}
+              {mailSetup === "icloud" ? t("icloudEmail") : t("username")}
               <input
                 required
                 maxLength={320}
-                autoComplete="username"
+                type={mailSetup === "icloud" ? "email" : "text"}
+                autoComplete={mailSetup === "icloud" ? "email" : "username"}
                 value={imapInput.username}
                 onChange={(event) =>
                   updateIMAPInput({ ...imapInput, username: event.target.value })
@@ -1423,73 +1459,84 @@ export function AccountsPage({ locale }: { locale: Locale }) {
               />
             </label>
             <label>
-              {t("password")}
+              {mailSetup === "icloud" ? t("appSpecificPassword") : t("password")}
               <input
                 required
                 maxLength={4096}
                 type="password"
-                autoComplete="current-password"
+                autoComplete={mailSetup === "icloud" ? "off" : "current-password"}
                 value={imapInput.password}
                 onChange={(event) =>
                   updateIMAPInput({ ...imapInput, password: event.target.value })
                 }
               />
             </label>
-            {(["imap", "smtp"] as const).map((protocol) => (
-              <fieldset key={protocol}>
-                <legend>{protocol.toUpperCase()}</legend>
-                <label>
-                  {t("serverHost")}
-                  <input
-                    required
-                    maxLength={253}
-                    value={imapInput[protocol].host}
-                    onChange={(event) =>
-                      updateIMAPInput({
-                        ...imapInput,
-                        [protocol]: { ...imapInput[protocol], host: event.target.value },
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  {t("serverPort")}
-                  <input
-                    required
-                    min={1}
-                    max={65535}
-                    type="number"
-                    value={imapInput[protocol].port}
-                    onChange={(event) =>
-                      updateIMAPInput({
-                        ...imapInput,
-                        [protocol]: { ...imapInput[protocol], port: Number(event.target.value) },
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  {t("tlsMode")}
-                  <select
-                    value={imapInput[protocol].tlsMode}
-                    onChange={(event) =>
-                      updateIMAPInput({
-                        ...imapInput,
-                        [protocol]: {
-                          ...imapInput[protocol],
-                          tlsMode: event.target.value as "implicit" | "starttls",
-                        },
-                      })
-                    }
-                  >
-                    <option value="implicit">{t("tlsImplicit")}</option>
-                    <option value="starttls">STARTTLS</option>
-                  </select>
-                </label>
-              </fieldset>
-            ))}
+            {mailSetup === "icloud" && (
+              <div className="icloud-preset-note">
+                <strong>{t("icloudPresetTitle")}</strong>
+                <span>{t("icloudPresetServers")}</span>
+                <a href="https://account.apple.com" target="_blank" rel="noreferrer">
+                  {t("createAppSpecificPassword")}
+                </a>
+              </div>
+            )}
+            {mailSetup === "imap" &&
+              (["imap", "smtp"] as const).map((protocol) => (
+                <fieldset key={protocol}>
+                  <legend>{protocol.toUpperCase()}</legend>
+                  <label>
+                    {t("serverHost")}
+                    <input
+                      required
+                      maxLength={253}
+                      value={imapInput[protocol].host}
+                      onChange={(event) =>
+                        updateIMAPInput({
+                          ...imapInput,
+                          [protocol]: { ...imapInput[protocol], host: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t("serverPort")}
+                    <input
+                      required
+                      min={1}
+                      max={65535}
+                      type="number"
+                      value={imapInput[protocol].port}
+                      onChange={(event) =>
+                        updateIMAPInput({
+                          ...imapInput,
+                          [protocol]: { ...imapInput[protocol], port: Number(event.target.value) },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t("tlsMode")}
+                    <select
+                      value={imapInput[protocol].tlsMode}
+                      onChange={(event) =>
+                        updateIMAPInput({
+                          ...imapInput,
+                          [protocol]: {
+                            ...imapInput[protocol],
+                            tlsMode: event.target.value as "implicit" | "starttls",
+                          },
+                        })
+                      }
+                    >
+                      <option value="implicit">{t("tlsImplicit")}</option>
+                      <option value="starttls">STARTTLS</option>
+                    </select>
+                  </label>
+                </fieldset>
+              ))}
             <p className="imap-security-note">
-              <Info size={16} /> {t("imapSecurityNote")}
+              <Info size={16} />{" "}
+              {mailSetup === "icloud" ? t("icloudSecurityNote") : t("imapSecurityNote")}
             </p>
             {imapStatus === "verified" && (
               <p className="settings-notice" role="status">
@@ -1510,7 +1557,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                 variant="primary"
                 disabled={imapStatus === "testing" || imapStatus === "connecting"}
               >
-                {t("connectIMAP")}
+                {mailSetup === "icloud" ? t("connectICloud") : t("connectIMAP")}
               </Button>
             </div>
           </form>
@@ -1553,11 +1600,13 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                   ? t("imapTLSFailed")
                   : error === "timeout"
                     ? t("imapTimeout")
-                    : error === "authentication"
-                      ? t("imapAuthenticationFailed")
-                      : error === "capability"
-                        ? t("imapCapabilityFailed")
-                        : t("connectionFailed")}
+                    : error === "icloudAuthentication"
+                      ? t("icloudAuthenticationFailed")
+                      : error === "authentication"
+                        ? t("imapAuthenticationFailed")
+                        : error === "capability"
+                          ? t("imapCapabilityFailed")
+                          : t("connectionFailed")}
           </p>
         )}
         <section className="account-list" aria-busy={loading}>
@@ -1622,7 +1671,15 @@ export function AccountsPage({ locale }: { locale: Locale }) {
 
 function accountError(
   cause: unknown,
-): "generic" | "reconsent" | "tenant" | "tls" | "timeout" | "authentication" | "capability" {
+):
+  | "generic"
+  | "reconsent"
+  | "tenant"
+  | "tls"
+  | "timeout"
+  | "authentication"
+  | "icloudAuthentication"
+  | "capability" {
   if (cause instanceof APIError && cause.code === "microsoft_reconsent_required")
     return "reconsent";
   if (cause instanceof APIError && cause.code === "microsoft_tenant_policy") return "tenant";
@@ -1630,6 +1687,8 @@ function accountError(
   if (cause instanceof APIError && cause.code === "mail_server_timeout") return "timeout";
   if (cause instanceof APIError && cause.code === "mail_authentication_failed")
     return "authentication";
+  if (cause instanceof APIError && cause.code === "icloud_app_password_rejected")
+    return "icloudAuthentication";
   if (cause instanceof APIError && cause.code === "mail_capability_failed") return "capability";
   return "generic";
 }

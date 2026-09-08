@@ -1175,6 +1175,7 @@ select:focus-visible {
 
 .imap-form-heading,
 .imap-form fieldset,
+.icloud-preset-note,
 .imap-security-note,
 .imap-form > .settings-actions,
 .imap-form > .settings-notice {
@@ -1193,6 +1194,27 @@ select:focus-visible {
 .imap-security-note {
   margin: 0;
   color: var(--muted-foreground);
+}
+
+.icloud-preset-note {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.icloud-preset-note strong {
+  color: var(--foreground);
+}
+
+.icloud-preset-note a {
+  width: fit-content;
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .imap-form label {
   display: flex;

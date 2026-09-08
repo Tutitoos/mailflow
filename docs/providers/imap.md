@@ -13,7 +13,7 @@ Mailflow can connect a generic mail account with IMAP for reading and SMTP for s
 
 ## Common settings
 
-For iCloud Mail, use your full Apple Account email address and an app-specific password. The usual server settings are `imap.mail.me.com:993` with implicit TLS and `smtp.mail.me.com:587` with STARTTLS. Confirm current values in Apple's documentation before configuring an installation.
+For iCloud Mail, use the dedicated [iCloud setup](icloud.md). It fixes the Apple-published endpoints server-side and never requests a primary Apple Account password. The generic form remains for providers whose exact IMAP and SMTP settings are supplied by their operator.
 
 For another provider, obtain the exact IMAP and SMTP hostnames, ports, TLS modes, username, and app-specific password from that provider. OAuth-based IMAP, automatic server discovery, Exchange protocols, and insecure servers are not supported.
 

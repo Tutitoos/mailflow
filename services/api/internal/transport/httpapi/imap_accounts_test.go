@@ -44,9 +44,15 @@ func (store *imapHTTPStore) DisableAndClearCredentials(_ context.Context, userID
 	return store.account, nil
 }
 
-type imapHTTPProber struct{ err error }
+type imapHTTPProber struct {
+	err   error
+	input *mailflowimap.ConnectInput
+}
 
-func (prober imapHTTPProber) Probe(context.Context, mailflowimap.ConnectInput) (map[string]bool, error) {
+func (prober imapHTTPProber) Probe(_ context.Context, input mailflowimap.ConnectInput) (map[string]bool, error) {
+	if prober.input != nil {
+		*prober.input = input
+	}
 	return map[string]bool{"imap.idle": true, "private.transcript": true}, prober.err
 }
 
@@ -99,6 +105,40 @@ func TestIMAPHTTPMapsTLSFailuresWithoutEchoingConfiguration(t *testing.T) {
 	encoded, _ := json.Marshal(problem)
 	if problem["code"] != "mail_tls_identity_failed" || strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "imap.example.test") {
 		t.Fatalf("unsafe problem response: %s", encoded)
+	}
+}
+
+func TestICloudHTTPUsesIsolatedPresetAndSafeAuthenticationHelp(t *testing.T) {
+	store := &imapHTTPStore{}
+	var captured mailflowimap.ConnectInput
+	service, _ := mailflowimap.NewService(store, imapHTTPProber{input: &captured})
+	app, token := authenticatedAdminApp(t, httpapi.Dependencies{Accounts: store, IMAP: service})
+	body := `{"displayName":"iCloud","email":"owner@icloud.com","appSpecificPassword":"fixture-app-password"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/accounts/icloud", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	authorizeAdmin(request, token)
+	response, err := app.Test(request)
+	if err != nil || response.StatusCode != http.StatusCreated {
+		t.Fatalf("connect iCloud status=%d error=%v", response.StatusCode, err)
+	}
+	if captured.IMAP.Host != "imap.mail.me.com" || captured.IMAP.Port != 993 || captured.IMAP.TLSMode != mailflowimap.TLSImplicit || captured.SMTP.Host != "smtp.mail.me.com" || captured.SMTP.Port != 587 || captured.SMTP.TLSMode != mailflowimap.TLSStartTLS || !store.input.Capabilities[mailflowimap.CapabilityICloudPreset] {
+		t.Fatalf("unsafe iCloud preset: input=%+v capabilities=%+v", captured, store.input.Capabilities)
+	}
+
+	failing, _ := mailflowimap.NewService(&imapHTTPStore{}, imapHTTPProber{err: mailflowimap.ErrAuthentication})
+	failingApp, failingToken := authenticatedAdminApp(t, httpapi.Dependencies{Accounts: &imapHTTPStore{}, IMAP: failing})
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/accounts/icloud/probe", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	authorizeAdmin(request, failingToken)
+	response, err = failingApp.Test(request)
+	if err != nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("probe iCloud status=%d error=%v", response.StatusCode, err)
+	}
+	var problem map[string]any
+	_ = json.NewDecoder(response.Body).Decode(&problem)
+	encoded, _ := json.Marshal(problem)
+	if problem["code"] != "icloud_app_password_rejected" || strings.Contains(string(encoded), "fixture-app-password") || !strings.Contains(string(encoded), "Never enter the primary") {
+		t.Fatalf("unsafe iCloud problem: %s", encoded)
 	}
 }
 

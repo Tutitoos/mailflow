@@ -127,8 +127,17 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Connected accounts" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect Google" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Connect Microsoft" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Connect iCloud" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Connect IMAP" })).toBeEnabled();
   await expect(page.getByText("No mail accounts connected yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Connect iCloud" }).click();
+  await expect(page.getByRole("heading", { name: "iCloud Mail account" })).toBeVisible();
+  await expect(page.getByLabel("App-specific password")).toBeVisible();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/never asks for your primary Apple Account password/i)).toBeVisible();
+  await expect(page.getByText(/imap\.mail\.me\.com:993/)).toBeVisible();
+  await expect(page.getByLabel("Server host")).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Connect IMAP" }).click();
   await expect(page.getByRole("heading", { name: "IMAP and SMTP account" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();

@@ -17,6 +17,12 @@ export type IMAPAccountInput = {
   smtp: { host: string; port: number; tlsMode: MailTLSMode };
 };
 
+export type ICloudAccountInput = {
+  displayName: string;
+  email: string;
+  appSpecificPassword: string;
+};
+
 export type IMAPFolderState = {
   mailboxId: string;
   remoteId: string;
@@ -460,6 +466,20 @@ export async function probeIMAPAccount(input: IMAPAccountInput) {
 
 export async function connectIMAPAccount(input: IMAPAccountInput) {
   return request<MailAccount>("/accounts/imap", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function probeICloudAccount(input: ICloudAccountInput) {
+  return request<{ capabilities: Record<string, boolean> }>("/accounts/icloud/probe", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function connectICloudAccount(input: ICloudAccountInput) {
+  return request<MailAccount>("/accounts/icloud", {
     method: "POST",
     body: JSON.stringify(input),
   });

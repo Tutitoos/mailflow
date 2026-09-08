@@ -198,6 +198,36 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Account" }
         default: { $ref: "#/components/responses/Problem" }
+  /accounts/icloud/probe:
+    post:
+      operationId: probeICloudAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ICloudAccountInput" }
+      responses:
+        "200":
+          description: Official iCloud Mail preset and app-specific password verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IMAPProbeResult" }
+        default: { $ref: "#/components/responses/Problem" }
+  /accounts/icloud:
+    post:
+      operationId: connectICloudAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ICloudAccountInput" }
+      responses:
+        "201":
+          description: iCloud Mail account connected through the isolated IMAP preset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/imap/folders/discover:
     post:
       operationId: discoverIMAPFolders
@@ -1296,6 +1326,14 @@ components:
         password: { type: string, format: password, writeOnly: true, minLength: 1, maxLength: 4096 }
         imap: { $ref: "#/components/schemas/MailServerConfig" }
         smtp: { $ref: "#/components/schemas/MailServerConfig" }
+    ICloudAccountInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, email, appSpecificPassword]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, minLength: 3, maxLength: 320 }
+        appSpecificPassword: { type: string, format: password, writeOnly: true, minLength: 1, maxLength: 4096 }
     IMAPProbeResult:
       type: object
       required: [capabilities]

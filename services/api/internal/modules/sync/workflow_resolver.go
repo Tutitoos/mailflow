@@ -14,13 +14,14 @@ type WorkflowProviderResolver struct {
 	accounts  SyncAccountLookup
 	google    GmailProviderResolver
 	microsoft MicrosoftProviderResolver
+	imap      IMAPProviderResolver
 }
 
-func NewWorkflowProviderResolver(accountStore SyncAccountLookup, google GmailProviderResolver, microsoft MicrosoftProviderResolver) (*WorkflowProviderResolver, error) {
-	if accountStore == nil || google == nil || microsoft == nil {
+func NewWorkflowProviderResolver(accountStore SyncAccountLookup, google GmailProviderResolver, microsoft MicrosoftProviderResolver, imap IMAPProviderResolver) (*WorkflowProviderResolver, error) {
+	if accountStore == nil || google == nil || microsoft == nil || imap == nil {
 		return nil, errors.New("mail workflow routing requires accounts and provider resolvers")
 	}
-	return &WorkflowProviderResolver{accounts: accountStore, google: google, microsoft: microsoft}, nil
+	return &WorkflowProviderResolver{accounts: accountStore, google: google, microsoft: microsoft, imap: imap}, nil
 }
 
 func (resolver *WorkflowProviderResolver) Resolve(ctx context.Context, user, accountID string, capabilities ...string) (mail.AccountProvider, error) {
@@ -50,6 +51,12 @@ func (resolver *WorkflowProviderResolver) Resolve(ctx context.Context, user, acc
 			return nil, errors.New("Microsoft mail provider is unavailable")
 		}
 		return provider, nil
+	case accounts.ProviderIMAP:
+		provider, resolveErr := resolver.imap.ResolveIMAP(ctx, user, accountID)
+		if resolveErr != nil {
+			return nil, errors.New("IMAP mail provider is unavailable")
+		}
+		return provider, nil
 	default:
 		return nil, ErrProviderCapabilityUnavailable
 	}
@@ -61,12 +68,16 @@ func supportsCapability(account accounts.Account, capability string) bool {
 	}
 	// Accounts connected before the capability keys were expanded already
 	// received the full provider scopes. Preserve them until the next refresh.
-	if account.Provider != accounts.ProviderGoogle && account.Provider != accounts.ProviderMicrosoft {
+	if account.Provider != accounts.ProviderGoogle && account.Provider != accounts.ProviderMicrosoft && account.Provider != accounts.ProviderIMAP {
 		return false
 	}
 	switch capability {
-	case "actions", "attachments", "categories", "drafts", "folders", "labels", "search", "send", "threads":
+	case "drafts":
+		return account.Provider != accounts.ProviderIMAP || account.Capabilities["imap.uidplus"]
+	case "actions", "attachments", "folders", "search", "send", "threads":
 		return true
+	case "categories", "labels":
+		return account.Provider != accounts.ProviderIMAP
 	default:
 		return false
 	}

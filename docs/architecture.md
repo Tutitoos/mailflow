@@ -180,6 +180,11 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 - Contraseña específica de aplicación para iCloud.
 - Detección de capacidades para servidores genéricos.
 - IMAP IDLE cuando esté disponible y polling como respaldo.
+- El worker recorre cada carpeta seleccionable con cursores `UIDVALIDITY`/UID, normaliza MIME bajo límites y conserva una identidad estable derivada de `Message-ID` o, como fallback, del contenido bruto.
+- El ID de conversación parte de la raíz de `References`, después de `In-Reply-To` y finalmente del propio `Message-ID`; todas las claves siguen aisladas por cuenta en PostgreSQL.
+- La ubicación mutable `(carpeta, UIDVALIDITY, UID)` se persiste separada del mensaje. Un MOVE/COPY actualiza esa ubicación sin crear otro mensaje de dominio.
+- Flags y movimientos usan comandos UID. El fallback COPY + eliminación dirigida solo se admite con UIDPLUS; nunca se ejecuta un `EXPUNGE` global como sustituto inseguro.
+- Los drafts se anexan a la carpeta Drafts y SMTP no hace reintentos internos. Un corte después de `DATA` se declara ambiguo para que la idempotencia durable impida un segundo envío automático.
 
 Los proveedores se implementarán en orden: Google, Microsoft e IMAP.
 
@@ -213,13 +218,13 @@ PostgreSQL, mediante `sync_runs`, es la fuente durable del progreso de cada sinc
 
 - La primera sincronización procesa primero los últimos 90 días y, al terminar, encadena el histórico anterior a esa ventana.
 - El histórico completo encadena el modo incremental. Una ejecución incremental completada programa la siguiente comprobación dos minutos después con actividad reciente y diez minutos después en reposo.
-- La reconciliación completa se programa cada 24 horas y utiliza el mismo modelo reanudable.
+- La reconciliación completa se programa cada 24 horas y utiliza el mismo modelo reanudable. Para IMAP, el último lote de cada carpeta incluye un snapshot acotado de UIDs: las ubicaciones remotas ausentes se desvinculan y el mensaje solo se marca como eliminado si no conserva otra ubicación.
 - Un lease Redis por cuenta evita llamadas simultáneas al proveedor. La restricción única de PostgreSQL impide además dos ejecuciones activas de la misma fase.
 - Cada página del proveedor se aplica y avanza su checkpoint en una única transacción PostgreSQL. Si el worker cae antes del commit, la página se repite; si cae después, su versión ya no puede volver a aplicarse.
 - Un error recuperable devuelve la ejecución a `queued` sin perder el checkpoint. La cola aplica el backoff y su límite de intentos; la cancelación se comprueba entre páginas.
 - `sync.progress` publica únicamente identificadores internos, fase, estado y contadores. Las métricas usan dimensiones acotadas de fase y resultado, nunca direcciones, asuntos ni IDs de mensajes.
 
-Google History y Microsoft Delta ya usan ejecutores paginados seleccionados por la cuenta owner-scoped; IMAP se añadirá en su fase. Los checkpoints específicos viajan dentro de `sync_runs.checkpoint`, por lo que la página remota y sus efectos locales se confirman en la misma transacción. `sync_cursors` queda reservado para protocolos que necesiten estado durable independiente del ciclo de runs, como UID/UIDVALIDITY de IMAP.
+Google History, Microsoft Delta e IMAP UID usan ejecutores paginados seleccionados por la cuenta owner-scoped. Los checkpoints específicos viajan dentro de `sync_runs.checkpoint`, por lo que la página remota y sus efectos locales se confirman en la misma transacción. IMAP conserva además la identidad de carpetas y ubicaciones de mensajes en tablas propias para reconciliar cambios de UID sin mezclar cuentas.
 
 ## CDN local
 

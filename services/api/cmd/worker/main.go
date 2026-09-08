@@ -166,7 +166,12 @@ func main() {
 			logger.Error("Microsoft resolver configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
-		workflows, err := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver)
+		imapResolver, err := mailflowsync.NewIMAPAccountResolver(accountService, pool, nil, normalizer)
+		if err != nil {
+			logger.Error("IMAP provider configuration failed", "event", "mail.provider_unavailable", "error", err)
+			os.Exit(1)
+		}
+		workflows, err := mailflowsync.NewWorkflowProviderResolver(accountService, gmailResolver, microsoftResolver, imapResolver)
 		if err != nil {
 			logger.Error("mail workflow routing failed", "event", "mail.actions_unavailable", "error", err)
 			os.Exit(1)
@@ -176,7 +181,12 @@ func main() {
 			logger.Error("Microsoft executor configuration failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)
 		}
-		executor, err := mailflowsync.NewRoutedExecutor(accountService, gmailExecutor, microsoftExecutor)
+		imapExecutor, err := mailflowsync.NewIMAPExecutor(imapResolver, pageWriter)
+		if err != nil {
+			logger.Error("IMAP executor configuration failed", "event", "sync.unavailable", "error", err)
+			os.Exit(1)
+		}
+		executor, err := mailflowsync.NewRoutedExecutor(accountService, gmailExecutor, microsoftExecutor, imapExecutor)
 		if err != nil {
 			logger.Error("provider sync routing failed", "event", "sync.unavailable", "error", err)
 			os.Exit(1)

@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -105,6 +106,23 @@ func (writer *RemotePageWriter) ApplyRemotePage(ctx context.Context, tx pgx.Tx, 
 		if err != nil {
 			return fmt.Errorf("upsert remote message: %w", err)
 		}
+		for _, location := range remote.Locations {
+			if !validRemoteLocation(location) {
+				return ErrInvalidMessage
+			}
+			_, linkErr := queries.LinkMessageMailboxByRemoteID(ctx, dbgen.LinkMessageMailboxByRemoteIDParams{
+				MessageID: message.ID, AccountID: accountID, UserID: userID, MailboxRemoteID: location.MailboxID,
+			})
+			if linkErr != nil {
+				return fmt.Errorf("link remote message mailbox: %w", linkErr)
+			}
+			if _, locationErr := queries.UpsertIMAPMessageLocation(ctx, dbgen.UpsertIMAPMessageLocationParams{
+				MessageID: message.ID, AccountID: accountID, UserID: userID, MailboxRemoteID: location.MailboxID,
+				UidValidity: location.UIDValidity, Uid: location.UID,
+			}); locationErr != nil {
+				return fmt.Errorf("upsert IMAP message location: %w", locationErr)
+			}
+		}
 		if err := queries.DeleteMessageAddresses(ctx, dbgen.DeleteMessageAddressesParams{MessageID: message.ID, AccountID: accountID}); err != nil {
 			return fmt.Errorf("replace remote addresses: %w", err)
 		}
@@ -135,6 +153,54 @@ func (writer *RemotePageWriter) ApplyRemotePage(ctx context.Context, tx pgx.Tx, 
 		}
 		touchedThreads[threadUUID(thread.ID)] = struct{}{}
 	}
+	for _, snapshot := range page.LocationSnapshots {
+		if !validRemoteLocationSnapshot(snapshot) {
+			return ErrInvalidMessage
+		}
+		rows, snapshotErr := tx.Query(ctx, `delete from imap_message_locations
+using mailboxes, accounts
+where imap_message_locations.mailbox_id = mailboxes.id
+  and imap_message_locations.account_id = mailboxes.account_id
+  and accounts.id = imap_message_locations.account_id
+  and accounts.user_id = $1
+  and imap_message_locations.account_id = $2
+  and mailboxes.remote_id = $3
+  and (imap_message_locations.uid_validity <> $4 or not (imap_message_locations.uid = any($5::bigint[])))
+returning imap_message_locations.message_id, imap_message_locations.mailbox_id`, userID, accountID, snapshot.MailboxID, snapshot.UIDValidity, snapshot.PresentUIDs)
+		if snapshotErr != nil {
+			return fmt.Errorf("reconcile IMAP location snapshot: %w", snapshotErr)
+		}
+		type removedLocation struct{ messageID, mailboxID pgtype.UUID }
+		var removed []removedLocation
+		for rows.Next() {
+			var item removedLocation
+			if err := rows.Scan(&item.messageID, &item.mailboxID); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan removed IMAP location: %w", err)
+			}
+			removed = append(removed, item)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("read removed IMAP locations: %w", err)
+		}
+		rows.Close()
+		for _, item := range removed {
+			if _, err := tx.Exec(ctx, `delete from message_mailboxes where message_id = $1 and mailbox_id = $2 and account_id = $3`, item.messageID, item.mailboxID, accountID); err != nil {
+				return fmt.Errorf("unlink stale IMAP mailbox: %w", err)
+			}
+			var threadID pgtype.UUID
+			err := tx.QueryRow(ctx, `update messages set deleted_at = $1, updated_at = $1
+where id = $2 and account_id = $3
+  and not exists (select 1 from imap_message_locations where message_id = messages.id and account_id = messages.account_id)
+returning thread_id`, now, item.messageID, accountID).Scan(&threadID)
+			if err == nil {
+				touchedThreads[threadUUID(threadID)] = struct{}{}
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("delete orphaned IMAP message: %w", err)
+			}
+		}
+	}
 	if len(page.DeletedRemoteIDs) > 0 {
 		threadIDs, err := queries.SoftDeleteRemoteMessages(ctx, dbgen.SoftDeleteRemoteMessagesParams{AccountID: accountID, UserID: userID, RemoteIds: page.DeletedRemoteIDs})
 		if err != nil {
@@ -164,6 +230,24 @@ func validRemoteMessage(remote RemoteMessage) bool {
 		Addresses: remote.Content.Addresses, Attachments: remote.Content.Attachments,
 	}
 	return boundedText(remote.ThreadID, 512) && validCategory(remote.Category) && validMessageInput(input)
+}
+
+func validRemoteLocation(location RemoteLocation) bool {
+	return boundedText(location.MailboxID, 512) && location.UIDValidity > 0 && location.UID > 0
+}
+
+func validRemoteLocationSnapshot(snapshot RemoteLocationSnapshot) bool {
+	if !boundedText(snapshot.MailboxID, 512) || snapshot.UIDValidity < 1 || len(snapshot.PresentUIDs) > 1_000_000 {
+		return false
+	}
+	previous := int64(0)
+	for _, uid := range snapshot.PresentUIDs {
+		if uid <= previous {
+			return false
+		}
+		previous = uid
+	}
+	return true
 }
 
 func threadUUID(value pgtype.UUID) string { return uuid.UUID(value.Bytes).String() }

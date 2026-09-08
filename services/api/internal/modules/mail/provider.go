@@ -29,7 +29,17 @@ type RemoteMessage struct {
 	Category    Category
 	InTrash     bool
 	LabelIDs    []string
+	Locations   []RemoteLocation
 	Content     NormalizedMessageContent
+}
+
+// RemoteLocation identifies the current provider location of a stable message.
+// IMAP UIDs are deliberately kept out of RemoteID because COPY and MOVE may
+// replace them while the RFC message identity remains unchanged.
+type RemoteLocation struct {
+	MailboxID   string
+	UIDValidity int64
+	UID         int64
 }
 
 type ProviderProfile struct {
@@ -64,10 +74,20 @@ type CatalogPage struct {
 }
 
 type ChangePage struct {
-	Messages         []RemoteMessage
-	DeletedRemoteIDs []string
-	NextCursor       SyncCursor
-	HasMore          bool
+	Messages          []RemoteMessage
+	DeletedRemoteIDs  []string
+	LocationSnapshots []RemoteLocationSnapshot
+	NextCursor        SyncCursor
+	HasMore           bool
+}
+
+// RemoteLocationSnapshot is emitted only after a complete provider-folder
+// scan. The page writer removes stale IMAP locations in the same transaction
+// that advances the sync checkpoint.
+type RemoteLocationSnapshot struct {
+	MailboxID   string
+	UIDValidity int64
+	PresentUIDs []int64
 }
 
 type RemoteAction struct {

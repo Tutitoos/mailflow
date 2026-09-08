@@ -17,6 +17,7 @@ type RoutedExecutor struct {
 	accounts  SyncAccountLookup
 	google    PageExecutor
 	microsoft PageExecutor
+	imap      PageExecutor
 }
 
 type providerPageError struct {
@@ -29,11 +30,11 @@ func (failure *providerPageError) Unwrap() error                   { return fail
 func (failure *providerPageError) ProviderKind() mail.ProviderKind { return failure.provider }
 func (failure *providerPageError) RetryDelay() time.Duration       { return retryDelay(failure.cause) }
 
-func NewRoutedExecutor(accountStore SyncAccountLookup, google, microsoft PageExecutor) (*RoutedExecutor, error) {
-	if accountStore == nil || google == nil || microsoft == nil {
+func NewRoutedExecutor(accountStore SyncAccountLookup, google, microsoft, imap PageExecutor) (*RoutedExecutor, error) {
+	if accountStore == nil || google == nil || microsoft == nil || imap == nil {
 		return nil, errors.New("sync routing requires accounts and provider executors")
 	}
-	return &RoutedExecutor{accounts: accountStore, google: google, microsoft: microsoft}, nil
+	return &RoutedExecutor{accounts: accountStore, google: google, microsoft: microsoft, imap: imap}, nil
 }
 
 func (executor *RoutedExecutor) FetchPage(ctx context.Context, user string, run Run) (SyncPage, error) {
@@ -48,6 +49,8 @@ func (executor *RoutedExecutor) FetchPage(ctx context.Context, user string, run 
 		selected = executor.google
 	case accounts.ProviderMicrosoft:
 		selected = executor.microsoft
+	case accounts.ProviderIMAP:
+		selected = executor.imap
 	default:
 		return SyncPage{}, &providerPageError{provider: provider, cause: errors.New("mail provider synchronization is unavailable")}
 	}

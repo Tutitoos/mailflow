@@ -77,11 +77,11 @@ func TestDeliveryCheckpointsRepliesAndNeverRepeatsSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkpoint, err := service.CheckpointDraft(context.Background(), userID, accountID, draft.ID)
-	if err != nil || checkpoint.SyncStatus != DraftSynced || provider.drafts != 1 || provider.thread != "remote-thread" || provider.source != "gmail-message" || provider.mode != ComposeReply || !strings.Contains(provider.last, "In-Reply-To: <source@example.test>") {
+	if err != nil || checkpoint.SyncStatus != DraftSynced || provider.drafts != 1 || provider.thread != "remote-thread" || provider.source != "remote-message" || provider.mode != ComposeReply || !strings.Contains(provider.last, "In-Reply-To: <source@example.test>") {
 		t.Fatalf("checkpoint=%+v drafts=%d thread=%q source=%q mode=%q payload=%q error=%v", checkpoint, provider.drafts, provider.thread, provider.source, provider.mode, provider.last, err)
 	}
 	delivery, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, checkpoint.LocalRevision, "send-fixture-key-0001")
-	if err != nil || delivery.Status != DeliverySent || provider.sends != 1 || provider.draftID != "remote-draft" || provider.source != "gmail-message" || provider.mode != ComposeReply {
+	if err != nil || delivery.Status != DeliverySent || provider.sends != 1 || provider.draftID != "remote-draft" || provider.source != "remote-message" || provider.mode != ComposeReply {
 		t.Fatalf("delivery=%+v sends=%d draft=%q source=%q mode=%q error=%v", delivery, provider.sends, provider.draftID, provider.source, provider.mode, err)
 	}
 	repeated, err := service.SendDraft(context.Background(), userID, accountID, draft.ID, checkpoint.LocalRevision, "send-fixture-key-0001")

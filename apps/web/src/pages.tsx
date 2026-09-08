@@ -1308,6 +1308,11 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     });
   };
 
+  const updateIMAPInput = (input: IMAPAccountInput) => {
+    setIMAPInput(input);
+    setIMAPStatus("idle");
+  };
+
   const submitIMAP = async (mode: "probe" | "connect") => {
     setError(null);
     setIMAPStatus(mode === "probe" ? "testing" : "connecting");
@@ -1385,7 +1390,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                 maxLength={120}
                 value={imapInput.displayName}
                 onChange={(event) =>
-                  setIMAPInput({ ...imapInput, displayName: event.target.value })
+                  updateIMAPInput({ ...imapInput, displayName: event.target.value })
                 }
               />
             </label>
@@ -1396,7 +1401,9 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                 maxLength={320}
                 autoComplete="username"
                 value={imapInput.username}
-                onChange={(event) => setIMAPInput({ ...imapInput, username: event.target.value })}
+                onChange={(event) =>
+                  updateIMAPInput({ ...imapInput, username: event.target.value })
+                }
               />
             </label>
             <label>
@@ -1407,7 +1414,9 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                 type="password"
                 autoComplete="current-password"
                 value={imapInput.password}
-                onChange={(event) => setIMAPInput({ ...imapInput, password: event.target.value })}
+                onChange={(event) =>
+                  updateIMAPInput({ ...imapInput, password: event.target.value })
+                }
               />
             </label>
             {(["imap", "smtp"] as const).map((protocol) => (
@@ -1420,7 +1429,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                     maxLength={253}
                     value={imapInput[protocol].host}
                     onChange={(event) =>
-                      setIMAPInput({
+                      updateIMAPInput({
                         ...imapInput,
                         [protocol]: { ...imapInput[protocol], host: event.target.value },
                       })
@@ -1436,7 +1445,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                     type="number"
                     value={imapInput[protocol].port}
                     onChange={(event) =>
-                      setIMAPInput({
+                      updateIMAPInput({
                         ...imapInput,
                         [protocol]: { ...imapInput[protocol], port: Number(event.target.value) },
                       })
@@ -1448,7 +1457,7 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                   <select
                     value={imapInput[protocol].tlsMode}
                     onChange={(event) =>
-                      setIMAPInput({
+                      updateIMAPInput({
                         ...imapInput,
                         [protocol]: {
                           ...imapInput[protocol],

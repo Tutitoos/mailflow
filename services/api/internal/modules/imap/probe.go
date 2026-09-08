@@ -67,7 +67,10 @@ func (prober *NetworkProber) probeIMAP(ctx context.Context, input ConnectInput) 
 			return nil, classifyConnectionError(ctx, err)
 		}
 		if _, err := readIMAPResponse(reader, "A001", false); err != nil {
-			return nil, ErrCapability
+			if errors.Is(err, ErrProtocol) {
+				return nil, ErrCapability
+			}
+			return nil, classifyConnectionError(ctx, err)
 		}
 		tlsConnection := tls.Client(connection, prober.tlsConfig(input.IMAP.Host))
 		if err := tlsConnection.HandshakeContext(ctx); err != nil {
@@ -84,7 +87,10 @@ func (prober *NetworkProber) probeIMAP(ctx context.Context, input ConnectInput) 
 	}
 	lines, err := readIMAPResponse(reader, "A002", false)
 	if err != nil {
-		return nil, ErrCapability
+		if errors.Is(err, ErrProtocol) {
+			return nil, ErrCapability
+		}
+		return nil, classifyConnectionError(ctx, err)
 	}
 	capabilities := imapCapabilities(lines, input.IMAP.TLSMode)
 	login := "A003 LOGIN " + quoteIMAP(input.Username) + " " + quoteIMAP(input.Password)
@@ -117,7 +123,15 @@ func (prober *NetworkProber) probeSMTP(ctx context.Context, input ConnectInput) 
 			return nil, classifyConnectionError(ctx, err)
 		}
 	}
-	if err := client.Auth(smtp.PlainAuth("", input.Username, input.Password, input.SMTP.Host)); err != nil {
+	advertised, mechanisms := client.Extension("AUTH")
+	if !advertised {
+		return nil, ErrCapability
+	}
+	authenticator, err := smtpAuthenticator(mechanisms, input.Username, input.Password, input.SMTP.Host)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Auth(authenticator); err != nil {
 		var protocolError *textproto.Error
 		if errors.As(err, &protocolError) {
 			return nil, ErrAuthentication
@@ -132,6 +146,44 @@ func (prober *NetworkProber) probeSMTP(ctx context.Context, input ConnectInput) 
 	}
 	_ = client.Quit()
 	return capabilities, nil
+}
+
+type loginAuth struct {
+	username string
+	password string
+}
+
+func (auth loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	if !server.TLS {
+		return "", nil, ErrTLSIdentity
+	}
+	return "LOGIN", []byte(auth.username), nil
+}
+
+func (auth loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if !more {
+		return nil, nil
+	}
+	challenge := strings.ToLower(string(fromServer))
+	if strings.Contains(challenge, "username") {
+		return []byte(auth.username), nil
+	}
+	if strings.Contains(challenge, "password") {
+		return []byte(auth.password), nil
+	}
+	return nil, ErrProtocol
+}
+
+func smtpAuthenticator(mechanisms, username, password, host string) (smtp.Auth, error) {
+	for _, mechanism := range strings.Fields(strings.ToUpper(mechanisms)) {
+		switch mechanism {
+		case "PLAIN":
+			return smtp.PlainAuth("", username, password, host), nil
+		case "LOGIN":
+			return loginAuth{username: username, password: password}, nil
+		}
+	}
+	return nil, ErrCapability
 }
 
 func (prober *NetworkProber) dial(ctx context.Context, server ServerConfig) (net.Conn, error) {

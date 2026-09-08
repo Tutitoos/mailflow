@@ -79,6 +79,44 @@ func TestNetworkProberClassifiesCertificateAuthenticationAndTimeout(t *testing.T
 			t.Fatalf("timeout error=%v", err)
 		}
 	})
+	t.Run("STARTTLS response timeout", func(t *testing.T) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = listener.Close() })
+		go func() {
+			connection, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			defer connection.Close()
+			_, _ = connection.Write([]byte("* OK fixture ready\r\n"))
+			_, _ = bufio.NewReader(connection).ReadString('\n')
+			time.Sleep(250 * time.Millisecond)
+		}()
+		prober, _ := NewNetworkProber(50*time.Millisecond, nil)
+		input := probeInput(listener.Addr().String(), "127.0.0.1:1", TLSStartTLS)
+		if _, err := prober.Probe(context.Background(), input); !errors.Is(err, ErrTimeout) {
+			t.Fatalf("STARTTLS timeout error=%v", err)
+		}
+	})
+}
+
+func TestSMTPAuthenticatorSupportsPasswordMechanismsAndRejectsUnknownOnes(t *testing.T) {
+	if _, err := smtpAuthenticator("PLAIN LOGIN", "owner", "secret", "smtp.example.test"); err != nil {
+		t.Fatalf("PLAIN authenticator: %v", err)
+	}
+	authenticator, err := smtpAuthenticator("XOAUTH2 LOGIN", "owner", "secret", "smtp.example.test")
+	if err != nil {
+		t.Fatalf("LOGIN authenticator: %v", err)
+	}
+	if _, ok := authenticator.(loginAuth); !ok {
+		t.Fatalf("authenticator type = %T", authenticator)
+	}
+	if _, err := smtpAuthenticator("XOAUTH2", "owner", "secret", "smtp.example.test"); !errors.Is(err, ErrCapability) {
+		t.Fatalf("unsupported mechanisms error=%v", err)
+	}
 }
 
 func TestCapabilityParserIgnoresUnboundedProviderValues(t *testing.T) {

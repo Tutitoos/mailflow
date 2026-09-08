@@ -181,6 +181,7 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 - Detección de capacidades para servidores genéricos.
 - IMAP IDLE cuando esté disponible y polling como respaldo.
 - El worker recorre cada carpeta seleccionable con cursores `UIDVALIDITY`/UID, normaliza MIME bajo límites y conserva una identidad estable derivada de `Message-ID` o, como fallback, del contenido bruto.
+- iCloud usa un contrato de configuración separado que solo acepta dirección y contraseña específica para apps. El servidor aplica el preset oficial y marca la cuenta con `provider.icloud`; después reutiliza el dominio IMAP sin bifurcar sincronización, acciones ni almacenamiento.
 - El ID de conversación parte de la raíz de `References`, después de `In-Reply-To` y finalmente del propio `Message-ID`; todas las claves siguen aisladas por cuenta en PostgreSQL.
 - La ubicación mutable `(carpeta, UIDVALIDITY, UID)` se persiste separada del mensaje. Un MOVE/COPY actualiza esa ubicación sin crear otro mensaje de dominio.
 - Flags y movimientos usan comandos UID. El fallback COPY + eliminación dirigida solo se admite con UIDPLUS; nunca se ejecuta un `EXPUNGE` global como sustituto inseguro.

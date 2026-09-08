@@ -57,7 +57,7 @@ Este estado confirma la base técnica, no funcionalidad de correo. Better Auth, 
 ## Fase 6 — iCloud e IMAP
 
 - IMAP/SMTP sobre TLS.
-- iCloud mediante contraseña específica.
+- iCloud mediante un preset aislado y contraseña específica para apps, con inglés predeterminado y ayuda equivalente en español.
 - IMAP IDLE y polling de respaldo.
 - Sincronización MIME por UID, threading estable y reconciliación de MOVE/COPY.
 - Acciones, drafts, adjuntos y envío SMTP con resultados ambiguos protegidos por idempotencia.

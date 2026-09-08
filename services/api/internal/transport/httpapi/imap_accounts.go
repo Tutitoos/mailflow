@@ -38,6 +38,34 @@ func connectIMAPAccount(service *mailflowimap.Service) fiber.Handler {
 	}
 }
 
+func probeICloudAccount(service *mailflowimap.Service) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		input, err := bindICloudInput(c, service)
+		if err != nil {
+			return err
+		}
+		result, err := service.ProbeICloud(c.Context(), input)
+		if err != nil {
+			return iCloudProblem(err)
+		}
+		return c.JSON(result)
+	}
+}
+
+func connectICloudAccount(service *mailflowimap.Service) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		input, err := bindICloudInput(c, service)
+		if err != nil {
+			return err
+		}
+		account, err := service.ConnectICloud(c.Context(), input)
+		if err != nil {
+			return iCloudProblem(err)
+		}
+		return c.Status(fiber.StatusCreated).JSON(account)
+	}
+}
+
 func discoverIMAPFolders(service *mailflowimap.Service, syncer SyncRequester) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil {
@@ -74,6 +102,32 @@ func bindIMAPInput(c fiber.Ctx, service *mailflowimap.Service) (mailflowimap.Con
 	}
 	input.UserID = user.ID
 	return input, nil
+}
+
+func bindICloudInput(c fiber.Ctx, service *mailflowimap.Service) (mailflowimap.ICloudConnectInput, error) {
+	if service == nil {
+		return mailflowimap.ICloudConnectInput{}, newProblem(fiber.StatusServiceUnavailable, "imap_unavailable", "iCloud Mail is unavailable", "iCloud Mail account management is temporarily unavailable.")
+	}
+	user, ok := authbridge.UserFromContext(c.Context())
+	if !ok {
+		return mailflowimap.ICloudConnectInput{}, newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
+	}
+	var input mailflowimap.ICloudConnectInput
+	if err := c.Bind().Body(&input); err != nil {
+		return mailflowimap.ICloudConnectInput{}, newProblem(fiber.StatusBadRequest, "icloud_configuration_invalid", "Invalid iCloud Mail configuration", "Provide an iCloud Mail address and an app-specific password.")
+	}
+	input.UserID = user.ID
+	return input, nil
+}
+
+func iCloudProblem(err error) error {
+	if errors.Is(err, mailflowimap.ErrInvalidConfiguration) {
+		return newProblem(fiber.StatusBadRequest, "icloud_configuration_invalid", "Invalid iCloud Mail configuration", "Provide an iCloud Mail address and an app-specific password.")
+	}
+	if errors.Is(err, mailflowimap.ErrAuthentication) {
+		return newProblem(fiber.StatusUnauthorized, "icloud_app_password_rejected", "iCloud Mail authentication failed", "Generate a new app-specific password in Apple Account settings. Never enter the primary Apple Account password.")
+	}
+	return imapProblem(err)
 }
 
 func imapProblem(err error) error {

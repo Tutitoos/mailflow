@@ -247,6 +247,11 @@ export type ImapAccountInput = {
     smtp: MailServerConfig;
 };
 
+export type ICloudAccountInput = {
+    displayName: string;
+    email: string;
+};
+
 export type ImapProbeResult = {
     capabilities: {
         [key: string]: boolean;
@@ -545,6 +550,12 @@ export type ImapAccountInputWritable = {
     password: string;
     imap: MailServerConfig;
     smtp: MailServerConfig;
+};
+
+export type ICloudAccountInputWritable = {
+    displayName: string;
+    email: string;
+    appSpecificPassword: string;
 };
 
 export type AccountId = string;
@@ -851,6 +862,56 @@ export type ConnectImapAccountResponses = {
 };
 
 export type ConnectImapAccountResponse = ConnectImapAccountResponses[keyof ConnectImapAccountResponses];
+
+export type ProbeICloudAccountData = {
+    body: ICloudAccountInputWritable;
+    path?: never;
+    query?: never;
+    url: '/accounts/icloud/probe';
+};
+
+export type ProbeICloudAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ProbeICloudAccountError = ProbeICloudAccountErrors[keyof ProbeICloudAccountErrors];
+
+export type ProbeICloudAccountResponses = {
+    /**
+     * Official iCloud Mail preset and app-specific password verified
+     */
+    200: ImapProbeResult;
+};
+
+export type ProbeICloudAccountResponse = ProbeICloudAccountResponses[keyof ProbeICloudAccountResponses];
+
+export type ConnectICloudAccountData = {
+    body: ICloudAccountInputWritable;
+    path?: never;
+    query?: never;
+    url: '/accounts/icloud';
+};
+
+export type ConnectICloudAccountErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type ConnectICloudAccountError = ConnectICloudAccountErrors[keyof ConnectICloudAccountErrors];
+
+export type ConnectICloudAccountResponses = {
+    /**
+     * iCloud Mail account connected through the isolated IMAP preset
+     */
+    201: Account;
+};
+
+export type ConnectICloudAccountResponse = ConnectICloudAccountResponses[keyof ConnectICloudAccountResponses];
 
 export type DiscoverImapFoldersData = {
     body?: never;

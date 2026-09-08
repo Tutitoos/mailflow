@@ -40,6 +40,7 @@ func (store *serviceAccounts) Credentials(context.Context, string, string) (json
 type serviceProber struct {
 	capabilities map[string]bool
 	err          error
+	input        *ConnectInput
 }
 
 type serviceFolderDiscoverer struct{ folders []DiscoveredFolder }
@@ -55,7 +56,10 @@ func (repository *serviceFolderRepository) Reconcile(_ context.Context, _, _ str
 	return FolderDiscoveryResult{Folders: []FolderState{{Name: folders[0].Name, RemoteID: folders[0].IdentityKey}}}, nil
 }
 
-func (prober serviceProber) Probe(context.Context, ConnectInput) (map[string]bool, error) {
+func (prober serviceProber) Probe(_ context.Context, input ConnectInput) (map[string]bool, error) {
+	if prober.input != nil {
+		*prober.input = input
+	}
 	return prober.capabilities, prober.err
 }
 
@@ -102,6 +106,33 @@ func TestServiceRejectsCleartextAndSeparatesProbeFailures(t *testing.T) {
 	service, _ = NewService(&serviceAccounts{}, serviceProber{err: ErrTLSIdentity})
 	if _, err := service.Connect(context.Background(), input); !errors.Is(err, ErrTLSIdentity) {
 		t.Fatalf("TLS error=%v", err)
+	}
+}
+
+func TestServiceICloudPresetUsesOnlyOfficialServersAndAppPassword(t *testing.T) {
+	store := &serviceAccounts{}
+	var probed ConnectInput
+	service, err := NewService(store, serviceProber{capabilities: map[string]bool{"imap.idle": true, "imap.uidplus": true}, input: &probed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := ICloudConnectInput{
+		UserID: "0199ed3b-c950-7000-8000-000000000001", DisplayName: "iCloud", Email: "owner@icloud.com", AppSpecificPassword: "fixture-app-password",
+	}
+	account, err := service.ConnectICloud(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probed.Username != input.Email || probed.Password != input.AppSpecificPassword || probed.IMAP != (ServerConfig{Host: "imap.mail.me.com", Port: 993, TLSMode: TLSImplicit}) || probed.SMTP != (ServerConfig{Host: "smtp.mail.me.com", Port: 587, TLSMode: TLSStartTLS}) {
+		t.Fatalf("unexpected iCloud preset: %+v", probed)
+	}
+	if !account.Capabilities[CapabilityICloudPreset] || !account.Capabilities["imap.idle"] || !account.Capabilities["imap.uidplus"] {
+		t.Fatalf("iCloud capabilities = %+v", account.Capabilities)
+	}
+	invalid := input
+	invalid.Email = "Owner <owner@icloud.com>"
+	if _, err := service.ProbeICloud(context.Background(), invalid); !errors.Is(err, ErrInvalidConfiguration) {
+		t.Fatalf("display address accepted: %v", err)
 	}
 }
 

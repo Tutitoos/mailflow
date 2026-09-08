@@ -21,6 +21,8 @@ var (
 	ErrWrongProvider        = errors.New("account is not an IMAP account")
 )
 
+const CapabilityICloudPreset = "provider.icloud"
+
 type Accounts interface {
 	Connect(context.Context, accounts.CreateInput) (accounts.Account, error)
 	Get(context.Context, string, string) (accounts.Account, error)
@@ -73,12 +75,38 @@ func (service *Service) Probe(ctx context.Context, input ConnectInput) (ProbeRes
 	return ProbeResult{Capabilities: boundedCapabilities(capabilities)}, nil
 }
 
+func (service *Service) ProbeICloud(ctx context.Context, input ICloudConnectInput) (ProbeResult, error) {
+	input = normalizeICloud(input)
+	if !input.valid() {
+		return ProbeResult{}, ErrInvalidConfiguration
+	}
+	result, err := service.Probe(ctx, input.connectInput())
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	result.Capabilities[CapabilityICloudPreset] = true
+	return result, nil
+}
+
 func (service *Service) Connect(ctx context.Context, input ConnectInput) (accounts.Account, error) {
 	result, err := service.Probe(ctx, input)
 	if err != nil {
 		return accounts.Account{}, err
 	}
 	input = normalize(input)
+	return service.persistConnection(ctx, input, result)
+}
+
+func (service *Service) ConnectICloud(ctx context.Context, input ICloudConnectInput) (accounts.Account, error) {
+	input = normalizeICloud(input)
+	result, err := service.ProbeICloud(ctx, input)
+	if err != nil {
+		return accounts.Account{}, err
+	}
+	return service.persistConnection(ctx, normalize(input.connectInput()), result)
+}
+
+func (service *Service) persistConnection(ctx context.Context, input ConnectInput, result ProbeResult) (accounts.Account, error) {
 	credentials, err := json.Marshal(storedCredentials{Username: input.Username, Password: input.Password, IMAP: input.IMAP, SMTP: input.SMTP})
 	if err != nil {
 		return accounts.Account{}, ErrInvalidConfiguration
@@ -110,6 +138,13 @@ func normalize(input ConnectInput) ConnectInput {
 	input.Username = strings.TrimSpace(input.Username)
 	input.IMAP.Host = strings.ToLower(strings.TrimSpace(input.IMAP.Host))
 	input.SMTP.Host = strings.ToLower(strings.TrimSpace(input.SMTP.Host))
+	return input
+}
+
+func normalizeICloud(input ICloudConnectInput) ICloudConnectInput {
+	input.UserID = strings.TrimSpace(input.UserID)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Email = strings.TrimSpace(input.Email)
 	return input
 }
 

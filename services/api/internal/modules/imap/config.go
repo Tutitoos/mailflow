@@ -2,6 +2,7 @@ package imap
 
 import (
 	"net"
+	stdmail "net/mail"
 	"strings"
 )
 
@@ -27,6 +28,16 @@ type ConnectInput struct {
 	SMTP        ServerConfig `json:"smtp"`
 }
 
+// ICloudConnectInput deliberately names the only accepted credential. The
+// public iCloud setup contract never asks for an Apple Account password or
+// accepts caller-controlled server endpoints.
+type ICloudConnectInput struct {
+	UserID              string `json:"-"`
+	DisplayName         string `json:"displayName"`
+	Email               string `json:"email"`
+	AppSpecificPassword string `json:"appSpecificPassword"`
+}
+
 type storedCredentials struct {
 	Username string       `json:"username"`
 	Password string       `json:"password"`
@@ -36,6 +47,22 @@ type storedCredentials struct {
 
 func (input ConnectInput) valid() bool {
 	return bounded(input.UserID, 128) && bounded(input.DisplayName, 256) && bounded(input.Username, 512) && bounded(input.Password, 4096) && input.IMAP.valid() && input.SMTP.valid()
+}
+
+func (input ICloudConnectInput) valid() bool {
+	if !bounded(input.UserID, 128) || !bounded(input.DisplayName, 256) || !bounded(input.Email, 320) || !bounded(input.AppSpecificPassword, 4096) {
+		return false
+	}
+	address, err := stdmail.ParseAddress(strings.TrimSpace(input.Email))
+	return err == nil && strings.EqualFold(address.Address, strings.TrimSpace(input.Email))
+}
+
+func (input ICloudConnectInput) connectInput() ConnectInput {
+	return ConnectInput{
+		UserID: input.UserID, DisplayName: input.DisplayName, Username: input.Email, Password: input.AppSpecificPassword,
+		IMAP: ServerConfig{Host: "imap.mail.me.com", Port: 993, TLSMode: TLSImplicit},
+		SMTP: ServerConfig{Host: "smtp.mail.me.com", Port: 587, TLSMode: TLSStartTLS},
+	}
 }
 
 func (server ServerConfig) valid() bool {

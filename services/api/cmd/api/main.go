@@ -24,6 +24,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/microsoftoauth"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
@@ -103,6 +104,8 @@ func main() {
 	var heartbeatDone []chan struct{}
 	googleConfig := googleoauth.Config{ClientID: runtimeConfig.GoogleOAuthClientID, ClientSecret: runtimeConfig.GoogleOAuthClientSecret, RedirectURL: runtimeConfig.GoogleOAuthRedirectURL}
 	googleClient := googleoauth.NewClient(googleConfig, nil)
+	microsoftConfig := microsoftoauth.Config{ClientID: runtimeConfig.MicrosoftOAuthClientID, ClientSecret: runtimeConfig.MicrosoftOAuthClientSecret, RedirectURL: runtimeConfig.MicrosoftOAuthRedirectURL, Authority: runtimeConfig.MicrosoftOAuthAuthority}
+	microsoftClient := microsoftoauth.NewClient(microsoftConfig, nil)
 	var gmailResolver *mailflowsync.GmailAccountResolver
 	if runtimeConfig.DatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -250,6 +253,7 @@ func main() {
 	}
 	if redisClient != nil && accountService != nil {
 		options.GoogleOAuth = googleoauth.NewService(googleConfig, googleoauth.NewRedisStateStore(redisClient, "mailflow"), googleClient, accountService)
+		options.MicrosoftOAuth = microsoftoauth.NewService(microsoftConfig, microsoftoauth.NewRedisStateStore(redisClient, "mailflow"), microsoftClient, accountService)
 		var resolverErr error
 		options.Delivery, resolverErr = mail.NewDeliveryService(databasePool, mail.NewDraftRepository(databasePool), gmailOutgoingProviderResolver{gmailResolver}, options.Events, options.Attachments)
 		if resolverErr != nil {

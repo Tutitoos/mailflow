@@ -13,11 +13,11 @@ import (
 func googleOAuthCallback(service *googleoauth.Service, syncer SyncRequester) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil || !service.Configured() {
-			return oauthProblem(googleoauth.ErrNotConfigured)
+			return googleOAuthProblem(googleoauth.ErrNotConfigured)
 		}
 		account, userID, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"))
 		if err != nil {
-			return oauthProblem(err)
+			return googleOAuthProblem(err)
 		}
 		if syncer == nil {
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?google=connected&sync=pending")
@@ -32,7 +32,7 @@ func googleOAuthCallback(service *googleoauth.Service, syncer SyncRequester) fib
 func googleOAuthStart(service *googleoauth.Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if service == nil || !service.Configured() {
-			return oauthProblem(googleoauth.ErrNotConfigured)
+			return googleOAuthProblem(googleoauth.ErrNotConfigured)
 		}
 		user, ok := authbridge.UserFromContext(c.Context())
 		if !ok {
@@ -46,47 +46,13 @@ func googleOAuthStart(service *googleoauth.Service) fiber.Handler {
 		}
 		result, err := service.Start(c.Context(), user.ID, body.Reconsent)
 		if err != nil {
-			return oauthProblem(err)
+			return googleOAuthProblem(err)
 		}
 		return c.JSON(result)
 	}
 }
 
-func googleOAuthRefresh(service *googleoauth.Service) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		if service == nil || !service.Configured() {
-			return oauthProblem(googleoauth.ErrNotConfigured)
-		}
-		user, ok := authbridge.UserFromContext(c.Context())
-		if !ok {
-			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
-		}
-		account, err := service.Refresh(c.Context(), user.ID, c.Params("accountId"))
-		if err != nil {
-			return oauthProblem(err)
-		}
-		return c.JSON(account)
-	}
-}
-
-func googleOAuthDisconnect(service *googleoauth.Service) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		if service == nil || !service.Configured() {
-			return oauthProblem(googleoauth.ErrNotConfigured)
-		}
-		user, ok := authbridge.UserFromContext(c.Context())
-		if !ok {
-			return newProblem(fiber.StatusUnauthorized, "authentication_failed", "Authentication failed", "A valid access token is required.")
-		}
-		result, err := service.Disconnect(c.Context(), user.ID, c.Params("accountId"))
-		if err != nil {
-			return oauthProblem(err)
-		}
-		return c.JSON(result)
-	}
-}
-
-func oauthProblem(err error) error {
+func googleOAuthProblem(err error) error {
 	switch {
 	case errors.Is(err, googleoauth.ErrNotConfigured):
 		return newProblem(fiber.StatusServiceUnavailable, "google_oauth_not_configured", "Google OAuth is not configured", "Add the Google OAuth client ID, client secret, and authorized redirect URI described in docs/providers/google.md.")

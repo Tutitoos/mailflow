@@ -49,6 +49,18 @@ func (lister fakeAccountLister) List(_ context.Context, userID string) ([]accoun
 	return lister.items, lister.err
 }
 
+func (lister fakeAccountLister) Get(_ context.Context, userID, accountID string) (accounts.Account, error) {
+	if userID != testUserID {
+		return accounts.Account{}, accounts.ErrAccountNotFound
+	}
+	for _, account := range lister.items {
+		if account.ID == accountID {
+			return account, nil
+		}
+	}
+	return accounts.Account{}, accounts.ErrAccountNotFound
+}
+
 func (resolver fakeUserResolver) FindBySubject(_ context.Context, subject string) (authbridge.User, error) {
 	if resolver.err != nil {
 		return authbridge.User{}, resolver.err

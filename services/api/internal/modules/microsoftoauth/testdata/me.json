@@ -1,0 +1,6 @@
+{
+  "id": "sanitized-user-id",
+  "displayName": "Fixture Owner",
+  "mail": "owner@example.test",
+  "userPrincipalName": "owner@example.test"
+}

@@ -1,0 +1,8 @@
+{
+  "access_token": "sanitized-access",
+  "refresh_token": "sanitized-refresh",
+  "token_type": "Bearer",
+  "scope": "openid profile email offline_access User.Read Mail.ReadWrite Mail.Send",
+  "expires_in": 3600,
+  "id_token": "e30.eyJ0aWQiOiI5MTg4MDQwZC02YzY3LTRjNWItYjExMi0zNmEzMDRiNjZkYWQifQ.c2FuaXRpemVk"
+}

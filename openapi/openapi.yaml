@@ -183,7 +183,7 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
   /accounts/{accountId}/refresh:
     post:
-      operationId: refreshGoogleAccount
+      operationId: refreshAccountCredentials
       parameters:
         - $ref: "#/components/parameters/AccountId"
       responses:
@@ -200,7 +200,7 @@ paths:
         - $ref: "#/components/parameters/AccountId"
       responses:
         "200":
-          description: Local access disabled and remote revocation attempted
+          description: Local access disabled; supported providers also attempt remote revocation
           content:
             application/json:
               schema:
@@ -209,6 +209,7 @@ paths:
                 properties:
                   account: { $ref: "#/components/schemas/Account" }
                   remoteRevoked: { type: boolean }
+                  revocationUrl: { type: string, format: uri }
         default: { $ref: "#/components/responses/Problem" }
   /oauth/google/status:
     get:
@@ -265,6 +266,67 @@ paths:
         "303":
           description: Connection completed and browser redirected to account settings
         "400": { $ref: "#/components/responses/Problem" }
+        "502": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /oauth/microsoft/status:
+    get:
+      operationId: getMicrosoftOAuthStatus
+      responses:
+        "200":
+          description: Per-installation Microsoft OAuth capability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [configured, setup]
+                properties:
+                  configured: { type: boolean }
+                  setup: { type: string }
+        "401": { $ref: "#/components/responses/Problem" }
+  /oauth/microsoft/start:
+    post:
+      operationId: startMicrosoftOAuth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reconsent: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Short-lived single-use Microsoft authorization transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorizationUrl, expiresAt]
+                properties:
+                  authorizationUrl: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /oauth/microsoft/callback:
+    get:
+      operationId: completeMicrosoftOAuth
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 256 }
+        - name: code
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+        - name: error
+          in: query
+          schema: { type: string, maxLength: 256 }
+      responses:
+        "303":
+          description: Connection completed and browser redirected to account settings
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
         "502": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
   /events:

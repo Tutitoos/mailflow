@@ -1,0 +1,4 @@
+{
+  "error": "invalid_grant",
+  "error_description": "Sanitized provider detail that must not leave the module"
+}

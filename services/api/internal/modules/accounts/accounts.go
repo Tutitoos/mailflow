@@ -58,6 +58,7 @@ type Repository interface {
 	Disable(context.Context, string, string) (Account, error)
 	FindByRemote(context.Context, string, Provider, string) (Account, error)
 	ReplaceCredentials(context.Context, string, string, string, map[string]bool, json.RawMessage) (Account, error)
+	MarkError(context.Context, string, string) (Account, error)
 }
 
 type Service struct{ repository Repository }
@@ -90,6 +91,10 @@ func (service *Service) Get(ctx context.Context, userID, accountID string) (Acco
 
 func (service *Service) ReplaceCredentials(ctx context.Context, userID, accountID, displayName string, capabilities map[string]bool, credentials json.RawMessage) (Account, error) {
 	return service.repository.ReplaceCredentials(ctx, userID, accountID, displayName, capabilities, credentials)
+}
+
+func (service *Service) MarkError(ctx context.Context, userID, accountID string) (Account, error) {
+	return service.repository.MarkError(ctx, userID, accountID)
 }
 
 func (service *Service) Disable(ctx context.Context, userID, accountID string) (Account, error) {

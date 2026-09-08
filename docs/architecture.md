@@ -170,7 +170,7 @@ Las identidades de Mailflow estarán separadas de las credenciales utilizadas pa
 - PKCE S256 y `state` aleatorio de un solo uso, los mismos límites de callback que Google y scopes delegados fijos `User.Read`, `Mail.ReadWrite` y `Mail.Send`.
 - Mailflow distingue cuentas personales y organizativas por tenant, cifra el refresh token, valida los scopes concedidos y marca como error las cuentas cuyo consentimiento se ha revocado o requiere interacción.
 - Desconectar corta el acceso local sin solicitar el permiso global para revocar todas las sesiones del usuario; la revocación completa del grant queda disponible en Microsoft My Apps.
-- Microsoft Graph para correo se incorpora en la siguiente unidad de la fase.
+- El adaptador Microsoft Graph usa IDs inmutables, `conversationId` por cuenta, MIME sanitizado, categorías no destructivas, paginación opaca validada y errores tipados con `Retry-After`. Su conexión al worker y a los flujos compartidos se completa en las siguientes unidades de la fase.
 - Delta queries mediante polling adaptativo y reconciliación diaria.
 
 ### iCloud e IMAP

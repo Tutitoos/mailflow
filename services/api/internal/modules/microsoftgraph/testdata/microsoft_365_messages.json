@@ -1,0 +1,16 @@
+{
+  "value": [
+    {
+      "id": "m365-message-2",
+      "conversationId": "m365-conversation-2",
+      "receivedDateTime": "2026-09-08T08:15:00Z",
+      "sentDateTime": "2026-09-08T08:14:00Z",
+      "isRead": true,
+      "flag": { "flagStatus": "notFlagged" },
+      "importance": "normal",
+      "categories": ["Projects"],
+      "parentFolderId": "inbox-folder-id",
+      "hasAttachments": false
+    }
+  ]
+}

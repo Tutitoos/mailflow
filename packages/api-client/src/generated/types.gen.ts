@@ -4,6 +4,58 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}/api/v1` | `${string}://${string}` | `${string}://${string}` | `${string}://${string}` | `${string}://${string}` | (string & {});
 };
 
+export type AdminHealthState = 'healthy' | 'degraded' | 'blocked' | 'stale';
+
+export type AdminComponent = {
+    name: 'api' | 'postgres' | 'redis' | 'worker' | 'queue';
+    status: AdminHealthState;
+    detail: string;
+    checkedAt: string;
+    lastObservedAt?: string;
+};
+
+export type QueueStats = {
+    ready: number;
+    pending: number;
+    retry: number;
+    dead: number;
+};
+
+export type AdminStatus = {
+    state: AdminHealthState;
+    version: string;
+    goVersion: string;
+    checkedAt: string;
+    components: Array<AdminComponent>;
+    queue: QueueStats;
+};
+
+export type AdminOperation = {
+    id: string;
+    action: 'queue.retry_sync';
+    result: 'requested' | 'queued' | 'already_running' | 'failed';
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminQueueOverview = {
+    stats: QueueStats;
+    operations: Array<AdminOperation>;
+};
+
+export type AdminOperationResult = {
+    operation: AdminOperation;
+    created: boolean;
+};
+
+export type AdminCdnStatus = {
+    attachmentObjects: number;
+    attachmentBytes: number;
+    sentryObjects: number;
+    sentryBytes: number;
+    missingObjects: number;
+};
+
 export type SentryReceipt = {
     id: string;
     receivedAt?: string;
@@ -1320,10 +1372,105 @@ export type GetAdminStatusData = {
 
 export type GetAdminStatusResponses = {
     /**
-     * Operational status
+     * Bounded operational status and component freshness
      */
-    200: unknown;
+    200: AdminStatus;
 };
+
+export type GetAdminStatusResponse = GetAdminStatusResponses[keyof GetAdminStatusResponses];
+
+export type GetAdminQueueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/queue';
+};
+
+export type GetAdminQueueErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminQueueError = GetAdminQueueErrors[keyof GetAdminQueueErrors];
+
+export type GetAdminQueueResponses = {
+    /**
+     * Payload-free queue counts and recent owner operations
+     */
+    200: AdminQueueOverview;
+};
+
+export type GetAdminQueueResponse = GetAdminQueueResponses[keyof GetAdminQueueResponses];
+
+export type RetryAdminQueueData = {
+    body: {
+        accountId: string;
+        confirmation: 'retry';
+    };
+    headers: {
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/admin/queue/retry';
+};
+
+export type RetryAdminQueueErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    404: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    422: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type RetryAdminQueueError = RetryAdminQueueErrors[keyof RetryAdminQueueErrors];
+
+export type RetryAdminQueueResponses = {
+    /**
+     * Existing idempotent operation
+     */
+    200: AdminOperationResult;
+    /**
+     * Synchronization retry accepted
+     */
+    202: AdminOperationResult;
+};
+
+export type RetryAdminQueueResponse = RetryAdminQueueResponses[keyof RetryAdminQueueResponses];
+
+export type GetAdminCdnStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/cdn';
+};
+
+export type GetAdminCdnStatusErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminCdnStatusError = GetAdminCdnStatusErrors[keyof GetAdminCdnStatusErrors];
+
+export type GetAdminCdnStatusResponses = {
+    /**
+     * Aggregate CDN object usage without object metadata
+     */
+    200: AdminCdnStatus;
+};
+
+export type GetAdminCdnStatusResponse = GetAdminCdnStatusResponses[keyof GetAdminCdnStatusResponses];
 
 export type GetAdminMetricsData = {
     body?: never;

@@ -24,7 +24,6 @@ import {
   Search,
   Send,
   Settings,
-  ShieldCheck,
   SlidersHorizontal,
   Star,
   Tag,
@@ -45,8 +44,6 @@ import {
   loadInboxPage,
   loadMailAccounts,
   loadMailNavigation,
-  loadSentryTelemetry,
-  loadTranslationAdminSummary,
   loadTranslationCatalog,
   type MailAccount,
   type MailActionKind,
@@ -54,11 +51,9 @@ import {
   type MailCategory,
   type MailLabel,
   type SearchResult,
-  type SentryTelemetrySummary,
   searchMail,
   startGoogleConnection,
   subscribeMailEvents,
-  type TranslationAdminSummary,
 } from "./mailflow-api";
 import { type SearchSyntaxError, searchSuggestions, validateSearchSyntax } from "./search-syntax";
 
@@ -1178,203 +1173,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-const serviceRows = [
-  ["API", "Healthy", "12 ms"],
-  ["Worker", "Healthy", "0 queued"],
-  ["PostgreSQL", "Healthy", "6 connections"],
-  ["Redis", "Healthy", "1.4 MB"],
-  ["CDN", "Healthy", "284 MB"],
-];
-
-export function AdminPage({ locale }: { locale: Locale }) {
-  const navigate = useNavigate();
-  const t: Translator = (key) => translate(locale, key);
-  const [telemetry, setTelemetry] = useState<SentryTelemetrySummary | null>(null);
-  const [translationStatus, setTranslationStatus] = useState<TranslationAdminSummary | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadSentryTelemetry(controller.signal)
-      .then(setTelemetry)
-      .catch(() => undefined);
-    void loadTranslationAdminSummary(controller.signal)
-      .then(setTranslationStatus)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, []);
-  return (
-    <div className="admin-shell">
-      <header className="admin-header">
-        <Brand />
-        <Button variant="outline" onClick={() => navigate("/")}>
-          <ArrowLeft size={16} />
-          {t("viewInbox")}
-        </Button>
-      </header>
-      <aside className="admin-sidebar">
-        <h1>{t("admin")}</h1>
-        {[
-          t("status"),
-          "Accounts",
-          "Synchronization",
-          t("metrics"),
-          t("logs"),
-          t("errors"),
-          "Translations",
-          "CDN",
-          "Backups",
-          "Updates",
-          "Settings",
-        ].map((item, index) => (
-          <button type="button" className={index === 0 ? "active" : ""} key={item}>
-            {item}
-          </button>
-        ))}
-      </aside>
-      <main className="admin-content">
-        <div className="admin-title">
-          <div>
-            <span>System</span>
-            <h2>{t("status")}</h2>
-          </div>
-          <div className="status-badge">
-            <ShieldCheck size={15} />
-            {t("status.healthy")}
-          </div>
-        </div>
-        <section className="metric-strip">
-          <article>
-            <span>{t("processed")}</span>
-            <strong>18,420</strong>
-            <small>+12.4% this week</small>
-          </article>
-          <article>
-            <span>{t("latency")}</span>
-            <strong>42 ms</strong>
-            <small>p95 · last 24 hours</small>
-          </article>
-          <article>
-            <span>Sentry telemetry</span>
-            <strong>{telemetry ? telemetry.traces + telemetry.profiles : "—"}</strong>
-            <small>
-              {telemetry
-                ? `${telemetry.traces} traces · ${telemetry.profiles} profiles · 24h`
-                : "Unavailable · last 24 hours"}
-            </small>
-          </article>
-          <article>
-            <span>{t("queue")}</span>
-            <strong>0</strong>
-            <small>Last run 18 seconds ago</small>
-          </article>
-        </section>
-        <section className="admin-grid">
-          <article className="admin-panel chart-panel">
-            <header>
-              <div>
-                <span>Processed messages</span>
-                <strong>2,842</strong>
-              </div>
-              <select aria-label="Chart range">
-                <option>Last 7 days</option>
-              </select>
-            </header>
-            <svg viewBox="0 0 700 180" role="img" aria-label="Processed messages over seven days">
-              <path className="grid-line" d="M0 35H700 M0 90H700 M0 145H700" />
-              <path
-                className="chart-area"
-                d="M0 145 C80 132 95 110 170 117 S280 42 350 72 S450 105 520 62 S630 24 700 42 L700 180 L0 180Z"
-              />
-              <path
-                className="chart-line"
-                d="M0 145 C80 132 95 110 170 117 S280 42 350 72 S450 105 520 62 S630 24 700 42"
-              />
-            </svg>
-          </article>
-          <article className="admin-panel">
-            <header>
-              <strong>{t("services")}</strong>
-              <Button size="sm">View details</Button>
-            </header>
-            <div className="service-table">
-              {serviceRows.map(([name, status, detail]) => (
-                <div key={name}>
-                  <span className="online-dot" />
-                  <strong>{name}</strong>
-                  <span>{status}</span>
-                  <code>{detail}</code>
-                </div>
-              ))}
-            </div>
-          </article>
-        </section>
-        <section className="admin-panel recent-events" aria-label="Sentry telemetry">
-          <header>
-            <strong>Privacy-safe telemetry</strong>
-            <span className="status-badge">
-              Replay {telemetry?.replayEnabled ? "enabled" : "disabled"}
-            </span>
-          </header>
-          <div className="event-row">
-            <span>Traces</span>
-            <strong>{telemetry?.traces ?? "—"}</strong>
-            <span>Spans</span>
-            <strong>{telemetry?.spans ?? "—"}</strong>
-            <span>Profiles</span>
-            <strong>{telemetry?.profiles ?? "—"}</strong>
-            <span>Replay segments</span>
-            <strong>{telemetry?.replaySegments ?? "—"}</strong>
-          </div>
-        </section>
-        <section className="admin-panel recent-events" aria-label="Translation catalogs">
-          <header>
-            <strong>Translation catalogs</strong>
-            <span className="status-badge">Revision {translationStatus?.revision ?? "—"}</span>
-          </header>
-          <div className="event-row">
-            <span>English source</span>
-            <strong>
-              {translationStatus?.diagnostics.missingEnglish.length === 0 ? "Complete" : "Invalid"}
-            </strong>
-            <span>Missing Spanish</span>
-            <strong>{translationStatus?.diagnostics.missingSpanish.length ?? "—"}</strong>
-            <span>Stale Spanish</span>
-            <strong>{translationStatus?.diagnostics.staleSpanish.length ?? "—"}</strong>
-            <span>Invalid ICU</span>
-            <strong>{translationStatus?.diagnostics.invalidIcu.length ?? "—"}</strong>
-          </div>
-        </section>
-        <section className="admin-panel recent-events">
-          <header>
-            <strong>Recent events</strong>
-            <Button size="sm">Open logs</Button>
-          </header>
-          <div className="event-row">
-            <time>18:42:03</time>
-            <span className="event-level info">INFO</span>
-            <code>sync.completed</code>
-            <span>Google account synchronized</span>
-            <small>req_01JQ…</small>
-          </div>
-          <div className="event-row">
-            <time>18:41:58</time>
-            <span className="event-level warn">WARN</span>
-            <code>provider.retry</code>
-            <span>Microsoft throttled a delta request</span>
-            <small>req_01JQ…</small>
-          </div>
-          <div className="event-row">
-            <time>18:40:12</time>
-            <span className="event-level info">INFO</span>
-            <code>backup.verified</code>
-            <span>Local repository snapshot verified</span>
-            <small>job_01JQ…</small>
-          </div>
-        </section>
-      </main>
     </div>
   );
 }

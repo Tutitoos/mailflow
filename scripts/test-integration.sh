@@ -77,4 +77,7 @@ export MAILFLOW_TEST_DATABASE_URL="postgres://mailflow:mailflow_test@127.0.0.1:$
 export MAILFLOW_TEST_REDIS_ADDRESS="127.0.0.1:${mailflow_redis_port}"
 
 cd "$mailflow_root/services/api"
-go test -race -count=1 -timeout=5m ./...
+# Database-backed packages each create isolated schemas. Bound package
+# concurrency so local and smaller self-hosted runners do not exhaust
+# PostgreSQL connections or disk while preserving package isolation.
+go test -race -count=1 -p=2 -timeout=5m ./...

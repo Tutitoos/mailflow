@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/cdn"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
@@ -83,6 +84,18 @@ func main() {
 		logger.Error("Redis queue unavailable", "event", "queue.unavailable", "error", err)
 		os.Exit(1)
 	}
+	heartbeats, err := admin.NewHeartbeats(client, queueConfig.Prefix)
+	if err != nil {
+		logger.Error("worker heartbeat unavailable", "event", "worker.heartbeat_unavailable")
+		os.Exit(1)
+	}
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		if heartbeatErr := heartbeats.Run(ctx, "worker"); heartbeatErr != nil && !errors.Is(heartbeatErr, context.Canceled) {
+			logger.Error("worker heartbeat stopped", "event", "worker.heartbeat_stopped")
+		}
+	}()
 	registry := metrics.NewRegistry()
 	handlers := make(map[string]queue.Handler)
 	var cleanupDone chan struct{}
@@ -278,6 +291,7 @@ func main() {
 	if logsDone != nil {
 		<-logsDone
 	}
+	<-heartbeatDone
 	if runErr != nil {
 		logger.Error("worker failed", "event", "worker.failed", "error", runErr)
 		os.Exit(1)

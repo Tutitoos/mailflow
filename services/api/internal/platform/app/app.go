@@ -22,6 +22,7 @@ import (
 type Options struct {
 	Accounts      *accounts.Service
 	Actions       *mail.PendingActionService
+	Admin         *admin.Service
 	ActionState   mail.ActionStateStore
 	Attachments   *cdn.Service
 	AuthAudience  string
@@ -64,13 +65,16 @@ func Build(version string, options ...Options) *fiber.App {
 	if runtimeOptions.Translations == nil {
 		runtimeOptions.Translations = translations.NewCatalog()
 	}
+	if runtimeOptions.Admin == nil {
+		runtimeOptions.Admin = admin.NewServiceWithMetrics(version, metricService)
+	}
 	_ = metricService.Registry().Set("mailflow_build_info", "gauge", 1, map[string]string{"service": "api", "result": "ready"})
 	return httpapi.New(httpapi.Dependencies{
 		Accounts:      runtimeOptions.Accounts,
 		Actions:       runtimeOptions.Actions,
 		ActionState:   runtimeOptions.ActionState,
 		Attachments:   attachmentService,
-		Admin:         admin.NewServiceWithMetrics(version, metricService),
+		Admin:         runtimeOptions.Admin,
 		AuthAudience:  runtimeOptions.AuthAudience,
 		AuthIssuer:    runtimeOptions.AuthIssuer,
 		AuthJWKSURL:   runtimeOptions.AuthJWKSURL,

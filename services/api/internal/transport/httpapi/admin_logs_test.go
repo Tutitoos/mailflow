@@ -45,9 +45,10 @@ func TestAdminLogsFilterAndControlTemporaryDebug(t *testing.T) {
 	}
 	pipeline.Attach(store)
 	registry := metrics.NewRegistry()
-	app := httpapi.New(httpapi.Dependencies{Admin: admin.NewService("test", registry), Logs: pipeline, Metrics: registry, Sentry: mailflowsentry.NewService(4), Translations: translations.NewCatalog()})
+	app, token := authenticatedAdminApp(t, httpapi.Dependencies{Admin: admin.NewService("test", registry), Logs: pipeline, Metrics: registry, Sentry: mailflowsentry.NewService(4), Translations: translations.NewCatalog()})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/logs?service=api&module=http&level=warning&event=http.slow&requestId=request-safe&limit=10", nil)
+	authorizeAdmin(request, token)
 	response, err := app.Test(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("logs status=%d err=%v", response.StatusCode, err)
@@ -65,6 +66,7 @@ func TestAdminLogsFilterAndControlTemporaryDebug(t *testing.T) {
 
 	request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/logs/debug", bytes.NewBufferString(`{"durationSeconds":60}`))
 	request.Header.Set("Content-Type", "application/json")
+	authorizeAdmin(request, token)
 	response, err = app.Test(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("debug status=%d err=%v", response.StatusCode, err)
@@ -80,7 +82,9 @@ func TestAdminLogsFilterAndControlTemporaryDebug(t *testing.T) {
 		t.Fatalf("debug status=%+v", status)
 	}
 
-	response, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/admin/logs?service=owner@example.test", nil))
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/logs?service=owner@example.test", nil)
+	authorizeAdmin(request, token)
+	response, err = app.Test(request)
 	if err != nil || response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unsafe filter status=%d err=%v", response.StatusCode, err)
 	}

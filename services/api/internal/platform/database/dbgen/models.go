@@ -23,6 +23,17 @@ type Account struct {
 	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
 }
 
+type AdminOperation struct {
+	ID                 pgtype.UUID        `json:"id"`
+	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
+	Action             string             `json:"action"`
+	TargetHash         string             `json:"target_hash"`
+	IdempotencyKeyHash string             `json:"idempotency_key_hash"`
+	Result             string             `json:"result"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AuthAccount struct {
 	ID                    pgtype.UUID        `json:"id"`
 	AccountID             string             `json:"account_id"`

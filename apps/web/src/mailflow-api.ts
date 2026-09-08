@@ -192,7 +192,9 @@ export type SentryTelemetrySummary = {
 };
 
 export type TranslationAdminSummary = {
+  defaultLocale: "en";
   revision: number;
+  catalogs: Record<"en" | "es", Record<string, { value: string; sourceHash: string }>>;
   diagnostics: {
     missingEnglish: string[];
     missingSpanish: string[];
@@ -201,6 +203,81 @@ export type TranslationAdminSummary = {
     unknownKeys: string[];
     privateValues: string[];
   };
+};
+
+export type AdminHealthState = "healthy" | "degraded" | "blocked" | "stale";
+
+export type QueueStats = { ready: number; pending: number; retry: number; dead: number };
+
+export type AdminStatus = {
+  state: AdminHealthState;
+  version: string;
+  goVersion: string;
+  checkedAt: string;
+  components: Array<{
+    name: "api" | "postgres" | "redis" | "worker" | "queue";
+    status: AdminHealthState;
+    detail: string;
+    checkedAt: string;
+    lastObservedAt?: string;
+  }>;
+  queue: QueueStats;
+};
+
+export type AdminOperation = {
+  id: string;
+  action: "queue.retry_sync";
+  result: "requested" | "queued" | "already_running" | "failed";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminQueueOverview = { stats: QueueStats; operations: AdminOperation[] };
+
+export type AdminCDNStatus = {
+  attachmentObjects: number;
+  attachmentBytes: number;
+  sentryObjects: number;
+  sentryBytes: number;
+  missingObjects: number;
+};
+
+export type AdminMetric = {
+  bucket: string;
+  resolution: "minute" | "hour" | "day";
+  name: string;
+  kind: "counter" | "gauge" | "histogram";
+  labels?: Record<string, string>;
+  value: number;
+  count: number;
+  min: number;
+  max: number;
+  p50?: number;
+  p95?: number;
+  p99?: number;
+  average?: number;
+  ratePerSecond?: number;
+};
+
+export type AdminLogEntry = {
+  id: number;
+  occurredAt: string;
+  service: string;
+  module: string;
+  level: "debug" | "info" | "warning" | "error";
+  event: string;
+  requestId?: string;
+};
+
+export type AdminSentryIssue = {
+  id: string;
+  component: string;
+  environment: string;
+  title: string;
+  status: "unresolved" | "resolved" | "ignored";
+  firstSeenAt: string;
+  lastSeenAt: string;
+  eventCount: number;
 };
 
 export class APIError extends Error {
@@ -275,6 +352,73 @@ export async function loadSentryTelemetry(signal?: AbortSignal) {
   return request<SentryTelemetrySummary>("/admin/sentry/telemetry", { signal });
 }
 
+export async function loadAdminStatus(signal?: AbortSignal) {
+  return request<AdminStatus>("/admin/status", { signal });
+}
+
+export async function loadAdminQueue(signal?: AbortSignal) {
+  return request<AdminQueueOverview>("/admin/queue", { signal });
+}
+
+export async function retryAdminQueue(accountId: string, idempotencyKey: string) {
+  return request<{ operation: AdminOperation; created: boolean }>("/admin/queue/retry", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ accountId, confirmation: "retry" }),
+  });
+}
+
+export async function loadAdminCDNStatus(signal?: AbortSignal) {
+  return request<AdminCDNStatus>("/admin/cdn", { signal });
+}
+
+export async function loadAdminMetrics(signal?: AbortSignal) {
+  const now = new Date();
+  const query = new URLSearchParams({
+    resolution: "minute",
+    from: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+    until: new Date(now.getTime() + 60_000).toISOString(),
+    limit: "500",
+  });
+  return request<{ items: AdminMetric[] }>(`/admin/metrics?${query}`, { signal });
+}
+
+export async function loadAdminLogs(signal?: AbortSignal) {
+  const now = new Date();
+  const query = new URLSearchParams({
+    from: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+    until: new Date(now.getTime() + 1000).toISOString(),
+    limit: "100",
+  });
+  return request<{ items: AdminLogEntry[]; dropped: number }>(`/admin/logs?${query}`, {
+    signal,
+  });
+}
+
+export async function loadAdminDebug(signal?: AbortSignal) {
+  return request<{ enabled: boolean; enabledUntil: string | null }>("/admin/logs/debug", {
+    signal,
+  });
+}
+
+export async function setAdminDebug(durationSeconds: number) {
+  return request<{ enabled: boolean; enabledUntil: string | null }>("/admin/logs/debug", {
+    method: "PUT",
+    body: JSON.stringify({ durationSeconds }),
+  });
+}
+
+export async function loadAdminSentryIssues(signal?: AbortSignal) {
+  return request<{ items: AdminSentryIssue[] }>("/admin/sentry?limit=100", { signal });
+}
+
+export async function setAdminSentryIssue(issueId: string, status: AdminSentryIssue["status"]) {
+  return request<AdminSentryIssue>(`/admin/sentry/${encodeURIComponent(issueId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function loadTranslationCatalog(locale: "en" | "es", signal?: AbortSignal) {
   const response = await fetch(`/api/v1/translations/${locale}`, {
     cache: "no-store",
@@ -292,6 +436,33 @@ export async function loadTranslationCatalog(locale: "en" | "es", signal?: Abort
 
 export async function loadTranslationAdminSummary(signal?: AbortSignal) {
   return request<TranslationAdminSummary>("/admin/translations", { signal });
+}
+
+export type TranslationChange = {
+  locale: "en" | "es";
+  key: string;
+  value: string | null;
+  sourceHash?: string;
+};
+
+export async function validateTranslationChanges(
+  expectedRevision: number,
+  changes: TranslationChange[],
+) {
+  return request<TranslationAdminSummary>("/admin/translations/validate", {
+    method: "POST",
+    body: JSON.stringify({ expectedRevision, changes }),
+  });
+}
+
+export async function activateTranslationChanges(
+  expectedRevision: number,
+  changes: TranslationChange[],
+) {
+  return request<TranslationAdminSummary & { eventPublished: boolean }>("/admin/translations", {
+    method: "PUT",
+    body: JSON.stringify({ expectedRevision, changes }),
+  });
 }
 
 export async function loadMailNavigation(accountId: string, signal?: AbortSignal) {

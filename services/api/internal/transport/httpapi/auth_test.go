@@ -216,6 +216,43 @@ func TestAuthenticatedAccountListUsesPublicRepresentation(t *testing.T) {
 	}
 }
 
+func TestEveryAdminRouteRequiresTheOwner(t *testing.T) {
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := &rotatingJWKS{kid: "current", key: publicKey}
+	server := httptest.NewServer(keys)
+	defer server.Close()
+	user := authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}
+	app := authenticatedApp(server.URL, fakeUserResolver{user: user})
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/admin/status"},
+		{http.MethodGet, "/api/v1/admin/queue"},
+		{http.MethodPost, "/api/v1/admin/queue/retry"},
+		{http.MethodGet, "/api/v1/admin/cdn"},
+		{http.MethodGet, "/api/v1/admin/metrics"},
+		{http.MethodGet, "/api/v1/admin/logs"},
+		{http.MethodGet, "/api/v1/admin/logs/debug"},
+		{http.MethodPut, "/api/v1/admin/logs/debug"},
+		{http.MethodGet, "/api/v1/admin/sentry"},
+		{http.MethodGet, "/api/v1/admin/sentry/telemetry"},
+		{http.MethodPut, "/api/v1/admin/sentry/00000000-0000-7000-8000-000000000051"},
+		{http.MethodGet, "/api/v1/admin/translations"},
+		{http.MethodPost, "/api/v1/admin/translations/validate"},
+		{http.MethodPut, "/api/v1/admin/translations"},
+	}
+	for _, route := range routes {
+		response, err := app.Test(httptest.NewRequest(route.method, route.path, nil))
+		if err != nil || response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s %s status=%d err=%v", route.method, route.path, response.StatusCode, err)
+		}
+	}
+}
+
 func authenticatedApp(jwksURL string, users authbridge.UserResolver) *fiber.App {
 	return authenticatedAppWithAccounts(jwksURL, users, nil)
 }
@@ -231,6 +268,31 @@ func authenticatedAppWithDependencies(jwksURL string, users authbridge.UserResol
 		AuthIssuer: testIssuer, AuthJWKSURL: jwksURL, CurrentUsers: users,
 		Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(),
 	})
+}
+
+func authenticatedAdminApp(t *testing.T, dependencies httpapi.Dependencies) (*fiber.App, string) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := &rotatingJWKS{kid: "admin-test", key: publicKey}
+	server := httptest.NewServer(keys)
+	t.Cleanup(server.Close)
+	user := authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}
+	dependencies.AuthAudience = testAudience
+	dependencies.AuthIssuer = testIssuer
+	dependencies.AuthJWKSURL = server.URL
+	dependencies.CurrentUsers = fakeUserResolver{user: user}
+	token := signToken(t, privateKey, "admin-test", jwt.RegisteredClaims{
+		Audience: jwt.ClaimStrings{testAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		Issuer: testIssuer, Subject: testUserID,
+	})
+	return httpapi.New(dependencies), token
+}
+
+func authorizeAdmin(request *http.Request, token string) {
+	request.Header.Set("Authorization", "Bearer "+token)
 }
 
 func assertCurrentUser(t *testing.T, app *fiber.App, token string, want authbridge.User) {

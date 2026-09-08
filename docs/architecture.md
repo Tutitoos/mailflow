@@ -84,6 +84,7 @@ La API será un monolito modular. Fiber se limitará al transporte HTTP; los mó
 services/api/
   cmd/
     api/
+    backup/
     worker/
   internal/modules/
     authbridge/
@@ -97,6 +98,7 @@ services/api/
     metrics/
     logs/
     admin/
+    backups/
     settings/
   internal/platform/
     config/
@@ -113,6 +115,7 @@ El pipeline de [métricas internas](metrics.md) agrega series acotadas en cada p
 El pipeline de [logs operativos](logs.md) redacta antes de stdout, PostgreSQL y el stream administrativo, y mantiene debug bajo un lease temporal.
 El módulo de [traducciones](translations.md) mantiene snapshots inmutables EN/ES en PostgreSQL, con inglés como fuente y fallback, validación ICU previa y eventos de invalidación versionados.
 El [panel de operaciones Admin](admin-operations.md) combina estos módulos detrás de la autenticación del propietario, expone salud real con heartbeat del worker y limita las acciones a comandos confirmados, idempotentes y auditados sin payloads.
+El servicio aislado de [backups cifrados](backups.md) prepara volcados consistentes y CDN, aplica retención Restic y publica únicamente estado operativo redactado en Admin.
 
 ## Contratos
 

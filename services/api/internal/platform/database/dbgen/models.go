@@ -94,6 +94,31 @@ type AuthVerification struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BackupRun struct {
+	ID             pgtype.UUID        `json:"id"`
+	Trigger        string             `json:"trigger"`
+	RepositoryKind string             `json:"repository_kind"`
+	State          string             `json:"state"`
+	SnapshotID     pgtype.Text        `json:"snapshot_id"`
+	ErrorCode      pgtype.Text        `json:"error_code"`
+	FileCount      int64              `json:"file_count"`
+	ByteCount      int64              `json:"byte_count"`
+	ScheduledFor   pgtype.Timestamptz `json:"scheduled_for"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+}
+
+type BackupRuntime struct {
+	Singleton      bool               `json:"singleton"`
+	Enabled        bool               `json:"enabled"`
+	RepositoryKind string             `json:"repository_kind"`
+	Schedule       string             `json:"schedule"`
+	Timezone       string             `json:"timezone"`
+	NextRunAt      pgtype.Timestamptz `json:"next_run_at"`
+	HeartbeatAt    pgtype.Timestamptz `json:"heartbeat_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CdnObject struct {
 	ObjectID          string             `json:"object_id"`
 	Namespace         string             `json:"namespace"`

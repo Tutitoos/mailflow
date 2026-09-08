@@ -231,6 +231,7 @@ func TestEveryAdminRouteRequiresTheOwner(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/api/v1/admin/status"},
+		{http.MethodGet, "/api/v1/admin/backups"},
 		{http.MethodGet, "/api/v1/admin/queue"},
 		{http.MethodPost, "/api/v1/admin/queue/retry"},
 		{http.MethodGet, "/api/v1/admin/cdn"},

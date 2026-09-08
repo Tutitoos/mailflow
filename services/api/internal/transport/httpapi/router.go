@@ -11,6 +11,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
@@ -35,6 +36,7 @@ type Dependencies struct {
 	AuthAudience  string
 	AuthIssuer    string
 	AuthJWKSURL   string
+	Backups       *backups.Repository
 	CurrentUsers  authbridge.UserResolver
 	Delivery      DraftService
 	Events        EventStream
@@ -213,6 +215,7 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Get("/queue", adminQueue(deps.Admin))
 	adminRoutes.Post("/queue/retry", retryAdminQueue(deps.Admin, deps.Sync))
 	adminRoutes.Get("/cdn", adminCDNStatus(deps.Admin))
+	adminRoutes.Get("/backups", adminBackups(deps.Backups))
 	adminRoutes.Get("/metrics", adminMetrics(deps.Admin))
 	adminRoutes.Get("/logs", adminLogs(deps.Logs))
 	adminRoutes.Get("/logs/debug", logDebugStatus(deps.Logs))

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,25 @@ func TestAuthenticationConfiguration(t *testing.T) {
 	}
 	if configuration.AuthAudience != "mailflow-api" || configuration.AuthIssuer != "https://mailflow.test" {
 		t.Fatalf("unexpected authentication configuration: %+v", configuration)
+	}
+}
+
+func TestDatabaseURLCanLoadBeforeDisasterRecoveryKey(t *testing.T) {
+	password := filepath.Join(t.TempDir(), "postgres_password")
+	if err := os.WriteFile(password, []byte("database-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("POSTGRES_PASSWORD_FILE", password)
+	t.Setenv("POSTGRES_HOST", "restore-postgres")
+	t.Setenv("MAILFLOW_MASTER_KEY_FILE", filepath.Join(t.TempDir(), "missing-master-key"))
+
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil || !strings.Contains(databaseURL, "restore-postgres:5432/mailflow") {
+		t.Fatalf("database URL=%q err=%v", databaseURL, err)
+	}
+	if _, err := Load(); err == nil {
+		t.Fatal("full application config accepted a missing master key")
 	}
 }
 

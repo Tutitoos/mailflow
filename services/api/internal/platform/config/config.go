@@ -60,27 +60,36 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("MAILFLOW_MASTER_KEY_FILE must contain a base64-encoded 32-byte key")
 		}
 	}
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return Config{}, err
+	}
+	config.DatabaseURL = databaseURL
+	return config, nil
+}
+
+// LoadDatabaseURL resolves only PostgreSQL configuration. Operational tools use
+// it during disaster recovery, before the application master key is available.
+func LoadDatabaseURL() (string, error) {
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
-		config.DatabaseURL = databaseURL
-		return config, nil
+		return databaseURL, nil
 	}
 	passwordFile := os.Getenv("POSTGRES_PASSWORD_FILE")
 	if passwordFile == "" {
-		return config, nil
+		return "", nil
 	}
 	passwordBytes, err := os.ReadFile(passwordFile)
 	if err != nil {
-		return Config{}, fmt.Errorf("read PostgreSQL password: %w", err)
+		return "", fmt.Errorf("read PostgreSQL password: %w", err)
 	}
 	user := valueOrDefault("POSTGRES_USER", "mailflow")
 	database := valueOrDefault("POSTGRES_DB", "mailflow")
 	host := valueOrDefault("POSTGRES_HOST", "postgres")
 	port := valueOrDefault("POSTGRES_PORT", "5432")
-	config.DatabaseURL = (&url.URL{
+	return (&url.URL{
 		Scheme: "postgres", User: url.UserPassword(user, strings.TrimSpace(string(passwordBytes))),
 		Host: host + ":" + port, Path: database,
-	}).String()
-	return config, nil
+	}).String(), nil
 }
 
 func valueOrDefault(name, fallback string) string {

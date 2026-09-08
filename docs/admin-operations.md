@@ -8,10 +8,11 @@ worker writes a short-lived Redis heartbeat every ten seconds. A heartbeat older
 than 45 seconds is stale; the key expires after two minutes.
 
 The section routes expose existing first-party metrics, redacted logs, grouped
-Sentry issues, EN/ES translation revisions, and aggregate CDN usage. Backup and
-server-update sections are deliberately informational until their dedicated
-issues land. Admin never receives Docker socket access, arbitrary SQL, or a
-privileged update command.
+Sentry issues, EN/ES translation revisions, aggregate CDN usage, and bounded
+backup scheduler history. `GET /api/v1/admin/backups` is read-only; execution
+and restore remain operator commands documented in [Encrypted backups and
+restore](backups.md). Server updates remain informational. Admin never receives
+Docker socket access, arbitrary SQL, or a privileged update command.
 
 ## Queue controls and audit
 

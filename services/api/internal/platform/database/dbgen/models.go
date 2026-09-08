@@ -34,6 +34,30 @@ type AdminOperation struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AlertDelivery struct {
+	ID          pgtype.UUID        `json:"id"`
+	IncidentID  pgtype.UUID        `json:"incident_id"`
+	Kind        string             `json:"kind"`
+	Channel     string             `json:"channel"`
+	Status      string             `json:"status"`
+	ErrorCode   pgtype.Text        `json:"error_code"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
+type AlertIncident struct {
+	ID                pgtype.UUID        `json:"id"`
+	DeduplicationHash string             `json:"deduplication_hash"`
+	Policy            string             `json:"policy"`
+	Source            string             `json:"source"`
+	Code              string             `json:"code"`
+	State             string             `json:"state"`
+	OpenedAt          pgtype.Timestamptz `json:"opened_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	RecoveredAt       pgtype.Timestamptz `json:"recovered_at"`
+	CooldownUntil     pgtype.Timestamptz `json:"cooldown_until"`
+}
+
 type AuthAccount struct {
 	ID                    pgtype.UUID        `json:"id"`
 	AccountID             string             `json:"account_id"`

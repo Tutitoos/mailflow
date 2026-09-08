@@ -87,6 +87,35 @@ export type AdminBackupStatus = {
     runs: Array<AdminBackupRun>;
 };
 
+export type AdminAlertIncident = {
+    id: string;
+    policy: 'provider_auth' | 'sync_backlog' | 'disk' | 'backup' | 'sentry_ingestion' | 'service_health' | 'test';
+    source: string;
+    code: string;
+    state: 'active' | 'recovered';
+    openedAt: string;
+    lastSeenAt: string;
+    recoveredAt?: string;
+    cooldownUntil: string;
+};
+
+export type AdminAlertDelivery = {
+    id: string;
+    incidentId: string;
+    kind: 'incident' | 'reminder' | 'recovery' | 'test';
+    channel: 'smtp' | 'connected_account';
+    status: 'pending' | 'sent' | 'failed' | 'suppressed';
+    errorCode?: 'smtp_unavailable' | 'smtp_rejected' | 'fallback_disabled' | 'fallback_recursion' | 'fallback_failed';
+    createdAt: string;
+    completedAt?: string;
+};
+
+export type AdminAlertStatus = {
+    configured: boolean;
+    incidents: Array<AdminAlertIncident>;
+    deliveries: Array<AdminAlertDelivery>;
+};
+
 export type SentryReceipt = {
     id: string;
     receivedAt?: string;
@@ -1533,6 +1562,65 @@ export type GetAdminBackupsResponses = {
 };
 
 export type GetAdminBackupsResponse = GetAdminBackupsResponses[keyof GetAdminBackupsResponses];
+
+export type GetAdminAlertsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/alerts';
+};
+
+export type GetAdminAlertsErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type GetAdminAlertsError = GetAdminAlertsErrors[keyof GetAdminAlertsErrors];
+
+export type GetAdminAlertsResponses = {
+    /**
+     * Bounded operational incidents and delivery outcomes
+     */
+    200: AdminAlertStatus;
+};
+
+export type GetAdminAlertsResponse = GetAdminAlertsResponses[keyof GetAdminAlertsResponses];
+
+export type TestAdminAlertData = {
+    body: {
+        confirmation: 'send';
+    };
+    headers: {
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/admin/alerts/test';
+};
+
+export type TestAdminAlertErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    422: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type TestAdminAlertError = TestAdminAlertErrors[keyof TestAdminAlertErrors];
+
+export type TestAdminAlertResponses = {
+    /**
+     * Idempotent test delivery accepted
+     */
+    202: AdminAlertIncident;
+};
+
+export type TestAdminAlertResponse = TestAdminAlertResponses[keyof TestAdminAlertResponses];
 
 export type GetAdminMetricsData = {
     body?: never;

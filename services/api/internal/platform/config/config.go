@@ -10,6 +10,14 @@ import (
 )
 
 type Config struct {
+	AlertSMTPHost           string
+	AlertSMTPPort           int
+	AlertSMTPUsername       string
+	AlertSMTPPassword       string
+	AlertSMTPFrom           string
+	AlertSMTPTo             string
+	AlertSMTPImplicitTLS    bool
+	AlertFallbackEnabled    bool
 	AuthAudience            string
 	AuthIssuer              string
 	AuthJWKSURL             string
@@ -26,6 +34,12 @@ type Config struct {
 
 func Load() (Config, error) {
 	config := Config{
+		AlertSMTPHost:          os.Getenv("MAILFLOW_ALERT_SMTP_HOST"),
+		AlertSMTPUsername:      os.Getenv("MAILFLOW_ALERT_SMTP_USERNAME"),
+		AlertSMTPFrom:          os.Getenv("MAILFLOW_ALERT_SMTP_FROM"),
+		AlertSMTPTo:            os.Getenv("MAILFLOW_ALERT_SMTP_TO"),
+		AlertSMTPImplicitTLS:   strings.EqualFold(os.Getenv("MAILFLOW_ALERT_SMTP_IMPLICIT_TLS"), "true"),
+		AlertFallbackEnabled:   strings.EqualFold(os.Getenv("MAILFLOW_ALERT_CONNECTED_ACCOUNT_FALLBACK"), "true"),
 		AuthAudience:           valueOrDefault("MAILFLOW_AUTH_AUDIENCE", "mailflow-api"),
 		AuthIssuer:             os.Getenv("MAILFLOW_AUTH_ISSUER"),
 		Address:                valueOrDefault("MAILFLOW_API_ADDRESS", ":8080"),
@@ -34,6 +48,18 @@ func Load() (Config, error) {
 		RedisAddress:           os.Getenv("REDIS_ADDRESS"),
 		GoogleOAuthClientID:    os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleOAuthRedirectURL: os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+	}
+	alertPort, err := strconv.Atoi(valueOrDefault("MAILFLOW_ALERT_SMTP_PORT", "587"))
+	if err != nil || alertPort < 1 || alertPort > 65535 {
+		return Config{}, fmt.Errorf("MAILFLOW_ALERT_SMTP_PORT must be a valid TCP port")
+	}
+	config.AlertSMTPPort = alertPort
+	if passwordFile := os.Getenv("MAILFLOW_ALERT_SMTP_PASSWORD_FILE"); passwordFile != "" {
+		password, readErr := os.ReadFile(passwordFile)
+		if readErr != nil {
+			return Config{}, fmt.Errorf("read alert SMTP password: %w", readErr)
+		}
+		config.AlertSMTPPassword = strings.TrimSpace(string(password))
 	}
 	if secretFile := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET_FILE"); secretFile != "" {
 		secret, err := os.ReadFile(secretFile)

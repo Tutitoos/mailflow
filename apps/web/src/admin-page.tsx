@@ -18,6 +18,7 @@ import { useNavigate, useParams } from "react-router";
 import { Button } from "./components/ui/button";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
+  type AdminAlertStatus,
   type AdminBackupStatus,
   type AdminCDNStatus,
   type AdminHealthState,
@@ -27,6 +28,7 @@ import {
   type AdminSentryIssue,
   type AdminStatus,
   activateTranslationChanges,
+  loadAdminAlerts,
   loadAdminBackups,
   loadAdminCDNStatus,
   loadAdminDebug,
@@ -47,6 +49,7 @@ import {
   subscribeMailEvents,
   type TranslationAdminSummary,
   type TranslationChange,
+  testAdminAlert,
   validateTranslationChanges,
 } from "./mailflow-api";
 import { Brand } from "./pages";
@@ -62,6 +65,7 @@ type AdminSection =
   | "translations"
   | "cdn"
   | "backups"
+  | "alerts"
   | "updates"
   | "settings";
 
@@ -75,6 +79,7 @@ const sections: Array<{ id: AdminSection; key: TranslationKey }> = [
   { id: "translations", key: "admin.translations" },
   { id: "cdn", key: "admin.cdn" },
   { id: "backups", key: "admin.backups" },
+  { id: "alerts", key: "admin.alerts" },
   { id: "updates", key: "admin.updates" },
   { id: "settings", key: "settings" },
 ];
@@ -204,6 +209,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
   const [translations, setTranslations] = useState<TranslationAdminSummary | null>(null);
   const [cdn, setCDN] = useState<AdminCDNStatus | null>(null);
   const [backups, setBackups] = useState<AdminBackupStatus | null>(null);
+  const [alerts, setAlerts] = useState<AdminAlertStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [confirmAccount, setConfirmAccount] = useState<MailAccount | null>(null);
@@ -229,6 +235,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
       loadTranslationAdminSummary(signal),
       loadAdminCDNStatus(signal),
       loadAdminBackups(signal),
+      loadAdminAlerts(signal),
     ]);
     if (signal?.aborted) return;
     if (results[0].status === "fulfilled") setStatus(results[0].value);
@@ -245,6 +252,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
     if (results[8].status === "fulfilled") setTranslations(results[8].value);
     if (results[9].status === "fulfilled") setCDN(results[9].value);
     if (results[10].status === "fulfilled") setBackups(results[10].value);
+    if (results[11].status === "fulfilled") setAlerts(results[11].value);
     setUnavailable(results[0].status === "rejected");
     setLoading(false);
   }, []);
@@ -370,6 +378,16 @@ export function AdminPage({ locale }: { locale: Locale }) {
       setIssues((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch {
       setUnavailable(true);
+    }
+  };
+
+  const sendTestAlert = async () => {
+    try {
+      await testAdminAlert(crypto.randomUUID());
+      setAlerts(await loadAdminAlerts());
+      setNotice("admin.alerts.sent");
+    } catch {
+      setNotice("admin.alerts.failed");
     }
   };
 
@@ -760,6 +778,73 @@ export function AdminPage({ locale }: { locale: Locale }) {
                 ))
               ) : (
                 <p>{t("admin.backups.empty")}</p>
+              )}
+            </div>
+          </section>
+        </>
+      );
+    if (section === "alerts")
+      return (
+        <>
+          <section className="admin-toolbar">
+            <span>
+              {alerts?.configured ? t("admin.alerts.configured") : t("admin.alerts.notConfigured")}
+            </span>
+            <Button
+              variant="outline"
+              disabled={!alerts?.configured}
+              onClick={() => void sendTestAlert()}
+            >
+              <ShieldAlert size={15} />
+              {t("admin.alerts.test")}
+            </Button>
+          </section>
+          <section className="admin-panel">
+            <header>
+              <strong>{t("admin.alerts.incidents")}</strong>
+            </header>
+            <div className="admin-list">
+              {alerts?.incidents.length ? (
+                alerts.incidents.map((incident) => (
+                  <article key={incident.id}>
+                    <AlertTriangle size={16} />
+                    <strong>{incident.policy}</strong>
+                    <code>
+                      {incident.source}.{incident.code}
+                    </code>
+                    <HealthBadge
+                      state={incident.state === "active" ? "degraded" : "healthy"}
+                      t={t}
+                    />
+                    <time>{formatTime(incident.lastSeenAt, locale)}</time>
+                  </article>
+                ))
+              ) : (
+                <p>{t("admin.alerts.empty")}</p>
+              )}
+            </div>
+          </section>
+          <section className="admin-panel">
+            <header>
+              <strong>{t("admin.alerts.deliveries")}</strong>
+            </header>
+            <div className="admin-list">
+              {alerts?.deliveries.length ? (
+                alerts.deliveries.map((delivery) => (
+                  <article key={delivery.id}>
+                    {delivery.status === "sent" ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <AlertTriangle size={16} />
+                    )}
+                    <strong>{delivery.channel}</strong>
+                    <code>{delivery.kind}</code>
+                    <span>{delivery.status}</span>
+                    <small>{delivery.errorCode ?? formatTime(delivery.completedAt, locale)}</small>
+                  </article>
+                ))
+              ) : (
+                <p>{t("admin.alerts.empty")}</p>
               )}
             </div>
           </section>

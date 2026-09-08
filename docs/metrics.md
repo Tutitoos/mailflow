@@ -14,7 +14,7 @@ Only `service`, `module`, `provider`, `operation`, and `result` dimensions are a
 
 The maintenance pass replaces a completed hour or day from its source points, so retrying after a restart cannot double count a rollup. The raw minute flush uses drained deltas in one database transaction, allowing multiple processes to contribute to the same bucket without replacing each other.
 
-Current producers cover HTTP requests and latency, queue outcomes, Google synchronization pages, mail actions, CDN cleanup, Sentry envelope ingestion, backup outcomes and duration, and Go heap/goroutine gauges. Provider implementations must use the same registry rather than create a second telemetry path.
+Current producers cover HTTP requests and latency, queue outcomes, Google synchronization pages, mail actions, CDN cleanup, Sentry envelope ingestion, backup outcomes and duration, alert delivery outcomes, and Go heap/goroutine gauges. Provider implementations must use the same registry rather than create a second telemetry path.
 
 ## Admin query
 

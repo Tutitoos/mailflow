@@ -8,7 +8,8 @@ import {
   signIn,
 } from "./auth-client";
 import { Button } from "./components/ui/button";
-import { type Locale, type TranslationKey, translate } from "./i18n";
+import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
+import { loadTranslationCatalog } from "./mailflow-api";
 import { Brand } from "./pages";
 
 type Phase = "loading" | "setup" | "sign-in" | "app" | "error";
@@ -213,6 +214,7 @@ function SignInForm({ locale, onComplete }: { locale: Locale; onComplete: () => 
 export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNode }) {
   const [locale, setLocale] = useState<Locale>("en");
   const [phase, setPhase] = useState<Phase>("loading");
+  const [, setCatalogRevision] = useState(0);
   const t: Translator = (key) => translate(locale, key);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -241,6 +243,16 @@ export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNo
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadTranslationCatalog(locale, controller.signal)
+      .then((catalog) => {
+        if (installTranslationCatalog(catalog)) setCatalogRevision(catalog.revision);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [locale]);
 
   if (phase === "app") return renderApp(locale);
 

@@ -17,7 +17,7 @@ initializeTelemetry();
 
 const router = createBrowserRouter([
   { path: "/", element: <AuthGate renderApp={(locale) => <MailPage initialLocale={locale} />} /> },
-  { path: "/admin", element: <AuthGate renderApp={() => <AdminPage />} /> },
+  { path: "/admin", element: <AuthGate renderApp={(locale) => <AdminPage locale={locale} />} /> },
   {
     path: "/settings/accounts",
     element: <AuthGate renderApp={(locale) => <AccountsPage locale={locale} />} />,

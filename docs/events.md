@@ -14,7 +14,7 @@ Every persisted message has the same versioned envelope:
 }
 ```
 
-Phase 1 reserves `mail.changed`, `sync.progress`, `draft.changed`, `admin.alert`, and `system.status`. Payloads are bounded JSON and reject credential, token, cookie, email, recipient, subject, and message-body fields. Redis stream keys use a truncated SHA-256 digest of the user ID rather than personal data.
+The event stream supports `mail.changed`, `sync.progress`, `draft.changed`, `admin.alert`, `admin.log`, `system.status`, and `translations.changed`. Translation invalidation carries only an integer revision; clients fetch the authoritative catalog over REST. Payloads are bounded JSON and reject credential, token, cookie, email, recipient, subject, and message-body fields. Redis stream keys use a truncated SHA-256 digest of the user ID rather than personal data.
 
 ## Resume protocol
 

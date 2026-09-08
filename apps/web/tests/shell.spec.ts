@@ -13,6 +13,17 @@ test("mail shell and admin remain operable", async ({ page }) => {
     route.fulfill({ json: { configured: true, setup: "docs/providers/google.md" } }),
   );
   await page.route("**/api/v1/accounts", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/v1/translations/en", (route) =>
+    route.fulfill({
+      json: {
+        locale: "en",
+        defaultLocale: "en",
+        revision: 7,
+        messages: { inbox: "Inbox from catalog" },
+        missingKeys: [],
+      },
+    }),
+  );
   await page.route("**/api/v1/admin/sentry/telemetry", (route) =>
     route.fulfill({
       json: {
@@ -25,12 +36,36 @@ test("mail shell and admin remain operable", async ({ page }) => {
       },
     }),
   );
+  await page.route("**/api/v1/admin/translations", (route) =>
+    route.fulfill({
+      json: {
+        revision: 7,
+        diagnostics: {
+          missingEnglish: [],
+          missingSpanish: ["optional.key"],
+          staleSpanish: [],
+          invalidIcu: [],
+          unknownKeys: [],
+          privateValues: [],
+        },
+      },
+    }),
+  );
+  const catalogLoaded = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/translations/en"),
+  );
   await page.goto("/");
+  await catalogLoaded;
   await expect(page.getByRole("banner")).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Mailboxes", includeHidden: true }),
   ).toHaveCount(1);
   await expect(page.getByRole("main")).toBeVisible();
+  const catalogInbox = page.getByRole("button", { name: "Inbox from catalog", exact: true });
+  if (!(await catalogInbox.isVisible())) {
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+  }
+  await expect(catalogInbox).toBeVisible();
 
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
     await page.getByRole("button", { name: "Settings" }).click();
@@ -50,9 +85,11 @@ test("mail shell and admin remain operable", async ({ page }) => {
 
   await page.goto("/admin");
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Operational status" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Status" })).toBeVisible();
   await expect(page.getByText("12 traces · 4 profiles · 24h")).toBeVisible();
   await expect(page.getByText("Replay disabled")).toBeVisible();
+  await expect(page.getByText("Revision 7")).toBeVisible();
+  await expect(page.getByText("Complete", { exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).color))
     .toBe("rgb(237, 237, 237)");

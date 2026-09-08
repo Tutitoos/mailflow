@@ -22,6 +22,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	mailflowsentry "github.com/Tutitoos/mailflow/services/api/internal/modules/sentry"
 	mailflowsync "github.com/Tutitoos/mailflow/services/api/internal/modules/sync"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/translations"
 	platformapp "github.com/Tutitoos/mailflow/services/api/internal/platform/app"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/config"
 	platformcrypto "github.com/Tutitoos/mailflow/services/api/internal/platform/crypto"
@@ -250,6 +251,19 @@ func main() {
 			os.Exit(1)
 		}
 		options.Sync.SetActivityTracker(mailflowsync.NewRedisActivityTracker(redisClient, queueConfig.Prefix, mailflowsync.DefaultActivityTTL))
+	}
+	if databasePool != nil {
+		translationsContext, cancelTranslations := context.WithTimeout(context.Background(), 10*time.Second)
+		var translationPublisher translations.Publisher
+		if options.Events != nil {
+			translationPublisher = options.Events
+		}
+		options.Translations, err = translations.NewPersistentCatalog(translationsContext, databasePool, translationPublisher)
+		cancelTranslations()
+		if err != nil {
+			logger.Error("translation catalog configuration failed", "event", "translations.unavailable")
+			os.Exit(1)
+		}
 	}
 	sentryEnabled := os.Getenv("SENTRY_DSN") != ""
 	if sentryEnabled {

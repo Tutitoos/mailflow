@@ -570,7 +570,12 @@ paths:
           required: true
           schema: { type: string, enum: [en, es] }
       responses:
-        "200": { description: Translation catalog with English fallback }
+        "200":
+          description: Versioned translation catalog with English fallback
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranslationCatalog" }
+        "503": { $ref: "#/components/responses/Problem" }
   /admin/status:
     get:
       operationId: getAdminStatus
@@ -712,6 +717,49 @@ paths:
         "400": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+  /admin/translations:
+    get:
+      operationId: exportTranslations
+      responses:
+        "200":
+          description: Active versioned English sources and Spanish overrides
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranslationExport" }
+        "503": { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: updateTranslations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TranslationUpdate" }
+      responses:
+        "200":
+          description: Activated catalog revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranslationUpdateResult" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /admin/translations/validate:
+    post:
+      operationId: validateTranslations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TranslationUpdate" }
+      responses:
+        "200":
+          description: Candidate catalog and diagnostics without activation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranslationExport" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     bearerAuth:
@@ -794,6 +842,74 @@ components:
         replays: { type: integer, format: int64, minimum: 0 }
         replaySegments: { type: integer, format: int64, minimum: 0 }
         replayEnabled: { type: boolean }
+    TranslationCatalog:
+      type: object
+      required: [locale, defaultLocale, revision, messages, missingKeys]
+      properties:
+        locale: { type: string, enum: [en, es] }
+        defaultLocale: { type: string, const: en }
+        revision: { type: integer, format: int64, minimum: 0 }
+        messages:
+          type: object
+          additionalProperties: { type: string, minLength: 1, maxLength: 4096 }
+        missingKeys:
+          type: array
+          maxItems: 512
+          items: { type: string }
+    TranslationMessage:
+      type: object
+      required: [value, sourceHash]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 4096 }
+        sourceHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+    TranslationDiagnostics:
+      type: object
+      required: [missingEnglish, missingSpanish, staleSpanish, invalidIcu, unknownKeys, privateValues]
+      properties:
+        missingEnglish: { type: array, maxItems: 512, items: { type: string } }
+        missingSpanish: { type: array, maxItems: 512, items: { type: string } }
+        staleSpanish: { type: array, maxItems: 512, items: { type: string } }
+        invalidIcu: { type: array, maxItems: 512, items: { type: string } }
+        unknownKeys: { type: array, maxItems: 512, items: { type: string } }
+        privateValues: { type: array, maxItems: 512, items: { type: string } }
+    TranslationExport:
+      type: object
+      required: [defaultLocale, revision, catalogs, diagnostics]
+      properties:
+        defaultLocale: { type: string, const: en }
+        revision: { type: integer, format: int64, minimum: 0 }
+        catalogs:
+          type: object
+          required: [en, es]
+          properties:
+            en: { type: object, additionalProperties: { $ref: "#/components/schemas/TranslationMessage" } }
+            es: { type: object, additionalProperties: { $ref: "#/components/schemas/TranslationMessage" } }
+        diagnostics: { $ref: "#/components/schemas/TranslationDiagnostics" }
+    TranslationChange:
+      type: object
+      required: [locale, key, value]
+      properties:
+        locale: { type: string, enum: [en, es] }
+        key: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,127}$" }
+        value: { type: [string, "null"], minLength: 1, maxLength: 4096 }
+        sourceHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+    TranslationUpdate:
+      type: object
+      required: [expectedRevision, changes]
+      properties:
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        changes:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items: { $ref: "#/components/schemas/TranslationChange" }
+    TranslationUpdateResult:
+      allOf:
+        - { $ref: "#/components/schemas/TranslationExport" }
+        - type: object
+          required: [eventPublished]
+          properties:
+            eventPublished: { type: boolean }
     CurrentUser:
       type: object
       required: [id, email, locale]
@@ -830,7 +946,7 @@ components:
         cursor: { type: string, pattern: "^[0-9]+-[0-9]+$" }
         type:
           type: string
-          enum: [mail.changed, sync.progress, draft.changed, admin.alert, admin.log, system.status, system.resync_required]
+          enum: [mail.changed, sync.progress, draft.changed, admin.alert, admin.log, system.status, translations.changed, system.resync_required]
         timestamp: { type: string, format: date-time }
         payload: { type: object, additionalProperties: true }
     ThreadPage:

@@ -138,7 +138,11 @@ func New(deps Dependencies) *fiber.App {
 
 	v1 := app.Group("/api/v1")
 	v1.Get("/translations/:locale", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{"locale": c.Params("locale"), "messages": deps.Translations.Locale(c.Params("locale"))})
+		catalog, err := deps.Translations.Get(c.Context(), c.Params("locale"))
+		if err != nil {
+			return newProblem(fiber.StatusServiceUnavailable, "translations_unavailable", "Translations unavailable", "The translation catalog is temporarily unavailable.")
+		}
+		return c.JSON(catalog)
 	})
 	v1.Get("/oauth/google/callback", googleOAuthCallback(deps.GoogleOAuth, deps.Sync))
 	if deps.AuthJWKSURL != "" {
@@ -212,6 +216,9 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Get("/sentry", adminSentryIssues(deps.Sentry))
 	adminRoutes.Get("/sentry/telemetry", adminSentryTelemetry(deps.Sentry))
 	adminRoutes.Put("/sentry/:issueId", setAdminSentryIssueStatus(deps.Sentry))
+	adminRoutes.Get("/translations", exportTranslations(deps.Translations))
+	adminRoutes.Post("/translations/validate", validateTranslations(deps.Translations))
+	adminRoutes.Put("/translations", updateTranslations(deps.Translations))
 
 	return app
 }

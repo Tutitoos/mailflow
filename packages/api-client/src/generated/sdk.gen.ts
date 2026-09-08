@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CheckpointDraftData, CheckpointDraftErrors, CheckpointDraftResponses, CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, CreateSentryReleaseData, CreateSentryReleaseErrors, CreateSentryReleaseResponses, DiscardDraftData, DiscardDraftErrors, DiscardDraftResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, GetAdminLogDebugData, GetAdminLogDebugErrors, GetAdminLogDebugResponses, GetAdminLogsData, GetAdminLogsErrors, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsErrors, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetDraftData, GetDraftErrors, GetDraftResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesErrors, GetSentryIssuesResponses, GetSentryTelemetryData, GetSentryTelemetryErrors, GetSentryTelemetryResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsResponses, IngestLegacySentryEventData, IngestLegacySentryEventErrors, IngestLegacySentryEventResponses, IngestSentryEnvelopeData, IngestSentryEnvelopeErrors, IngestSentryEnvelopeResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftErrors, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SetAdminLogDebugData, SetAdminLogDebugErrors, SetAdminLogDebugResponses, SetSentryIssueStatusData, SetSentryIssueStatusErrors, SetSentryIssueStatusResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses, UpdateDraftData, UpdateDraftErrors, UpdateDraftResponses, UploadDraftAttachmentData, UploadDraftAttachmentErrors, UploadDraftAttachmentResponses, UploadSentryReleaseArtifactData, UploadSentryReleaseArtifactErrors, UploadSentryReleaseArtifactResponses } from './types.gen';
+import type { CheckpointDraftData, CheckpointDraftErrors, CheckpointDraftResponses, CompleteGoogleOAuthData, CompleteGoogleOAuthErrors, CreateMailActionData, CreateMailActionErrors, CreateMailActionResponses, CreateSentryReleaseData, CreateSentryReleaseErrors, CreateSentryReleaseResponses, DiscardDraftData, DiscardDraftErrors, DiscardDraftResponses, DisconnectAccountData, DisconnectAccountErrors, DisconnectAccountResponses, DownloadAttachmentData, DownloadAttachmentErrors, DownloadAttachmentResponses, ExportTranslationsData, ExportTranslationsErrors, ExportTranslationsResponses, GetAdminLogDebugData, GetAdminLogDebugErrors, GetAdminLogDebugResponses, GetAdminLogsData, GetAdminLogsErrors, GetAdminLogsResponses, GetAdminMetricsData, GetAdminMetricsErrors, GetAdminMetricsResponses, GetAdminStatusData, GetAdminStatusResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetDraftData, GetDraftErrors, GetDraftResponses, GetGoogleOAuthStatusData, GetGoogleOAuthStatusErrors, GetGoogleOAuthStatusResponses, GetSentryIssuesData, GetSentryIssuesErrors, GetSentryIssuesResponses, GetSentryTelemetryData, GetSentryTelemetryErrors, GetSentryTelemetryResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetTranslationsData, GetTranslationsErrors, GetTranslationsResponses, IngestLegacySentryEventData, IngestLegacySentryEventErrors, IngestLegacySentryEventResponses, IngestSentryEnvelopeData, IngestSentryEnvelopeErrors, IngestSentryEnvelopeResponses, ListAccountsData, ListAccountsErrors, ListAccountsResponses, ListLabelsData, ListLabelsErrors, ListLabelsResponses, ListMailboxesData, ListMailboxesErrors, ListMailboxesResponses, ListThreadsData, ListThreadsErrors, ListThreadsResponses, RefreshGoogleAccountData, RefreshGoogleAccountErrors, RefreshGoogleAccountResponses, SaveDraftData, SaveDraftErrors, SaveDraftResponses, SearchMailData, SearchMailErrors, SearchMailResponses, SendMessageData, SendMessageErrors, SendMessageResponses, SetAdminLogDebugData, SetAdminLogDebugErrors, SetAdminLogDebugResponses, SetSentryIssueStatusData, SetSentryIssueStatusErrors, SetSentryIssueStatusResponses, StartGoogleOAuthData, StartGoogleOAuthErrors, StartGoogleOAuthResponses, StreamEventsData, StreamEventsErrors, SynchronizeAccountData, SynchronizeAccountErrors, SynchronizeAccountResponses, UpdateDraftData, UpdateDraftErrors, UpdateDraftResponses, UpdateTranslationsData, UpdateTranslationsErrors, UpdateTranslationsResponses, UploadDraftAttachmentData, UploadDraftAttachmentErrors, UploadDraftAttachmentResponses, UploadSentryReleaseArtifactData, UploadSentryReleaseArtifactErrors, UploadSentryReleaseArtifactResponses, ValidateTranslationsData, ValidateTranslationsErrors, ValidateTranslationsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -228,7 +228,7 @@ export const downloadAttachment = <ThrowOnError extends boolean = false>(options
     ...options
 });
 
-export const getTranslations = <ThrowOnError extends boolean = false>(options: Options<GetTranslationsData, ThrowOnError>): RequestResult<GetTranslationsResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetTranslationsResponses, unknown, ThrowOnError>({ url: '/translations/{locale}', ...options });
+export const getTranslations = <ThrowOnError extends boolean = false>(options: Options<GetTranslationsData, ThrowOnError>): RequestResult<GetTranslationsResponses, GetTranslationsErrors, ThrowOnError> => (options.client ?? client).get<GetTranslationsResponses, GetTranslationsErrors, ThrowOnError>({ url: '/translations/{locale}', ...options });
 
 export const getAdminStatus = <ThrowOnError extends boolean = false>(options?: Options<GetAdminStatusData, ThrowOnError>): RequestResult<GetAdminStatusResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetAdminStatusResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -279,6 +279,32 @@ export const getSentryTelemetry = <ThrowOnError extends boolean = false>(options
 export const setSentryIssueStatus = <ThrowOnError extends boolean = false>(options: Options<SetSentryIssueStatusData, ThrowOnError>): RequestResult<SetSentryIssueStatusResponses, SetSentryIssueStatusErrors, ThrowOnError> => (options.client ?? client).put<SetSentryIssueStatusResponses, SetSentryIssueStatusErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/admin/sentry/{issueId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const exportTranslations = <ThrowOnError extends boolean = false>(options?: Options<ExportTranslationsData, ThrowOnError>): RequestResult<ExportTranslationsResponses, ExportTranslationsErrors, ThrowOnError> => (options?.client ?? client).get<ExportTranslationsResponses, ExportTranslationsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/translations',
+    ...options
+});
+
+export const updateTranslations = <ThrowOnError extends boolean = false>(options: Options<UpdateTranslationsData, ThrowOnError>): RequestResult<UpdateTranslationsResponses, UpdateTranslationsErrors, ThrowOnError> => (options.client ?? client).put<UpdateTranslationsResponses, UpdateTranslationsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/translations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const validateTranslations = <ThrowOnError extends boolean = false>(options: Options<ValidateTranslationsData, ThrowOnError>): RequestResult<ValidateTranslationsResponses, ValidateTranslationsErrors, ThrowOnError> => (options.client ?? client).post<ValidateTranslationsResponses, ValidateTranslationsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/translations/validate',
     ...options,
     headers: {
         'Content-Type': 'application/json',

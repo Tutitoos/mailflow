@@ -36,7 +36,7 @@ import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
 import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
-import { type Locale, type TranslationKey, translate } from "./i18n";
+import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
   createMailActions,
   disconnectAccount,
@@ -46,6 +46,8 @@ import {
   loadMailAccounts,
   loadMailNavigation,
   loadSentryTelemetry,
+  loadTranslationAdminSummary,
+  loadTranslationCatalog,
   type MailAccount,
   type MailActionKind,
   type Mailbox,
@@ -56,6 +58,7 @@ import {
   searchMail,
   startGoogleConnection,
   subscribeMailEvents,
+  type TranslationAdminSummary,
 } from "./mailflow-api";
 import { type SearchSyntaxError, searchSuggestions, validateSearchSyntax } from "./search-syntax";
 
@@ -263,14 +266,16 @@ function Sidebar({
           const role = key === "allMail" ? "all" : key;
           const mailbox = mailboxByRole.get(role as Mailbox["role"]);
           const count = mailbox?.unreadCount ?? 0;
+          const label = mailbox?.localName || mailbox?.remoteName || t(key);
           return (
             <button
+              aria-label={label}
               className={index === 0 ? "nav-item active" : "nav-item"}
               type="button"
               key={key}
             >
               <Icon size={17} />
-              <span>{mailbox?.localName || mailbox?.remoteName || t(key)}</span>
+              <span>{label}</span>
               {count > 0 && <strong>{count}</strong>}
             </button>
           );
@@ -615,6 +620,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const navigate = useNavigate();
   const initialQuery = new URLSearchParams(window.location.search).get("q") ?? "";
   const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [, setTranslationRevision] = useState(0);
   const [query, setQuery] = useState(initialQuery);
   const [submittedSearch, setSubmittedSearch] = useState(
     validateSearchSyntax(initialQuery) === null ? initialQuery : "",
@@ -653,6 +659,16 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [composeMaximized, setComposeMaximized] = useState(false);
   const [composeContext, setComposeContext] = useState<ComposeContext>({ mode: "new" });
   const t: Translator = (key) => translate(locale, key);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadTranslationCatalog(locale, controller.signal)
+      .then((catalog) => {
+        if (installTranslationCatalog(catalog)) setTranslationRevision(catalog.revision);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [locale]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -751,13 +767,21 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   }, []);
 
   useEffect(() => {
-    if (!activeAccountId || !online) return;
+    if (!online) return;
     const controller = new AbortController();
     void subscribeMailEvents(
       (event) => {
         const eventAccount = event.payload.accountId;
-        if (typeof eventAccount === "string" && eventAccount !== activeAccountId) return;
+        if (activeAccountId && typeof eventAccount === "string" && eventAccount !== activeAccountId)
+          return;
         if (event.type === "system.resync_required") setLoadState("resync");
+        if (event.type === "translations.changed") {
+          void loadTranslationCatalog(locale, controller.signal)
+            .then((catalog) => {
+              if (installTranslationCatalog(catalog)) setTranslationRevision(catalog.revision);
+            })
+            .catch(() => undefined);
+        }
         if (event.type === "mail.changed" || event.type === "sync.progress") {
           setRefreshRevision((current) => current + 1);
         }
@@ -766,7 +790,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       controller.signal,
     ).catch(() => setEventsConnected(false));
     return () => controller.abort();
-  }, [activeAccountId, online]);
+  }, [activeAccountId, locale, online]);
 
   const searchThreads = useMemo(() => {
     const unique = new Map<string, InboxThread>();
@@ -1166,13 +1190,18 @@ const serviceRows = [
   ["CDN", "Healthy", "284 MB"],
 ];
 
-export function AdminPage() {
+export function AdminPage({ locale }: { locale: Locale }) {
   const navigate = useNavigate();
+  const t: Translator = (key) => translate(locale, key);
   const [telemetry, setTelemetry] = useState<SentryTelemetrySummary | null>(null);
+  const [translationStatus, setTranslationStatus] = useState<TranslationAdminSummary | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     void loadSentryTelemetry(controller.signal)
       .then(setTelemetry)
+      .catch(() => undefined);
+    void loadTranslationAdminSummary(controller.signal)
+      .then(setTranslationStatus)
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
@@ -1182,18 +1211,18 @@ export function AdminPage() {
         <Brand />
         <Button variant="outline" onClick={() => navigate("/")}>
           <ArrowLeft size={16} />
-          Inbox
+          {t("viewInbox")}
         </Button>
       </header>
       <aside className="admin-sidebar">
-        <h1>Admin</h1>
+        <h1>{t("admin")}</h1>
         {[
-          "Status",
+          t("status"),
           "Accounts",
           "Synchronization",
-          "Metrics",
-          "Logs",
-          "Errors",
+          t("metrics"),
+          t("logs"),
+          t("errors"),
           "Translations",
           "CDN",
           "Backups",
@@ -1209,21 +1238,21 @@ export function AdminPage() {
         <div className="admin-title">
           <div>
             <span>System</span>
-            <h2>Operational status</h2>
+            <h2>{t("status")}</h2>
           </div>
           <div className="status-badge">
             <ShieldCheck size={15} />
-            All systems operational
+            {t("status.healthy")}
           </div>
         </div>
         <section className="metric-strip">
           <article>
-            <span>Messages processed</span>
+            <span>{t("processed")}</span>
             <strong>18,420</strong>
             <small>+12.4% this week</small>
           </article>
           <article>
-            <span>API latency</span>
+            <span>{t("latency")}</span>
             <strong>42 ms</strong>
             <small>p95 · last 24 hours</small>
           </article>
@@ -1237,7 +1266,7 @@ export function AdminPage() {
             </small>
           </article>
           <article>
-            <span>Sync queue</span>
+            <span>{t("queue")}</span>
             <strong>0</strong>
             <small>Last run 18 seconds ago</small>
           </article>
@@ -1267,7 +1296,7 @@ export function AdminPage() {
           </article>
           <article className="admin-panel">
             <header>
-              <strong>Services</strong>
+              <strong>{t("services")}</strong>
               <Button size="sm">View details</Button>
             </header>
             <div className="service-table">
@@ -1298,6 +1327,24 @@ export function AdminPage() {
             <strong>{telemetry?.profiles ?? "—"}</strong>
             <span>Replay segments</span>
             <strong>{telemetry?.replaySegments ?? "—"}</strong>
+          </div>
+        </section>
+        <section className="admin-panel recent-events" aria-label="Translation catalogs">
+          <header>
+            <strong>Translation catalogs</strong>
+            <span className="status-badge">Revision {translationStatus?.revision ?? "—"}</span>
+          </header>
+          <div className="event-row">
+            <span>English source</span>
+            <strong>
+              {translationStatus?.diagnostics.missingEnglish.length === 0 ? "Complete" : "Invalid"}
+            </strong>
+            <span>Missing Spanish</span>
+            <strong>{translationStatus?.diagnostics.missingSpanish.length ?? "—"}</strong>
+            <span>Stale Spanish</span>
+            <strong>{translationStatus?.diagnostics.staleSpanish.length ?? "—"}</strong>
+            <span>Invalid ICU</span>
+            <strong>{translationStatus?.diagnostics.invalidIcu.length ?? "—"}</strong>
           </div>
         </section>
         <section className="admin-panel recent-events">

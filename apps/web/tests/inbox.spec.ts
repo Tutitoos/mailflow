@@ -63,6 +63,17 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     route.fulfill({ json: { user: { id: "test-owner" } } }),
   );
   await page.route("**/api/auth/token", (route) => route.fulfill({ json: { token: "test-jwt" } }));
+  await page.route("**/api/v1/translations/en", (route) =>
+    route.fulfill({
+      json: {
+        locale: "en",
+        defaultLocale: "en",
+        revision: 1,
+        messages: {},
+        missingKeys: [],
+      },
+    }),
+  );
   await page.route("**/api/v1/accounts", (route) => route.fulfill({ json: { items: [account] } }));
   await page.route("**/api/v1/mailboxes?**", (route) =>
     route.fulfill({

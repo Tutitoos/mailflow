@@ -127,7 +127,11 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Connected accounts" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect Google" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Connect Microsoft" })).toBeEnabled();
-  await expect(page.getByText("No Google or Microsoft accounts connected yet.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect IMAP" })).toBeEnabled();
+  await expect(page.getByText("No mail accounts connected yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Connect IMAP" }).click();
+  await expect(page.getByRole("heading", { name: "IMAP and SMTP account" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
 
   const accountResults = await new AxeBuilder({ page }).analyze();
   expect(

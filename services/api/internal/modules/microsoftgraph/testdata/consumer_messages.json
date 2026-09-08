@@ -1,0 +1,17 @@
+{
+  "@odata.nextLink": "{{BASE_URL}}/messages?%24skiptoken=consumer-page-2",
+  "value": [
+    {
+      "id": "consumer-message-1",
+      "conversationId": "consumer-conversation-1",
+      "receivedDateTime": "2026-09-08T09:30:00Z",
+      "sentDateTime": "2026-09-08T09:29:00Z",
+      "isRead": false,
+      "flag": { "flagStatus": "flagged" },
+      "importance": "high",
+      "categories": ["Receipts"],
+      "parentFolderId": "deleted-folder-id",
+      "hasAttachments": true
+    }
+  ]
+}

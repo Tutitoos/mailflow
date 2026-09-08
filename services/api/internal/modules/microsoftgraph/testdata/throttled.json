@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "TooManyRequests",
+    "message": "Sanitized provider detail that must never be exposed",
+    "innerError": {
+      "code": "ErrorQuotaExceeded"
+    }
+  }
+}

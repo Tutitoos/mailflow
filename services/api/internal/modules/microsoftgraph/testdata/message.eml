@@ -1,0 +1,18 @@
+From: Fixture Sender <sender@example.test>
+To: Mailflow Owner <owner@example.test>
+Subject: Sanitized Graph fixture
+Message-ID: <graph-fixture@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mailflow-boundary"
+
+--mailflow-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>Sanitized fixture body</p><script>private()</script>
+--mailflow-boundary
+Content-Type: text/plain; name="fixture.txt"
+Content-Disposition: attachment; filename="fixture.txt"
+Content-Transfer-Encoding: base64
+
+Rml4dHVyZSBhdHRhY2htZW50
+--mailflow-boundary--

@@ -17,6 +17,29 @@ export type IMAPAccountInput = {
   smtp: { host: string; port: number; tlsMode: MailTLSMode };
 };
 
+export type IMAPFolderState = {
+  mailboxId: string;
+  remoteId: string;
+  name: string;
+  role: "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "";
+  selectable: boolean;
+  subscribed: boolean;
+  namespacePrefix: string;
+  delimiter: string | null;
+  uidNext: number | null;
+  uidValidity: number | null;
+  nextUid: number | null;
+  cursorState: "active" | "resync_required" | "not_selectable" | "missing";
+  cursorVersion: number;
+  invalidatedAt: string | null;
+  invalidationReason: "uid_validity_changed" | null;
+};
+
+export type IMAPFolderDiscoveryResult = {
+  folders: IMAPFolderState[];
+  reconciliationRequired: boolean;
+};
+
 const legacyMailCapabilities = new Set([
   "actions",
   "attachments",
@@ -440,6 +463,13 @@ export async function connectIMAPAccount(input: IMAPAccountInput) {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function discoverIMAPFolders(accountId: string) {
+  return request<IMAPFolderDiscoveryResult>(
+    `/accounts/${encodeURIComponent(accountId)}/imap/folders/discover`,
+    { method: "POST" },
+  );
 }
 
 export async function createGoogleAuthorization(reconsent = false) {

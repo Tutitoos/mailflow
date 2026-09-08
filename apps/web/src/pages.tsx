@@ -42,6 +42,7 @@ import {
   connectIMAPAccount,
   createMailActions,
   disconnectAccount,
+  discoverIMAPFolders,
   type IMAPAccountInput,
   type InboxThread,
   loadAccountConnections,
@@ -1229,6 +1230,8 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     "generic" | "reconsent" | "tenant" | "tls" | "timeout" | "authentication" | "capability" | null
   >(null);
   const [showIMAP, setShowIMAP] = useState(false);
+  const [discoveringIMAP, setDiscoveringIMAP] = useState<string | null>(null);
+  const [discoveredIMAP, setDiscoveredIMAP] = useState<Record<string, number>>({});
   const [imapStatus, setIMAPStatus] = useState<"idle" | "testing" | "verified" | "connecting">(
     "idle",
   );
@@ -1293,6 +1296,19 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     } finally {
       await reload();
       if (refreshError) setError(refreshError);
+    }
+  };
+
+  const discoverFolders = async (accountId: string) => {
+    setError(null);
+    setDiscoveringIMAP(accountId);
+    try {
+      const result = await discoverIMAPFolders(accountId);
+      setDiscoveredIMAP((current) => ({ ...current, [accountId]: result.folders.length }));
+    } catch (cause) {
+      setError(accountError(cause));
+    } finally {
+      setDiscoveringIMAP(null);
     }
   };
 
@@ -1577,6 +1593,21 @@ export function AccountsPage({ locale }: { locale: Locale }) {
                 >
                   <RefreshCw size={15} /> {t("refreshAccess")}
                 </Button>
+              )}
+              {account.provider === "imap" && (
+                <Button
+                  variant="outline"
+                  disabled={account.syncState === "disabled" || discoveringIMAP === account.id}
+                  onClick={() => void discoverFolders(account.id)}
+                >
+                  <RefreshCw size={15} />{" "}
+                  {discoveringIMAP === account.id ? t("discoveringFolders") : t("discoverFolders")}
+                </Button>
+              )}
+              {discoveredIMAP[account.id] !== undefined && (
+                <small role="status">
+                  {t("foldersDiscovered").replace("{count}", String(discoveredIMAP[account.id]))}
+                </small>
               )}
               <Button variant="outline" onClick={() => void disconnect(account.id)}>
                 <Trash2 size={15} /> {t("disconnect")}

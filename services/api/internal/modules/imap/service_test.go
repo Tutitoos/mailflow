@@ -33,9 +33,26 @@ func (store *serviceAccounts) DisableAndClearCredentials(context.Context, string
 	return store.account, nil
 }
 
+func (store *serviceAccounts) Credentials(context.Context, string, string) (json.RawMessage, error) {
+	return store.input.Credentials, nil
+}
+
 type serviceProber struct {
 	capabilities map[string]bool
 	err          error
+}
+
+type serviceFolderDiscoverer struct{ folders []DiscoveredFolder }
+
+func (discoverer serviceFolderDiscoverer) Discover(context.Context, storedCredentials) ([]DiscoveredFolder, error) {
+	return discoverer.folders, nil
+}
+
+type serviceFolderRepository struct{ folders []DiscoveredFolder }
+
+func (repository *serviceFolderRepository) Reconcile(_ context.Context, _, _ string, folders []DiscoveredFolder) (FolderDiscoveryResult, error) {
+	repository.folders = folders
+	return FolderDiscoveryResult{Folders: []FolderState{{Name: folders[0].Name, RemoteID: folders[0].IdentityKey}}}, nil
 }
 
 func (prober serviceProber) Probe(context.Context, ConnectInput) (map[string]bool, error) {
@@ -98,5 +115,24 @@ func TestServiceDisconnectClearsOnlyIMAPCredentials(t *testing.T) {
 	store.account.Provider = accounts.ProviderGoogle
 	if _, err := service.Disconnect(context.Background(), "owner", "account"); !errors.Is(err, ErrWrongProvider) {
 		t.Fatalf("wrong provider error=%v", err)
+	}
+}
+
+func TestServiceDiscoversNormalizedFoldersUsingStoredCredentials(t *testing.T) {
+	input := validConnectInput()
+	credentials, _ := json.Marshal(storedCredentials{Username: input.Username, Password: input.Password, IMAP: input.IMAP, SMTP: input.SMTP})
+	store := &serviceAccounts{
+		input:   accounts.CreateInput{Credentials: credentials},
+		account: accounts.Account{ID: "account", Provider: accounts.ProviderIMAP},
+	}
+	repository := &serviceFolderRepository{}
+	discoverer := serviceFolderDiscoverer{folders: []DiscoveredFolder{{WireName: "INBOX", Name: "INBOX", Role: "inbox", Selectable: true, UIDNext: int64Pointer(2), UIDValidity: int64Pointer(1)}}}
+	service, err := NewService(store, serviceProber{}, WithFolderDiscovery(repository, discoverer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.DiscoverFolders(context.Background(), "owner", "account")
+	if err != nil || len(result.Folders) != 1 || result.Folders[0].RemoteID != "imap:role:inbox" || len(repository.folders) != 1 {
+		t.Fatalf("folder result=%+v persisted=%+v error=%v", result, repository.folders, err)
 	}
 }

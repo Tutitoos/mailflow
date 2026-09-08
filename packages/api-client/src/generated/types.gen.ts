@@ -253,6 +253,29 @@ export type ImapProbeResult = {
     };
 };
 
+export type ImapFolderState = {
+    mailboxId: string;
+    remoteId: string;
+    name: string;
+    role: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'all' | '';
+    selectable: boolean;
+    subscribed: boolean;
+    namespacePrefix: string;
+    delimiter: string | null;
+    uidNext: number | null;
+    uidValidity: number | null;
+    nextUid: number | null;
+    cursorState: 'active' | 'resync_required' | 'not_selectable' | 'missing';
+    cursorVersion: number;
+    invalidatedAt: string | null;
+    invalidationReason: 'uid_validity_changed' | null;
+};
+
+export type ImapFolderDiscoveryResult = {
+    folders: Array<ImapFolderState>;
+    reconciliationRequired: boolean;
+};
+
 export type SyncRunAccepted = {
     status: 'queued' | 'already_queued';
     runId?: string;
@@ -828,6 +851,33 @@ export type ConnectImapAccountResponses = {
 };
 
 export type ConnectImapAccountResponse = ConnectImapAccountResponses[keyof ConnectImapAccountResponses];
+
+export type DiscoverImapFoldersData = {
+    body?: never;
+    path: {
+        accountId: string;
+    };
+    query?: never;
+    url: '/accounts/{accountId}/imap/folders/discover';
+};
+
+export type DiscoverImapFoldersErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    default: Problem;
+};
+
+export type DiscoverImapFoldersError = DiscoverImapFoldersErrors[keyof DiscoverImapFoldersErrors];
+
+export type DiscoverImapFoldersResponses = {
+    /**
+     * Current IMAP folder hierarchy and per-folder cursor state reconciled
+     */
+    200: ImapFolderDiscoveryResult;
+};
+
+export type DiscoverImapFoldersResponse = DiscoverImapFoldersResponses[keyof DiscoverImapFoldersResponses];
 
 export type SynchronizeAccountData = {
     body?: never;

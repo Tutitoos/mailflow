@@ -32,3 +32,13 @@ For another provider, obtain the exact IMAP and SMTP hostnames, ports, TLS modes
 Mailflow reports certificate identity, timeout, authentication, capability, protocol, folder-limit, and folder-identity failures separately without including credentials or server transcripts. Re-running discovery is transaction-safe: a failed or ambiguous attempt commits no partial folder changes. Correct the indicated setting and try again. If a provider rotates a password, disconnect and add the account again with the replacement credential.
 
 Protected real-account checks must use a dedicated test mailbox and must never record credentials, addresses, subjects, bodies, or screenshots in the repository or CI output.
+
+## Background change detection
+
+The worker maintains one bounded watcher for each active IMAP account. Servers advertising `IDLE` keep `INBOX` selected and are checked with a 25-minute heartbeat. Unsolicited `EXISTS`, `EXPUNGE`, `FETCH`, or `RECENT` responses end the current IDLE command and trigger a transactional folder-status refresh. Bursts are coalesced for one second so one server update does not create duplicate refreshes.
+
+A dropped session reconnects with exponential backoff from one second to one minute. Detection never advances a folder cursor itself: cursor changes only happen after a successful database reconciliation, so a disconnect cannot skip uncommitted provider data. Servers without `IDLE` close the temporary connection and use the same refresh path every five minutes.
+
+Redis grants a renewable per-account lease before a connection is opened, preventing two workers from watching the same account. The worker defaults to four concurrent IMAP connections and releases both sessions and leases during shutdown. The normal worker heartbeat and the bounded `mailflow_imap_watch_total` metric expose watcher health without account identifiers or message data.
+
+The defaults can be changed with `MAILFLOW_IMAP_ACCOUNT_REFRESH`, `MAILFLOW_IMAP_IDLE_HEARTBEAT`, `MAILFLOW_IMAP_POLL_INTERVAL`, `MAILFLOW_IMAP_RECONNECT_MIN`, `MAILFLOW_IMAP_RECONNECT_MAX`, `MAILFLOW_IMAP_LEASE_RENEW`, `MAILFLOW_IMAP_BURST_WINDOW`, and `MAILFLOW_IMAP_MAX_CONNECTIONS`. Duration values use Go duration syntax. Message retrieval, MIME normalization, threading, and remote actions are deliberately handled by the next synchronization stage rather than the watcher.

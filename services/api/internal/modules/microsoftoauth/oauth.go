@@ -30,6 +30,7 @@ var (
 	ErrConsentRevoked  = errors.New("Microsoft consent was revoked")
 	ErrReconsentNeeded = errors.New("Microsoft consent must be renewed")
 	ErrTenantPolicy    = errors.New("Microsoft tenant policy rejected the application")
+	ErrAccessDenied    = errors.New("Microsoft access was denied")
 	validTenantID      = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 )
 
@@ -290,7 +291,9 @@ func classifyProviderCode(code string) error {
 		return ErrConsentRevoked
 	case "consent_required", "interaction_required", "login_required":
 		return ErrReconsentNeeded
-	case "access_denied", "unauthorized_client", "invalid_client", "authorization_request_denied":
+	case "access_denied":
+		return ErrAccessDenied
+	case "unauthorized_client", "invalid_client", "authorization_request_denied":
 		return ErrTenantPolicy
 	default:
 		return ErrProvider
@@ -302,18 +305,12 @@ func validToken(token Token) bool {
 }
 
 func hasRequiredScopes(scope string) bool {
-	granted := make(map[string]bool)
-	for _, item := range strings.Fields(scope) {
-		granted[strings.ToLower(item)] = true
-	}
+	granted := grantedScopes(scope)
 	return granted["user.read"] && granted["mail.readwrite"] && granted["mail.send"]
 }
 
 func capabilities(token Token) map[string]bool {
-	granted := make(map[string]bool)
-	for _, item := range strings.Fields(token.Scope) {
-		granted[strings.ToLower(item)] = true
-	}
+	granted := grantedScopes(token.Scope)
 	return map[string]bool{
 		"drafts":               granted["mail.readwrite"],
 		"folders":              granted["mail.readwrite"],
@@ -322,6 +319,16 @@ func capabilities(token Token) map[string]bool {
 		"account.consumer":     token.AccountKind == AccountConsumer,
 		"account.organization": token.AccountKind == AccountOrganization,
 	}
+}
+
+func grantedScopes(scope string) map[string]bool {
+	granted := make(map[string]bool)
+	for _, item := range strings.Fields(scope) {
+		normalized := strings.ToLower(strings.TrimSpace(item))
+		normalized = strings.TrimPrefix(normalized, "https://graph.microsoft.com/")
+		granted[normalized] = true
+	}
+	return granted
 }
 
 func codeChallenge(verifier string) string {

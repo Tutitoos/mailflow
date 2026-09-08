@@ -129,6 +129,8 @@ func microsoftOAuthProblem(err error) error {
 		return newProblem(fiber.StatusUnauthorized, "microsoft_reconsent_required", "Microsoft consent is required", "Reconnect the account and grant the requested Mailflow permissions again.")
 	case errors.Is(err, microsoftoauth.ErrTenantPolicy):
 		return newProblem(fiber.StatusForbidden, "microsoft_tenant_policy", "Microsoft tenant policy blocked access", "Ask the Microsoft 365 administrator to allow this application, or connect an account permitted by the installation authority.")
+	case errors.Is(err, microsoftoauth.ErrAccessDenied):
+		return newProblem(fiber.StatusForbidden, "microsoft_access_denied", "Microsoft access was denied", "Start the connection again when you are ready to grant Mailflow access.")
 	case errors.Is(err, microsoftoauth.ErrProvider), errors.Is(err, microsoftoauth.ErrInvalidToken):
 		return newProblem(fiber.StatusBadGateway, "microsoft_oauth_failed", "Microsoft connection failed", "Microsoft could not complete the account operation. Start the flow again or request consent again.")
 	case errors.Is(err, accounts.ErrAccountNotFound):

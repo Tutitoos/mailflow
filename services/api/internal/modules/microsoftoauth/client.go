@@ -16,7 +16,12 @@ const (
 	microsoftGraphMe   = "https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName"
 )
 
-var microsoftScopes = []string{"openid", "profile", "email", "offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"}
+var microsoftScopes = []string{
+	"openid", "profile", "email", "offline_access",
+	"https://graph.microsoft.com/User.Read",
+	"https://graph.microsoft.com/Mail.ReadWrite",
+	"https://graph.microsoft.com/Mail.Send",
+}
 
 type Client struct {
 	config Config

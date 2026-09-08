@@ -117,10 +117,10 @@ func TestOAuthProviderFailureConsumesStateAndMapsTenantPolicy(t *testing.T) {
 	started, _ := service.Start(context.Background(), "0199ed3b-c950-7000-8000-000000000001", false)
 	parsed, _ := url.Parse(started.AuthorizationURL)
 	state := parsed.Query().Get("state")
-	if _, _, err := service.CallbackWithOwner(context.Background(), state, "", "access_denied"); !errors.Is(err, ErrTenantPolicy) {
+	if _, _, err := service.CallbackWithOwner(context.Background(), state, "", "authorization_request_denied"); !errors.Is(err, ErrTenantPolicy) {
 		t.Fatalf("callback error = %v", err)
 	}
-	if _, _, err := service.CallbackWithOwner(context.Background(), state, "", "access_denied"); !errors.Is(err, ErrInvalidState) {
+	if _, _, err := service.CallbackWithOwner(context.Background(), state, "", "authorization_request_denied"); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("replayed failure = %v", err)
 	}
 }

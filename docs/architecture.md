@@ -62,6 +62,8 @@ deploy/
 
 Mailflow seguirá siendo un monorepo. El SHA del repositorio raíz fija conjuntamente `web`, `desktop`, `ios`, `api`, `auth`, los paquetes compartidos y la configuración de despliegue.
 
+El shell macOS carga la misma SPA desde un único origen de instalación fijado al compilar. Ese origen remoto conserva cookies, REST y WebSocket de primera parte, pero no recibe capacidades IPC de Tauri. Rust limita la navegación al origen exacto, abre destinos externos en el navegador del sistema y convierte únicamente callbacks `mailflow://` con rutas y valores permitidos en navegación interna. Véase [`desktop.md`](desktop.md).
+
 `deploy/repos.lock` no incluirá esos componentes ni el propio repositorio. Su única función será fijar cualquier repositorio fuente externo que resulte imprescindible en el futuro mediante tres campos separados por tabuladores:
 
 ```text

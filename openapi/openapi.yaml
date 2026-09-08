@@ -309,6 +309,7 @@ paths:
               type: object
               properties:
                 reconsent: { type: boolean, default: false }
+                desktop: { type: boolean, default: false, description: Return the fixed OAuth result through the Mailflow desktop deep link }
       responses:
         "200":
           description: Short-lived single-use authorization transaction
@@ -333,8 +334,12 @@ paths:
           schema: { type: string, minLength: 32, maxLength: 256 }
         - name: code
           in: query
-          required: true
+          required: false
           schema: { type: string, minLength: 1, maxLength: 4096 }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string, maxLength: 256 }
       responses:
         "303":
           description: Connection completed and browser redirected to account settings
@@ -366,6 +371,7 @@ paths:
               type: object
               properties:
                 reconsent: { type: boolean, default: false }
+                desktop: { type: boolean, default: false, description: Return the fixed OAuth result through the Mailflow desktop deep link }
       responses:
         "200":
           description: Short-lived single-use Microsoft authorization transaction

@@ -17,17 +17,20 @@ func microsoftOAuthCallback(service *microsoftoauth.Service, syncer SyncRequeste
 		if service == nil || !service.Configured() {
 			return microsoftOAuthProblem(microsoftoauth.ErrNotConfigured)
 		}
-		account, userID, err := service.CallbackWithOwner(c.Context(), c.Query("state"), c.Query("code"), c.Query("error"))
+		account, userID, desktop, err := service.CallbackWithClient(c.Context(), c.Query("state"), c.Query("code"), c.Query("error"))
 		if err != nil {
+			if desktop {
+				return c.Redirect().Status(fiber.StatusSeeOther).To("mailflow://open/settings/accounts?microsoft=failed")
+			}
 			return microsoftOAuthProblem(err)
 		}
 		if syncer == nil {
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected&sync=pending")
+			return microsoftOAuthRedirect(c, desktop, true)
 		}
 		if _, err := syncer.StartInitial(c.Context(), userID, account.ID); err != nil && !errors.Is(err, mailflowsync.ErrRunExists) {
-			return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected&sync=pending")
+			return microsoftOAuthRedirect(c, desktop, true)
 		}
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/accounts?microsoft=connected")
+		return microsoftOAuthRedirect(c, desktop, false)
 	}
 }
 
@@ -42,16 +45,28 @@ func microsoftOAuthStart(service *microsoftoauth.Service) fiber.Handler {
 		}
 		var body struct {
 			Reconsent bool `json:"reconsent"`
+			Desktop   bool `json:"desktop"`
 		}
 		if len(c.Body()) > 0 && c.Bind().Body(&body) != nil {
 			return newProblem(fiber.StatusBadRequest, "oauth_invalid_request", "Invalid OAuth request", "The OAuth request body is invalid.")
 		}
-		result, err := service.Start(c.Context(), user.ID, body.Reconsent)
+		result, err := service.StartForClient(c.Context(), user.ID, body.Reconsent, body.Desktop)
 		if err != nil {
 			return microsoftOAuthProblem(err)
 		}
 		return c.JSON(result)
 	}
+}
+
+func microsoftOAuthRedirect(c fiber.Ctx, desktop, syncPending bool) error {
+	location := "/settings/accounts?microsoft=connected"
+	if desktop {
+		location = "mailflow://open/settings/accounts?microsoft=connected"
+	}
+	if syncPending {
+		location += "&sync=pending"
+	}
+	return c.Redirect().Status(fiber.StatusSeeOther).To(location)
 }
 
 func refreshAccount(accountStore AccountLister, google *googleoauth.Service, microsoft *microsoftoauth.Service) fiber.Handler {

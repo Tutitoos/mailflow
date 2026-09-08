@@ -136,3 +136,20 @@ func TestServiceDiscoversNormalizedFoldersUsingStoredCredentials(t *testing.T) {
 		t.Fatalf("folder result=%+v persisted=%+v error=%v", result, repository.folders, err)
 	}
 }
+
+func TestServiceRejectsUnboundedFolderDiscovery(t *testing.T) {
+	input := validConnectInput()
+	credentials, _ := json.Marshal(storedCredentials{Username: input.Username, Password: input.Password, IMAP: input.IMAP, SMTP: input.SMTP})
+	store := &serviceAccounts{
+		input:   accounts.CreateInput{Credentials: credentials},
+		account: accounts.Account{ID: "account", Provider: accounts.ProviderIMAP},
+	}
+	discoverer := serviceFolderDiscoverer{folders: make([]DiscoveredFolder, maxDiscoveredFolders+1)}
+	service, err := NewService(store, serviceProber{}, WithFolderDiscovery(&serviceFolderRepository{}, discoverer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.DiscoverFolders(context.Background(), "owner", "account"); !errors.Is(err, ErrFolderLimit) {
+		t.Fatalf("folder limit error=%v", err)
+	}
+}

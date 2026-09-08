@@ -64,6 +64,19 @@ func TestFolderRepositoryPreservesIdentityAndInvalidatesOnlyChangedUIDValidity(t
 	if folder := states["Receipts"]; folder.CursorState != FolderCursorResyncRequired || folder.NextUID == nil || *folder.NextUID != 1 || folder.InvalidationReason == nil || *folder.InvalidationReason != "uid_validity_changed" {
 		t.Fatalf("invalidated folder = %+v", folder)
 	}
+	nonselectable := normalizedFolderFixture(t,
+		DiscoveredFolder{WireName: "Projects.Archived", Name: "Projects.Archived", Delimiter: ".", Selectable: true, UIDNext: int64Pointer(23), UIDValidity: int64Pointer(101)},
+		DiscoveredFolder{WireName: "Receipts", Name: "Receipts", Delimiter: "/", Selectable: false},
+	)
+	fourth, err := repository.Reconcile(ctx, userID, accountID, nonselectable)
+	if err != nil {
+		t.Fatalf("make invalidated folder nonselectable: %v", err)
+	}
+	for _, folder := range fourth.Folders {
+		if folder.Name == "Receipts" && (folder.CursorState != FolderCursorNotSelectable || folder.NextUID != nil || folder.InvalidatedAt != nil || folder.InvalidationReason != nil) {
+			t.Fatalf("nonselectable invalidated folder = %+v", folder)
+		}
+	}
 	var mailboxCount int
 	if err := pool.QueryRow(ctx, "select count(*) from mailboxes where account_id = $1", accountID).Scan(&mailboxCount); err != nil || mailboxCount != 2 {
 		t.Fatalf("mailbox count=%d error=%v", mailboxCount, err)

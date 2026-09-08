@@ -251,6 +251,7 @@ ON CONFLICT (mailbox_id, account_id) DO UPDATE SET
   END,
   version = imap_folder_cursors.version + 1,
   invalidated_at = CASE
+    WHEN EXCLUDED.state IN ('not_selectable', 'missing') THEN NULL
     WHEN imap_folder_cursors.uid_validity IS DISTINCT FROM EXCLUDED.uid_validity
       AND imap_folder_cursors.uid_validity IS NOT NULL
       AND EXCLUDED.uid_validity IS NOT NULL THEN now()
@@ -258,6 +259,7 @@ ON CONFLICT (mailbox_id, account_id) DO UPDATE SET
     ELSE NULL
   END,
   invalidation_reason = CASE
+    WHEN EXCLUDED.state IN ('not_selectable', 'missing') THEN NULL
     WHEN imap_folder_cursors.uid_validity IS DISTINCT FROM EXCLUDED.uid_validity
       AND imap_folder_cursors.uid_validity IS NOT NULL
       AND EXCLUDED.uid_validity IS NOT NULL THEN 'uid_validity_changed'

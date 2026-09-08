@@ -100,3 +100,15 @@ func (service *Service) MarkError(ctx context.Context, userID, accountID string)
 func (service *Service) Disable(ctx context.Context, userID, accountID string) (Account, error) {
 	return service.repository.Disable(ctx, userID, accountID)
 }
+
+type credentialsClearingRepository interface {
+	DisableAndClearCredentials(context.Context, string, string) (Account, error)
+}
+
+func (service *Service) DisableAndClearCredentials(ctx context.Context, userID, accountID string) (Account, error) {
+	repository, ok := service.repository.(credentialsClearingRepository)
+	if !ok {
+		return Account{}, ErrInvalidAccount
+	}
+	return repository.DisableAndClearCredentials(ctx, userID, accountID)
+}

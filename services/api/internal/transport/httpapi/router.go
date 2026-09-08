@@ -14,6 +14,7 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/backups"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/googleoauth"
+	mailflowimap "github.com/Tutitoos/mailflow/services/api/internal/modules/imap"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/logs"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
@@ -44,6 +45,7 @@ type Dependencies struct {
 	Delivery       DraftService
 	Events         EventStream
 	GoogleOAuth    *googleoauth.Service
+	IMAP           *mailflowimap.Service
 	MicrosoftOAuth *microsoftoauth.Service
 	Inbox          InboxReader
 	Mailboxes      MailboxLabelReader
@@ -214,9 +216,11 @@ func New(deps Dependencies) *fiber.App {
 		return c.JSON(fiber.Map{"configured": deps.MicrosoftOAuth != nil && deps.MicrosoftOAuth.Configured(), "setup": "docs/providers/microsoft.md"})
 	})
 	v1.Post("/oauth/microsoft/start", microsoftOAuthStart(deps.MicrosoftOAuth))
+	v1.Post("/accounts/imap/probe", probeIMAPAccount(deps.IMAP))
+	v1.Post("/accounts/imap", connectIMAPAccount(deps.IMAP))
 	v1.Post("/accounts/:accountId/refresh", refreshAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth))
 	v1.Post("/accounts/:accountId/sync", synchronizeAccount(deps.Sync))
-	v1.Delete("/accounts/:accountId", disconnectOAuthAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth))
+	v1.Delete("/accounts/:accountId", disconnectOAuthAccount(deps.Accounts, deps.GoogleOAuth, deps.MicrosoftOAuth, deps.IMAP))
 	v1.Post("/attachments", attachmentUpload(deps.Attachments))
 	v1.Get("/attachments/:attachmentId", attachmentDownload(deps.Attachments))
 	adminRoutes := v1.Group("/admin")

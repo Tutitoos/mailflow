@@ -199,6 +199,27 @@ func (repository *RepositoryStore) Disable(ctx context.Context, user, account st
 	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
 }
 
+func (repository *RepositoryStore) DisableAndClearCredentials(ctx context.Context, user, account string) (Account, error) {
+	userID, accountID, err := scopedIDs(user, account)
+	if err != nil {
+		return Account{}, ErrAccountNotFound
+	}
+	ciphertext, nonce, err := repository.vault.Encrypt([]byte(`{}`), associatedData(user, account))
+	if err != nil {
+		return Account{}, fmt.Errorf("clear account credentials: %w", err)
+	}
+	row, err := repository.queries.DisableAccountAndClearCredentials(ctx, dbgen.DisableAccountAndClearCredentialsParams{
+		ID: accountID, UserID: userID, EncryptedCredentials: ciphertext, CredentialNonce: nonce,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	if err != nil {
+		return Account{}, fmt.Errorf("disable account and clear credentials: %w", err)
+	}
+	return mapAccount(row.ID, row.Provider, row.RemoteID, row.DisplayName, row.Capabilities, row.SyncState, row.DisabledAt, row.CreatedAt, row.UpdatedAt)
+}
+
 func mapAccount(id pgtype.UUID, provider, remoteID, displayName string, encoded []byte, state string, disabled, created, updated pgtype.Timestamptz) (Account, error) {
 	var capabilities map[string]bool
 	if err := json.Unmarshal(encoded, &capabilities); err != nil {

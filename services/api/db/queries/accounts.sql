@@ -57,3 +57,14 @@ UPDATE accounts
 SET disabled_at = COALESCE(disabled_at, now()), sync_state = 'disabled', updated_at = now()
 WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at;
+
+-- name: DisableAccountAndClearCredentials :one
+UPDATE accounts
+SET encrypted_credentials = sqlc.arg(encrypted_credentials),
+    credential_nonce = sqlc.arg(credential_nonce),
+    capabilities = '{}'::jsonb,
+    disabled_at = COALESCE(disabled_at, now()),
+    sync_state = 'disabled',
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id) AND provider = 'imap'
+RETURNING id, user_id, provider, remote_id, display_name, capabilities, sync_state, disabled_at, created_at, updated_at;

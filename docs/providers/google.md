@@ -7,7 +7,7 @@ Mailflow uses a Google OAuth client owned by each self-hosted installation. It n
 3. Create a **Web application** OAuth client.
 4. Add exactly `https://<your-mailflow-domain>/api/v1/oauth/google/callback` as an authorized redirect URI. Local development may use `http://127.0.0.1:<port>/api/v1/oauth/google/callback`.
 5. Set `GOOGLE_OAUTH_CLIENT_ID` in `deploy/.env` and write the client secret alone to `deploy/secrets/google_oauth_client_secret`. Never commit either installation file.
-6. Restart the API and open **Settings → Accounts**. The capability status should change from setup guidance to **Connect Google**.
+6. Restart the API and worker, then open **Settings → Accounts**. The capability status should change from setup guidance to **Connect Google**. Both services need the OAuth configuration: the API handles consent and the worker renews short-lived access tokens during background synchronization.
 
 Mailflow requests OpenID identity, email identity, and `gmail.modify`. Authorization uses PKCE S256 and a random state stored in Redis for ten minutes. State is consumed atomically, so callback replay fails. Google tokens are encrypted through the account vault before PostgreSQL receives them and are never returned by the API.
 

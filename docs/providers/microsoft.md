@@ -10,6 +10,8 @@ Mailflow uses a Microsoft Entra application owned by each self-hosted installati
 4. Create a client secret. Set the non-secret application ID in `MICROSOFT_OAUTH_CLIENT_ID` and write only the secret value to `deploy/secrets/microsoft_oauth_client_secret`.
 5. Select `MICROSOFT_OAUTH_AUTHORITY`: `common` accepts personal and organizational accounts, `consumers` accepts Outlook.com accounts, `organizations` accepts work/school accounts, and a tenant UUID restricts access to one organization.
 
+Restart the API and worker after changing these values. Both services use the same protected OAuth configuration: the API handles consent and the worker renews short-lived access tokens during background synchronization.
+
 The app registration's supported account types must agree with the selected authority. Some Microsoft 365 tenants disable user consent; their administrator must approve the delegated permissions before an owner can connect that account.
 
 ## Consent and disconnect behavior

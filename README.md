@@ -67,6 +67,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Roadmap](docs/roadmap.md)
 - [Flujo Git y repos.lock](docs/git-workflow.md)
 - [Pruebas locales y de integración](docs/testing.md)
+- [Aceptación de producto 1.0](docs/release-acceptance.md)
 - [Eventos WebSocket y replay](docs/events.md)
 - [Shell de escritorio macOS](docs/desktop.md)
 - [Actualizador firmado de macOS](docs/desktop-updater.md)

@@ -18,7 +18,7 @@ inspect_local_images() {
     image="mailflow-${name}:acceptance"
     docker image inspect "$image" >/dev/null
     version="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-    [[ "$version" =~ ^0\.0\.0-pr\.[0-9]+$ ]] || fail "$image has an invalid version label"
+    [[ "$version" =~ ^0\.0\.0-(local|pr\.[0-9]+)$ ]] || fail "$image has an invalid version label"
     architecture="$(docker image inspect "$image" --format '{{.Architecture}}')"
     test "$architecture" = "$expected_architecture" || fail "$image is not native for $expected_architecture"
 
@@ -145,6 +145,76 @@ verify_stack_health() {
   for service in worker backup; do
     wait_for_health "${compose[@]}" "$service"
   done
+
+  # Keep the restart fixture synthetic and unavailable to provider workers. It
+  # represents one committed local action and its matching provider cursor.
+  "${compose[@]}" exec -T postgres psql --username mailflow --dbname mailflow --set ON_ERROR_STOP=1 <<'SQL' >/dev/null
+INSERT INTO users (id, email, name)
+VALUES ('0199ed3b-c950-7000-8000-000000000073', 'release-acceptance@example.test', 'Release acceptance')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO accounts (id, user_id, provider, remote_id, display_name, encrypted_credentials, credential_nonce, capabilities, sync_state)
+VALUES (
+  '0199ed3b-c950-7000-8000-000000000173',
+  '0199ed3b-c950-7000-8000-000000000073',
+  'google', 'release-acceptance', 'Release acceptance', '\x01', '\x02', '{}', 'idle'
+)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO sync_cursors (account_id, kind, cursor, checkpoint, version, last_success_at)
+VALUES (
+  '0199ed3b-c950-7000-8000-000000000173',
+  'google_history', '{"historyId":"73"}', 73, 2, '2026-09-09T00:00:00Z'
+)
+ON CONFLICT (account_id) DO UPDATE SET
+  cursor = EXCLUDED.cursor,
+  checkpoint = EXCLUDED.checkpoint,
+  version = EXCLUDED.version,
+  last_success_at = EXCLUDED.last_success_at;
+INSERT INTO pending_actions (
+  id, account_id, idempotency_key, kind, desired_state, status, attempts,
+  available_at, target_kind, target_id, max_attempts
+)
+VALUES (
+  '0199ed3b-c950-7000-8000-000000000273',
+  '0199ed3b-c950-7000-8000-000000000173',
+  'release-acceptance-73', 'archive', '{}', 'retry_wait', 1,
+  '2099-01-01T00:00:00Z', 'thread',
+  '0199ed3b-c950-7000-8000-000000000373', 5
+)
+ON CONFLICT (account_id, idempotency_key) DO UPDATE SET
+  status = EXCLUDED.status,
+  attempts = EXCLUDED.attempts,
+  available_at = EXCLUDED.available_at;
+SQL
+  "${compose[@]}" exec -T redis redis-cli SET mailflow:acceptance:restart-marker committed >/dev/null
+
+  # API and worker are process-restart contracts. PostgreSQL and Redis are
+  # stopped separately afterwards so their durable state can be inspected
+  # before application processes are allowed to reconnect.
+  "${compose[@]}" restart api worker >/dev/null
+  for service in api worker; do
+    wait_for_health "${compose[@]}" "$service"
+  done
+  "${compose[@]}" stop api worker >/dev/null
+  "${compose[@]}" restart postgres redis >/dev/null
+  for service in postgres redis; do
+    wait_for_health "${compose[@]}" "$service"
+  done
+
+  local cursor_state action_state redis_state
+  cursor_state="$("${compose[@]}" exec -T postgres psql --username mailflow --dbname mailflow --tuples-only --no-align --command \
+    "SELECT cursor->>'historyId' || ':' || checkpoint || ':' || version FROM sync_cursors WHERE account_id = '0199ed3b-c950-7000-8000-000000000173'")"
+  action_state="$("${compose[@]}" exec -T postgres psql --username mailflow --dbname mailflow --tuples-only --no-align --command \
+    "SELECT status || ':' || attempts FROM pending_actions WHERE id = '0199ed3b-c950-7000-8000-000000000273'")"
+  redis_state="$("${compose[@]}" exec -T redis redis-cli --raw GET mailflow:acceptance:restart-marker)"
+  test "$cursor_state" = "73:73:2" || fail "provider cursor changed across the PostgreSQL restart"
+  test "$action_state" = "retry_wait:1" || fail "committed action changed across the PostgreSQL restart"
+  test "$redis_state" = "committed" || fail "Redis restart marker was not durable"
+
+  "${compose[@]}" start api worker >/dev/null
+  for service in api worker; do
+    wait_for_health "${compose[@]}" "$service"
+  done
+  "${compose[@]}" exec -T api /usr/local/bin/api --healthcheck
 }
 
 verify_release() {

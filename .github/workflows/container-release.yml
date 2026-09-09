@@ -14,6 +14,9 @@ on:
       - scripts/release-evidence.ts
       - scripts/release-evidence.test.ts
       - scripts/release-policy.test.ts
+      - scripts/release-acceptance-policy.test.ts
+      - scripts/build-acceptance-images.sh
+      - scripts/verify-container-images.sh
       - services/api/**
       - services/auth/**
   push:
@@ -80,13 +83,7 @@ jobs:
       - name: Build native acceptance images
         env:
           VERSION: 0.0.0-pr.${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          docker build --build-arg "VERSION=$VERSION" --target web -t mailflow-web:acceptance -f apps/web/Dockerfile .
-          docker build --build-arg "VERSION=$VERSION" --target auth -t mailflow-auth:acceptance -f services/auth/Dockerfile .
-          docker build --build-arg "VERSION=$VERSION" --target api -t mailflow-api:acceptance -f services/api/Dockerfile .
-          docker build --build-arg "VERSION=$VERSION" --target worker -t mailflow-worker:acceptance -f services/api/Dockerfile .
-          docker build --build-arg "VERSION=$VERSION" --target backup -t mailflow-backup:acceptance -f services/api/backup.Dockerfile .
+        run: ./scripts/build-acceptance-images.sh
       - name: Reject secrets and development residue
         run: ./scripts/verify-container-images.sh inspect
       - name: Start the first-party stack and verify health

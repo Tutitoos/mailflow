@@ -1,4 +1,4 @@
-.PHONY: check integration e2e dev api worker compose-config
+.PHONY: check integration e2e acceptance-images release-acceptance dev api worker compose-config
 
 check:
 	bun run lint
@@ -16,6 +16,12 @@ integration:
 
 e2e:
 	bun run --cwd apps/web test:e2e
+
+acceptance-images:
+	./scripts/build-acceptance-images.sh
+
+release-acceptance: integration e2e acceptance-images
+	./scripts/verify-container-images.sh health
 
 dev:
 	bun run dev

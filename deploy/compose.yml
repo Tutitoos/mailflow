@@ -67,6 +67,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 15s
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped
@@ -135,6 +136,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 15s
     depends_on:
       auth: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

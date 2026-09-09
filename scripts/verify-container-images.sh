@@ -47,14 +47,40 @@ wait_for_health() {
   fail "$service did not become healthy"
 }
 
+wait_for_completion() {
+  local -a compose=("${@:1:$#-1}")
+  local service="${!#}" container status exit_code
+  container="$("${compose[@]}" ps -a -q "$service")"
+  test -n "$container" || fail "$service was not created"
+  for _ in {1..60}; do
+    status="$(docker inspect --format '{{.State.Status}}' "$container")"
+    if [[ "$status" == "exited" ]]; then
+      exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$container")"
+      test "$exit_code" = "0" || fail "$service exited with code $exit_code"
+      return
+    fi
+    [[ "$status" != "dead" ]] || fail "$service entered state $status"
+    sleep 2
+  done
+  fail "$service did not complete"
+}
+
 cleanup_acceptance() {
+  local status=$?
   if [[ -n "$acceptance_project" && -n "$acceptance_override" ]]; then
+    if (( status != 0 )); then
+      docker compose --project-name "$acceptance_project" --env-file deploy/.env.example \
+        -f deploy/compose.yml -f "$acceptance_override" --profile backup ps -a >&2 || true
+      docker compose --project-name "$acceptance_project" --env-file deploy/.env.example \
+        -f deploy/compose.yml -f "$acceptance_override" --profile backup logs --no-color --tail 100 >&2 || true
+    fi
     docker compose --project-name "$acceptance_project" --env-file deploy/.env.example \
       -f deploy/compose.yml -f "$acceptance_override" --profile backup down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   if [[ -n "$acceptance_temp_dir" && "$acceptance_temp_dir" == "${TMPDIR:-/tmp}"/mailflow-container-acceptance.* ]]; then
     rm -rf -- "$acceptance_temp_dir"
   fi
+  return "$status"
 }
 
 verify_stack_health() {
@@ -91,15 +117,25 @@ verify_stack_health() {
 
   export MAILFLOW_DOMAIN=mailflow.test
   export BACKUP_PATH="$acceptance_temp_dir/repository"
-  export MAILFLOW_WEB_IMAGE=mailflow-web:acceptance
-  export MAILFLOW_AUTH_IMAGE=mailflow-auth:acceptance
-  export MAILFLOW_API_IMAGE=mailflow-api:acceptance
-  export MAILFLOW_WORKER_IMAGE=mailflow-worker:acceptance
-  export MAILFLOW_BACKUP_IMAGE=mailflow-backup:acceptance
+  export MAILFLOW_WEB_IMAGE="${MAILFLOW_WEB_IMAGE:-mailflow-web:acceptance}"
+  export MAILFLOW_AUTH_IMAGE="${MAILFLOW_AUTH_IMAGE:-mailflow-auth:acceptance}"
+  export MAILFLOW_API_IMAGE="${MAILFLOW_API_IMAGE:-mailflow-api:acceptance}"
+  export MAILFLOW_WORKER_IMAGE="${MAILFLOW_WORKER_IMAGE:-mailflow-worker:acceptance}"
+  export MAILFLOW_BACKUP_IMAGE="${MAILFLOW_BACKUP_IMAGE:-mailflow-backup:acceptance}"
   local compose=(docker compose --project-name "$acceptance_project" --env-file deploy/.env.example -f deploy/compose.yml -f "$acceptance_override" --profile backup)
   "${compose[@]}" config --quiet
-  "${compose[@]}" up -d --no-build postgres redis migrate auth api worker web backup
-  for service in postgres redis auth api worker web backup; do
+  "${compose[@]}" up -d --no-build postgres redis
+  for service in postgres redis; do
+    wait_for_health "${compose[@]}" "$service"
+  done
+  "${compose[@]}" up -d --no-build migrate
+  wait_for_completion "${compose[@]}" migrate
+  "${compose[@]}" up -d --no-build --no-deps auth
+  wait_for_health "${compose[@]}" auth
+  "${compose[@]}" up -d --no-build --no-deps api
+  wait_for_health "${compose[@]}" api
+  "${compose[@]}" up -d --no-build --no-deps worker web backup
+  for service in worker web backup; do
     wait_for_health "${compose[@]}" "$service"
   done
   "${compose[@]}" exec -T web wget -qO- http://127.0.0.1:8080/health/live >/dev/null

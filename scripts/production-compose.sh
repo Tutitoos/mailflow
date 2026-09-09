@@ -93,7 +93,9 @@ render_traefik_config() {
   temporary="$(mktemp "$directory/.traefik-dynamic.XXXXXX")"
   trap 'rm -f -- "$temporary"' RETURN
   sed "s/__MAILFLOW_DOMAIN__/$domain/g" "$traefik_template" > "$temporary"
-  chmod 600 "$temporary"
+  # The file contains routes and limits, never credentials. Traefik runs as a
+  # non-root user and Compose file-backed configs preserve host readability.
+  chmod 644 "$temporary"
   mv -- "$temporary" "$destination"
   trap - RETURN
 }

@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -76,6 +77,7 @@ describe("production Compose operator guard", () => {
     expect(result.exitCode, result.stderr.toString()).toBe(0);
     expect(readFileSync(config, "utf8")).toContain("Host(`mail.example.com`)");
     expect(readFileSync(config, "utf8")).not.toContain("__MAILFLOW_DOMAIN__");
+    expect(statSync(config).mode & 0o777).toBe(0o644);
   });
 
   test("rejects mutable images without echoing their value", () => {

@@ -27,7 +27,7 @@ chmod 700 "$test_root"
 sed -e 's/__MAILFLOW_DOMAIN__/mail.example.com/g' -e 's/^      tls:$/      tls: {}/' \
   -e '/certResolver: letsencrypt/d' -e 's#http://web:8080#http://127.0.0.1:8082#' \
   "$repository_root/deploy/traefik-dynamic.yml.template" > "$dynamic_config"
-chmod 600 "$dynamic_config"
+chmod 644 "$dynamic_config"
 printf '%s\n' \
   'services:' \
   '  traefik:' \

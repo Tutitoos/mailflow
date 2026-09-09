@@ -43,7 +43,9 @@ Create every file documented in [`deploy/secrets/README.md`](../deploy/secrets/R
 under the absolute `MAILFLOW_SECRETS_PATH`, with mode `600` and ownership by the
 account operating Docker.
 `MAILFLOW_TRAEFIK_CONFIG_PATH` must point inside the private runtime directory;
-the operator script renders it atomically from the reviewed template.
+the operator script renders it atomically from the reviewed template. That
+generated file contains no credentials and is mode `644` so Traefik's non-root
+process can read the Compose-backed config; its parent directory remains `700`.
 Optional provider and alert secret files may be empty, but the authentication,
 bootstrap, recovery, PostgreSQL, Restic and master-key files may not. Keep the
 Restic password, recovery code, master key and the exact release environment in

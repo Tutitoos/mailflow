@@ -1,4 +1,7 @@
-FROM oven/bun:1.4.0
+FROM oven/bun:1.4.0 AS auth
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="Mailflow auth" \
+      org.opencontainers.image.version="${VERSION}"
 WORKDIR /workspace
 RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 COPY package.json bun.lock ./

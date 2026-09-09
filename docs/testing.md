@@ -33,3 +33,18 @@ notarization tickets, Gatekeeper assessment, DMG mounting, updater signature
 and tamper rejection, and a clean temporary install-launch-uninstall smoke test.
 See [`macos-release.md`](macos-release.md) for the exact evidence boundary and
 the checks that remain impossible without protected Apple credentials.
+
+## Container release verification
+
+The container workflow builds web, auth, API, worker and backup for both
+supported Linux architectures. Its separate native drill inspects all five
+filesystems, starts the first-party stack with temporary credentials and checks
+the applicable internal health endpoints:
+
+```bash
+./scripts/verify-container-images.sh inspect
+./scripts/verify-container-images.sh health
+```
+
+Published tags add manifest-digest, Cosign and GitHub attestation verification.
+See [`container-releases.md`](container-releases.md) for the evidence boundary.

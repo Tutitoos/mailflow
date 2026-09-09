@@ -71,6 +71,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Shell de escritorio macOS](docs/desktop.md)
 - [Actualizador firmado de macOS](docs/desktop-updater.md)
 - [Pipeline de release macOS](docs/macos-release.md)
+- [Releases de contenedores](docs/container-releases.md)
 - [Caché cifrada offline de macOS](docs/offline-cache.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)

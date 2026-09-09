@@ -78,6 +78,12 @@ external/<name>    git@github.com:<owner>/<repo>.git    <40-character-sha>
 
 Mientras no existan dependencias fuente externas, el lock permanecerá válidamente vacío. Las imágenes de contenedor se fijarán por digestos en la configuración de despliegue, no en `repos.lock`.
 
+Los cinco artefactos first-party (`web`, `auth`, `api`, `worker` y `backup`) se
+publican desde la misma revisión para AMD64 y ARM64. Cada release incluye SBOM,
+provenance, firma keyless y un manifiesto consolidado de digests. Compose
+conserva el build local, mientras producción consume únicamente las referencias
+inmutables descritas en [`container-releases.md`](container-releases.md).
+
 ## API modular
 
 La API será un monolito modular. Fiber se limitará al transporte HTTP; los módulos no recibirán ni conservarán `fiber.Ctx`.

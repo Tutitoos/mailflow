@@ -165,6 +165,13 @@ services:
       MAILFLOW_QUEUE_CLAIM_TIMEOUT: 6m
       MAILFLOW_QUEUE_HANDLE_TIMEOUT: 5m
       MAILFLOW_QUEUE_SHUTDOWN_GRACE: 15s
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET_FILE: /run/secrets/google_oauth_client_secret
+      GOOGLE_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/google/callback
+      MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_SECRET_FILE: /run/secrets/microsoft_oauth_client_secret
+      MICROSOFT_OAUTH_REDIRECT_URL: https://${MAILFLOW_DOMAIN}/api/v1/oauth/microsoft/callback
+      MICROSOFT_OAUTH_AUTHORITY: ${MICROSOFT_OAUTH_AUTHORITY:-common}
       MAILFLOW_IMAP_ACCOUNT_REFRESH: ${MAILFLOW_IMAP_ACCOUNT_REFRESH:-30s}
       MAILFLOW_IMAP_IDLE_HEARTBEAT: ${MAILFLOW_IMAP_IDLE_HEARTBEAT:-25m}
       MAILFLOW_IMAP_POLL_INTERVAL: ${MAILFLOW_IMAP_POLL_INTERVAL:-5m}
@@ -186,7 +193,7 @@ services:
       redis: { condition: service_healthy }
     volumes:
       - mailflow-cdn:/data/cdn
-    secrets: [alert_smtp_password, master_key, postgres_password]
+    secrets: [alert_smtp_password, google_oauth_client_secret, master_key, microsoft_oauth_client_secret, postgres_password]
     restart: unless-stopped
 
   postgres-preflight:

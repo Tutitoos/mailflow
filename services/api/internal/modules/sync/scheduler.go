@@ -64,6 +64,16 @@ func (scheduler *Scheduler) Request(ctx context.Context, user, account string) (
 		}
 	}
 	now := scheduler.now()
+	recovered, recoverErr := scheduler.runs.RecoverFailedRun(ctx, user, account, now)
+	if recoverErr == nil {
+		if err := scheduler.enqueue(ctx, user, recovered); err != nil {
+			return Run{}, err
+		}
+		return recovered, nil
+	}
+	if !errors.Is(recoverErr, ErrRunNotFound) {
+		return Run{}, recoverErr
+	}
 	run, err := scheduler.StartReconciliation(ctx, user, account, now)
 	if !errors.Is(err, ErrRunExists) {
 		return run, err

@@ -25,7 +25,7 @@ WHERE id = $5
   AND version = $7
   AND state = 'running'
   AND NOT cancel_requested
-RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at
+RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at, failure_code
 `
 
 type CommitSyncRunPageParams struct {
@@ -65,6 +65,7 @@ func (q *Queries) CommitSyncRunPage(ctx context.Context, arg CommitSyncRunPagePa
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
@@ -77,7 +78,7 @@ WHERE accounts.id = $6
   AND accounts.user_id = $7
   AND accounts.disabled_at IS NULL
 ON CONFLICT DO NOTHING
-RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at
+RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at, failure_code
 `
 
 type CreateSyncRunParams struct {
@@ -117,6 +118,7 @@ func (q *Queries) CreateSyncRun(ctx context.Context, arg CreateSyncRunParams) (S
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
@@ -131,7 +133,7 @@ WHERE sync_runs.account_id = $2
   AND sync_runs.state IN ('queued', 'running')
   AND accounts.id = sync_runs.account_id
   AND accounts.user_id = $3
-RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at
+RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code
 `
 
 type ExpediteSyncReconciliationParams struct {
@@ -159,12 +161,69 @@ func (q *Queries) ExpediteSyncReconciliation(ctx context.Context, arg ExpediteSy
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
+	)
+	return i, err
+}
+
+const failSyncRun = `-- name: FailSyncRun :one
+UPDATE sync_runs SET
+  state = 'failed',
+  failure_code = $1,
+  version = version + 1,
+  updated_at = $2
+FROM accounts
+WHERE sync_runs.id = $3
+  AND sync_runs.account_id = $4
+  AND sync_runs.version = $5
+  AND sync_runs.state IN ('queued', 'running')
+  AND sync_runs.account_id = accounts.id
+  AND accounts.user_id = $6
+RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code
+`
+
+type FailSyncRunParams struct {
+	FailureCode     pgtype.Text        `json:"failure_code"`
+	FailedAt        pgtype.Timestamptz `json:"failed_at"`
+	ID              pgtype.UUID        `json:"id"`
+	AccountID       pgtype.UUID        `json:"account_id"`
+	ExpectedVersion int64              `json:"expected_version"`
+	UserID          pgtype.UUID        `json:"user_id"`
+}
+
+func (q *Queries) FailSyncRun(ctx context.Context, arg FailSyncRunParams) (SyncRun, error) {
+	row := q.db.QueryRow(ctx, failSyncRun,
+		arg.FailureCode,
+		arg.FailedAt,
+		arg.ID,
+		arg.AccountID,
+		arg.ExpectedVersion,
+		arg.UserID,
+	)
+	var i SyncRun
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Phase,
+		&i.State,
+		&i.Checkpoint,
+		&i.Version,
+		&i.WindowStart,
+		&i.AppliedCount,
+		&i.CancelRequested,
+		&i.ScheduledFor,
+		&i.StartedAt,
+		&i.LastSuccessAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
 
 const getSyncRunByOwner = `-- name: GetSyncRunByOwner :one
-SELECT sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at FROM sync_runs
+SELECT sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code FROM sync_runs
 JOIN accounts ON accounts.id = sync_runs.account_id
 WHERE sync_runs.id = $1
   AND sync_runs.account_id = $2
@@ -196,12 +255,13 @@ func (q *Queries) GetSyncRunByOwner(ctx context.Context, arg GetSyncRunByOwnerPa
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
 
 const listDueSyncRuns = `-- name: ListDueSyncRuns :many
-SELECT accounts.user_id, sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at FROM sync_runs
+SELECT accounts.user_id, sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code FROM sync_runs
 JOIN accounts ON accounts.id = sync_runs.account_id
 WHERE sync_runs.state = 'queued'
   AND NOT sync_runs.cancel_requested
@@ -233,6 +293,7 @@ type ListDueSyncRunsRow struct {
 	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	FailureCode     pgtype.Text        `json:"failure_code"`
 }
 
 func (q *Queries) ListDueSyncRuns(ctx context.Context, arg ListDueSyncRunsParams) ([]ListDueSyncRunsRow, error) {
@@ -261,6 +322,7 @@ func (q *Queries) ListDueSyncRuns(ctx context.Context, arg ListDueSyncRunsParams
 			&i.CompletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.FailureCode,
 		); err != nil {
 			return nil, err
 		}
@@ -273,7 +335,7 @@ func (q *Queries) ListDueSyncRuns(ctx context.Context, arg ListDueSyncRunsParams
 }
 
 const lockSyncRunByOwner = `-- name: LockSyncRunByOwner :one
-SELECT sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at FROM sync_runs
+SELECT sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code FROM sync_runs
 JOIN accounts ON accounts.id = sync_runs.account_id
 WHERE sync_runs.id = $1
   AND sync_runs.account_id = $2
@@ -306,6 +368,61 @@ func (q *Queries) LockSyncRunByOwner(ctx context.Context, arg LockSyncRunByOwner
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
+	)
+	return i, err
+}
+
+const recoverFailedSyncRun = `-- name: RecoverFailedSyncRun :one
+WITH candidate AS (
+  SELECT sync_runs.id
+  FROM sync_runs
+  JOIN accounts ON accounts.id = sync_runs.account_id
+  WHERE sync_runs.account_id = $2
+    AND accounts.user_id = $3
+    AND accounts.disabled_at IS NULL
+    AND sync_runs.state = 'failed'
+  ORDER BY sync_runs.updated_at DESC, sync_runs.id DESC
+  LIMIT 1
+)
+UPDATE sync_runs SET
+  state = 'queued',
+  failure_code = NULL,
+  version = version + 1,
+  scheduled_for = $1,
+  started_at = NULL,
+  updated_at = $1
+FROM candidate
+WHERE sync_runs.id = candidate.id
+RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code
+`
+
+type RecoverFailedSyncRunParams struct {
+	RecoveredAt pgtype.Timestamptz `json:"recovered_at"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+}
+
+func (q *Queries) RecoverFailedSyncRun(ctx context.Context, arg RecoverFailedSyncRunParams) (SyncRun, error) {
+	row := q.db.QueryRow(ctx, recoverFailedSyncRun, arg.RecoveredAt, arg.AccountID, arg.UserID)
+	var i SyncRun
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Phase,
+		&i.State,
+		&i.Checkpoint,
+		&i.Version,
+		&i.WindowStart,
+		&i.AppliedCount,
+		&i.CancelRequested,
+		&i.ScheduledFor,
+		&i.StartedAt,
+		&i.LastSuccessAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
@@ -323,7 +440,7 @@ WHERE sync_runs.id = $2
   AND sync_runs.account_id = accounts.id
   AND accounts.user_id = $4
   AND sync_runs.state IN ('queued', 'running')
-RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at
+RETURNING sync_runs.id, sync_runs.account_id, sync_runs.phase, sync_runs.state, sync_runs.checkpoint, sync_runs.version, sync_runs.window_start, sync_runs.applied_count, sync_runs.cancel_requested, sync_runs.scheduled_for, sync_runs.started_at, sync_runs.last_success_at, sync_runs.completed_at, sync_runs.created_at, sync_runs.updated_at, sync_runs.failure_code
 `
 
 type RequestSyncRunCancellationParams struct {
@@ -357,6 +474,7 @@ func (q *Queries) RequestSyncRunCancellation(ctx context.Context, arg RequestSyn
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
@@ -368,7 +486,7 @@ WHERE id = $2
   AND version = $4
   AND state = 'running'
   AND NOT cancel_requested
-RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at
+RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at, failure_code
 `
 
 type RequeueSyncRunParams struct {
@@ -402,6 +520,7 @@ func (q *Queries) RequeueSyncRun(ctx context.Context, arg RequeueSyncRunParams) 
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }
@@ -416,7 +535,7 @@ WHERE id = $2
   AND version = $4
   AND state = 'queued'
   AND NOT cancel_requested
-RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at
+RETURNING id, account_id, phase, state, checkpoint, version, window_start, applied_count, cancel_requested, scheduled_for, started_at, last_success_at, completed_at, created_at, updated_at, failure_code
 `
 
 type StartSyncRunParams struct {
@@ -450,6 +569,7 @@ func (q *Queries) StartSyncRun(ctx context.Context, arg StartSyncRunParams) (Syn
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailureCode,
 	)
 	return i, err
 }

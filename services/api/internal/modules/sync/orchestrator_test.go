@@ -254,3 +254,62 @@ func TestOrchestratorRetriesSafelyCancelsAndRunsReconciliation(t *testing.T) {
 		t.Fatalf("cancelled due count = %d, %v", queued, err)
 	}
 }
+
+func TestTerminalProviderFailureCanBeRecoveredWithoutDuplicatingTheRun(t *testing.T) {
+	_, pool, userID, accountID := cursorFixture(t)
+	if _, err := pool.Exec(context.Background(), `create table sync_run_effects (run_id uuid, version bigint, phase text, primary key(run_id,version))`); err != nil {
+		t.Fatal(err)
+	}
+	repository := NewRunRepository(pool)
+	jobs, leases := &fakeSyncQueue{}, &fakeLeases{}
+	executor := &recordingExecutor{failOnce: true}
+	orchestrator, err := NewOrchestrator(repository, jobs, leases, executor, nil, metrics.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 10, 8, 0, 0, 0, time.UTC)
+	orchestrator.now = func() time.Time { return now }
+	run, err := orchestrator.StartInitial(context.Background(), userID, accountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal := jobs.pop(t)
+	terminal.Attempt = terminal.MaxAttempts - 1
+	if err := orchestrator.Handle(context.Background(), terminal); err == nil || err.Error() != "sync_provider_unknown_failed" {
+		t.Fatalf("terminal failure = %v", err)
+	}
+	failed, err := repository.GetRun(context.Background(), userID, accountID, run.ID)
+	if err != nil || failed.State != RunFailed || failed.FailureCode != "sync_provider_unknown_failed" || failed.Version != run.Version+1 {
+		t.Fatalf("failed run = %+v, %v", failed, err)
+	}
+	if err := orchestrator.Handle(context.Background(), terminal); err != nil {
+		t.Fatalf("stale terminal delivery = %v", err)
+	}
+	var accountState string
+	if err := pool.QueryRow(context.Background(), `select sync_state from accounts where id=$1`, accountID).Scan(&accountState); err != nil || accountState != "error" {
+		t.Fatalf("failed account state = %q, %v", accountState, err)
+	}
+
+	scheduler, err := NewScheduler(repository, jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler.now = func() time.Time { return now.Add(time.Minute) }
+	recovered, err := scheduler.Request(context.Background(), userID, accountID)
+	if err != nil || recovered.ID != run.ID || recovered.State != RunQueued || recovered.FailureCode != "" || recovered.Version != failed.Version+1 {
+		t.Fatalf("recovered run = %+v, %v", recovered, err)
+	}
+	if err := pool.QueryRow(context.Background(), `select sync_state from accounts where id=$1`, accountID).Scan(&accountState); err != nil || accountState != "pending" {
+		t.Fatalf("recovery account state = %q, %v", accountState, err)
+	}
+	if err := orchestrator.Handle(context.Background(), jobs.pop(t)); err != nil {
+		t.Fatal(err)
+	}
+	progressed, err := repository.GetRun(context.Background(), userID, accountID, run.ID)
+	if err != nil || progressed.State != RunQueued || progressed.AppliedCount != 1 {
+		t.Fatalf("progressed run = %+v, %v", progressed, err)
+	}
+	if err := pool.QueryRow(context.Background(), `select sync_state from accounts where id=$1`, accountID).Scan(&accountState); err != nil || accountState != "syncing" {
+		t.Fatalf("progressed account state = %q, %v", accountState, err)
+	}
+}

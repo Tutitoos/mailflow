@@ -46,7 +46,7 @@ func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
 		case path == "/messages" && request.Method == http.MethodGet:
 			writeJSON(response, map[string]any{"messages": []any{map[string]string{"id": "message-1"}}, "nextPageToken": "backfill-page-2"})
 		case path == "/messages/message-1" && request.Method == http.MethodGet:
-			writeJSON(response, map[string]any{"id": "message-1", "threadId": "thread-1", "internalDate": "1788782400000", "labelIds": []string{"UNREAD", "STARRED", "CATEGORY_PROMOTIONS"}, "raw": base64.RawURLEncoding.EncodeToString([]byte(sanitizedMessage))})
+			writeJSON(response, map[string]any{"id": "message-1", "threadId": "thread-1", "internalDate": "1788782400000", "labelIds": []string{"UNREAD", "STARRED", "CATEGORY_PROMOTIONS"}, "raw": base64.URLEncoding.EncodeToString([]byte(sanitizedMessage))})
 		case strings.HasSuffix(path, "/modify"):
 			response.WriteHeader(http.StatusOK)
 			_, _ = response.Write([]byte(`{}`))
@@ -61,7 +61,7 @@ func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
 		case path == "/drafts/send":
 			writeJSON(response, map[string]string{"id": "sent-draft-1"})
 		case path == "/messages/message-1/attachments/attachment-1":
-			writeJSON(response, map[string]string{"data": base64.RawURLEncoding.EncodeToString([]byte("attachment fixture"))})
+			writeJSON(response, map[string]string{"data": base64.URLEncoding.EncodeToString([]byte("attachment fixture"))})
 		default:
 			http.NotFound(response, request)
 		}
@@ -173,6 +173,30 @@ func TestHistoryCursorRejectsWrongProvider(t *testing.T) {
 	_, err := provider.Changes(context.Background(), mail.SyncCursor{Kind: "microsoft_delta", Value: []byte(`{"historyId":"100"}`)})
 	if !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("cursor error = %v", err)
+	}
+}
+
+func TestDecodeBase64URLAcceptsPaddedAndUnpaddedValues(t *testing.T) {
+	payload := []byte("sanitized fixture")
+	for _, encoded := range []string{
+		base64.RawURLEncoding.EncodeToString(payload),
+		base64.URLEncoding.EncodeToString(payload),
+	} {
+		decoded, ok := decodeBase64URL(encoded, len(payload))
+		if !ok || string(decoded) != string(payload) {
+			t.Fatalf("valid base64url rejected: ok=%t decoded_bytes=%d", ok, len(decoded))
+		}
+	}
+	for _, invalid := range []struct {
+		value string
+		limit int
+	}{
+		{value: "%%%", limit: 32},
+		{value: base64.URLEncoding.EncodeToString(payload), limit: len(payload) - 1},
+	} {
+		if decoded, ok := decodeBase64URL(invalid.value, invalid.limit); ok || decoded != nil {
+			t.Fatalf("invalid base64url accepted: limit=%d decoded_bytes=%d", invalid.limit, len(decoded))
+		}
 	}
 }
 

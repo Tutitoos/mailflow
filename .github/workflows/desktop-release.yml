@@ -8,6 +8,8 @@ on:
       - "bun.lock"
       - "package.json"
       - "scripts/desktop-release-manifest*"
+      - "scripts/release-evidence*"
+      - "scripts/release-policy.test.ts"
       - "scripts/verify-macos-release.sh"
   push:
     tags: ["v*"]
@@ -69,6 +71,7 @@ jobs:
       contents: write
       attestations: write
       id-token: write
+      artifact-metadata: write
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       MAILFLOW_DESKTOP_ORIGIN: ${{ vars.MAILFLOW_DESKTOP_ORIGIN }}
@@ -147,6 +150,7 @@ jobs:
             echo "MAILFLOW_DESKTOP_UPDATE_ENDPOINT=$update_endpoint"
             echo "RELEASE_VERSION=$version"
             echo "RELEASE_PUBLISHED_AT=$published_at"
+            echo "RELEASE_COMMIT=$(git rev-parse HEAD)"
           } >> "$GITHUB_ENV"
 
       - name: Install locked dependencies
@@ -191,6 +195,11 @@ jobs:
             --bundles app,dmg \
             --config "$MAILFLOW_TAURI_RELEASE_CONFIG"
 
+      - id: syft
+        uses: anchore/sbom-action/download-syft@v0.24.0
+
+      - uses: sigstore/cosign-installer@v4.1.2
+
       - name: Stage deterministic release artifacts
         id: artifacts
         shell: bash
@@ -224,13 +233,70 @@ jobs:
             --artifact-url "$artifact_url" \
             --signature-file "$release_root/$updater_name.sig" \
             --output "$release_root/mailflow-${MAILFLOW_DESKTOP_UPDATE_CHANNEL}.json"
-          (cd "$release_root" && shasum -a 256 "$dmg_name" "$updater_name" "$updater_name.sig" "mailflow-${MAILFLOW_DESKTOP_UPDATE_CHANNEL}.json" > SHA256SUMS)
           echo "release_root=$release_root" >> "$GITHUB_OUTPUT"
+          echo "app_path=$app_path" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$dmg_name" >> "$GITHUB_OUTPUT"
+          echo "updater_name=$updater_name" >> "$GITHUB_OUTPUT"
+
+      - name: Generate, sign, and verify native release evidence
+        env:
+          RELEASE_ROOT: ${{ steps.artifacts.outputs.release_root }}
+          APP_PATH: ${{ steps.artifacts.outputs.app_path }}
+          DMG_NAME: ${{ steps.artifacts.outputs.dmg_name }}
+          UPDATER_NAME: ${{ steps.artifacts.outputs.updater_name }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/desktop-release.yml@${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sbom_name="Mailflow_${RELEASE_VERSION}_universal.cdx.json"
+          "$SYFT" scan "$APP_PATH" -o "cyclonedx-json=$RELEASE_ROOT/$sbom_name"
+          bun scripts/release-evidence.ts files \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "$RELEASE_ROOT" "$sbom_name" \
+            "$RELEASE_ROOT/native-release-evidence.json" "$DMG_NAME" "$UPDATER_NAME"
+          for artifact in "$DMG_NAME" "$UPDATER_NAME"; do
+            cosign sign-blob --yes \
+              --bundle "$RELEASE_ROOT/$artifact.sigstore.json" \
+              "$RELEASE_ROOT/$artifact"
+            cosign verify-blob \
+              --bundle "$RELEASE_ROOT/$artifact.sigstore.json" \
+              --certificate-identity "$CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$RELEASE_ROOT/$artifact"
+          done
+          bun scripts/release-evidence.ts verify \
+            "$RELEASE_ROOT/native-release-evidence.json" "$RELEASE_ROOT"
+          (
+            cd "$RELEASE_ROOT"
+            shasum -a 256 \
+              "$DMG_NAME" "$UPDATER_NAME" "$UPDATER_NAME.sig" \
+              "mailflow-${MAILFLOW_DESKTOP_UPDATE_CHANNEL}.json" "$sbom_name" \
+              native-release-evidence.json \
+              "$DMG_NAME.sigstore.json" "$UPDATER_NAME.sigstore.json" > macos-SHA256SUMS
+            shasum -a 256 -c macos-SHA256SUMS
+          )
 
       - name: Attest release provenance
-        uses: actions/attest-build-provenance@v3
+        id: native-provenance
+        uses: actions/attest@v4
         with:
-          subject-path: ${{ steps.artifacts.outputs.release_root }}/*
+          subject-checksums: ${{ steps.artifacts.outputs.release_root }}/macos-SHA256SUMS
+
+      - name: Attest native SBOM
+        id: native-sbom-attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            ${{ steps.artifacts.outputs.release_root }}/${{ steps.artifacts.outputs.dmg_name }}
+            ${{ steps.artifacts.outputs.release_root }}/${{ steps.artifacts.outputs.updater_name }}
+          sbom-path: ${{ steps.artifacts.outputs.release_root }}/Mailflow_${{ env.RELEASE_VERSION }}_universal.cdx.json
+
+      - name: Retain signed GitHub attestation bundles
+        run: |
+          cp '${{ steps.native-provenance.outputs.bundle-path }}' \
+            '${{ steps.artifacts.outputs.release_root }}/macos-provenance.sigstore.json'
+          cp '${{ steps.native-sbom-attestation.outputs.bundle-path }}' \
+            '${{ steps.artifacts.outputs.release_root }}/macos-sbom-attestation.sigstore.json'
 
       - name: Retain verified workflow artifacts
         uses: actions/upload-artifact@v4
@@ -245,8 +311,11 @@ jobs:
         run: |
           set -euo pipefail
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "Mailflow $RELEASE_VERSION"
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes \
+              --title "Mailflow $RELEASE_VERSION" || gh release view "$RELEASE_TAG" >/dev/null
           fi
+          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]] || \
+            { echo "Published releases are immutable" >&2; exit 1; }
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/mailflow-release"/* --clobber
 
       - name: Remove ephemeral signing material

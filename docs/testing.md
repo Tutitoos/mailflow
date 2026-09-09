@@ -47,4 +47,8 @@ the applicable internal health endpoints:
 ```
 
 Published tags add manifest-digest, Cosign and GitHub attestation verification.
+Release-policy tests prove that pull-request jobs cannot reach protected signing
+authority. Evidence-manifest tests validate CycloneDX metadata, SHA-256 bindings,
+safe filenames, complete OCI identities and rejection after artifact or SBOM
+tampering.
 See [`container-releases.md`](container-releases.md) for the evidence boundary.

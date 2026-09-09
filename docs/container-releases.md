@@ -42,6 +42,13 @@ each image and publishes:
 - `container-release-manifest.json`, containing the exact manifest digest for
   every first-party image.
 
+The workflow also attaches a durable evidence set to the draft GitHub release:
+one CycloneDX JSON SBOM per image, a signed
+`container-release-evidence.json`, `container-SHA256SUMS`, and the Sigstore verification
+and GitHub provenance bundles. The same set remains available as a 90-day workflow artifact for
+diagnostics. See [`supply-chain.md`](supply-chain.md) for the trust boundary and
+independent verification order.
+
 A stable SemVer tag also advances the convenience aliases `X.Y` and `latest`;
 prereleases do not. The complete `X.Y.Z` and `sha-<commit>` identities are
 immutable and are the only tags suitable for verification. If a release is only
@@ -53,6 +60,17 @@ rather than mutating registry history.
 Download `container-release-manifest.json` from the workflow artifact. Verify
 the workflow provenance and each digest before copying the five references into
 `deploy/.env`:
+
+```bash
+sha256sum --check container-SHA256SUMS
+bun scripts/release-evidence.ts verify container-release-evidence.json .
+cosign verify-blob \
+  --bundle container-release-evidence.sigstore.json \
+  --certificate-identity \
+  'https://github.com/Tutitoos/mailflow/.github/workflows/container-release.yml@refs/tags/vX.Y.Z' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  container-release-evidence.json
+```
 
 ```bash
 gh attestation verify \

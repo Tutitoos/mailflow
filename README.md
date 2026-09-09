@@ -72,6 +72,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Actualizador firmado de macOS](docs/desktop-updater.md)
 - [Pipeline de release macOS](docs/macos-release.md)
 - [Releases de contenedores](docs/container-releases.md)
+- [Evidencias de la cadena de suministro](docs/supply-chain.md)
 - [Caché cifrada offline de macOS](docs/offline-cache.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)

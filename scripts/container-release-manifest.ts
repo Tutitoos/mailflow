@@ -52,7 +52,7 @@ export function createContainerReleaseManifest(
 
 function readRecords(directory: string): ImageRecord[] {
   return readdirSync(directory)
-    .filter((file) => file.endsWith(".json"))
+    .filter((file) => EXPECTED_IMAGES.some((name) => file === `${name}.json`))
     .map((file) => JSON.parse(readFileSync(resolve(directory, file), "utf8")) as ImageRecord);
 }
 

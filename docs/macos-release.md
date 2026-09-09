@@ -7,9 +7,11 @@ a **Developer ID Application** identity, submits it to Apple's notary service,
 staples the returned tickets, and creates or updates a draft GitHub release.
 It never publishes the draft automatically.
 
-The workflow runs on the protected `desktop-release` GitHub Environment. Keep
-required reviewers enabled for that environment and restrict deployment tags
-to the two documented version forms.
+The workflow runs on the protected `desktop-release` GitHub Environment. Its
+deployment policy accepts only `v*` tags; the workflow then enforces the two
+documented version forms before it reads signing configuration. Installations
+that add environment reviewers must keep self-review policy compatible with
+their release operator.
 
 Pull requests that change desktop or release inputs run a separate secretless
 contract job. It cross-compiles both Rust targets, creates an ad-hoc-signed
@@ -61,12 +63,19 @@ The draft release and the 30-day workflow artifact contain:
 - `Mailflow_<version>_universal.app.tar.gz`
 - `Mailflow_<version>_universal.app.tar.gz.sig`
 - `mailflow-stable.json` or `mailflow-beta.json`
-- `SHA256SUMS`
+- `Mailflow_<version>_universal.cdx.json`
+- `native-release-evidence.json`
+- one `.sigstore.json` bundle for both the DMG and updater archive
+- downloadable GitHub provenance and SBOM attestation bundles
+- `macos-SHA256SUMS`
 
 The updater manifest is generated from a fixed schema, a credential-free HTTPS
 asset URL, the exact signature, the tag commit time, and bounded release notes.
-The workflow attaches GitHub build provenance to the staged files. A rerun may
-replace assets only while the release remains a draft.
+The workflow verifies both keyless artifact signatures, attaches GitHub build
+provenance and associates the CycloneDX SBOM with both installable artifacts. A
+rerun may replace assets only while the release remains a draft. The complete
+independent verification sequence is documented in
+[`supply-chain.md`](supply-chain.md).
 
 ## Verification gate
 
@@ -86,7 +95,8 @@ installation:
 
 An integration test verifies the updater archive using the same minisign
 library as Tauri and then changes one byte to prove the tampered artifact is
-rejected. `SHA256SUMS` is generated only after every gate passes.
+rejected. Release-evidence tests separately alter artifact and SBOM bytes.
+`macos-SHA256SUMS` is generated only after every gate and keyless signature passes.
 
 Publishing the draft remains a separate human release decision. Before
 publishing, download the workflow artifact on a second supported Mac, compare

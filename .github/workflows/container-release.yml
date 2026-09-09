@@ -11,6 +11,9 @@ on:
       - bun.lock
       - scripts/container-release-manifest.ts
       - scripts/container-release-manifest.test.ts
+      - scripts/release-evidence.ts
+      - scripts/release-evidence.test.ts
+      - scripts/release-policy.test.ts
       - services/api/**
       - services/auth/**
   push:
@@ -99,6 +102,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -187,11 +191,28 @@ jobs:
           IMAGE: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Prepare release evidence directory
+        run: mkdir -p release-digests
+      - name: Generate downloadable CycloneDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: release-digests/${{ matrix.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
       - name: Attest build provenance
         uses: actions/attest@v4
         with:
           subject-name: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
           subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest image SBOM
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: release-digests/${{ matrix.name }}.cdx.json
           push-to-registry: true
       - name: Record exact digest
         env:
@@ -204,7 +225,9 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: container-digest-${{ matrix.name }}
-          path: release-digests/${{ matrix.name }}.json
+          path: |
+            release-digests/${{ matrix.name }}.json
+            release-digests/${{ matrix.name }}.cdx.json
           if-no-files-found: error
           retention-days: 30
 
@@ -215,10 +238,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: container-release
     permissions:
-      contents: read
+      contents: write
       packages: read
       id-token: write
-      attestations: read
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
@@ -242,9 +266,56 @@ jobs:
         env:
           CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/container-release.yml@${{ github.ref }}
         run: ./scripts/verify-container-images.sh release container-release-manifest.json "$CERTIFICATE_IDENTITY"
+      - name: Assemble and sign downloadable evidence
+        env:
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/container-release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          mkdir release-evidence
+          cp container-release-manifest.json release-evidence/
+          cp release-digests/*.cdx.json release-evidence/
+          bun scripts/release-evidence.ts containers \
+            "$GITHUB_REF_NAME" "$GITHUB_SHA" container-release-manifest.json \
+            release-evidence release-evidence/container-release-evidence.json
+          cosign sign-blob --yes \
+            --bundle release-evidence/container-release-evidence.sigstore.json \
+            release-evidence/container-release-evidence.json
+          cosign verify-blob \
+            --bundle release-evidence/container-release-evidence.sigstore.json \
+            --certificate-identity "$CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            release-evidence/container-release-evidence.json
+          bun scripts/release-evidence.ts verify \
+            release-evidence/container-release-evidence.json release-evidence
+          (cd release-evidence && sha256sum \
+            container-release-manifest.json \
+            ./*.cdx.json \
+            container-release-evidence.json \
+            container-release-evidence.sigstore.json > container-SHA256SUMS)
+          (cd release-evidence && sha256sum --check container-SHA256SUMS)
+      - name: Attest downloadable evidence provenance
+        id: evidence-provenance
+        uses: actions/attest@v4
+        with:
+          subject-checksums: release-evidence/container-SHA256SUMS
+      - name: Retain the signed provenance bundle
+        run: cp '${{ steps.evidence-provenance.outputs.bundle-path }}' release-evidence/container-provenance.sigstore.json
       - uses: actions/upload-artifact@v6
         with:
           name: container-release-${{ github.ref_name }}
-          path: container-release-manifest.json
+          path: release-evidence/*
           if-no-files-found: error
           retention-days: 90
+      - name: Attach evidence to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-draft" 2>/dev/null; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes \
+              --title "Mailflow ${GITHUB_REF_NAME#v}" || \
+              gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-draft"
+          fi
+          draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)
+          [[ "$draft" == true ]] || { echo "Published releases are immutable" >&2; exit 1; }
+          gh release upload "$GITHUB_REF_NAME" release-evidence/* --clobber

@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tauri::WebviewWindow;
 
-fn authorize(window: &WebviewWindow) -> Result<(), String> {
+pub(crate) fn authorize(window: &WebviewWindow) -> Result<(), String> {
     let configured = configured_origin().map_err(|_| "desktop origin unavailable".to_owned())?;
     let current = window
         .url()

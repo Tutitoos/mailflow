@@ -1,11 +1,13 @@
-import { Check, Languages, LoaderCircle, LockKeyhole } from "lucide-react";
+import { Check, KeyRound, Languages, LoaderCircle, LockKeyhole } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   AuthRequestError,
   createOwner,
   getSessionLocale,
   getSetupStatus,
+  recoverOwner,
   signIn,
+  signInWithPasskey,
 } from "./auth-client";
 import { Button } from "./components/ui/button";
 import { hasDesktopOfflineAccounts, setDesktopCacheFallback } from "./desktop-cache";
@@ -13,7 +15,7 @@ import { installTranslationCatalog, type Locale, type TranslationKey, translate 
 import { loadTranslationCatalog } from "./mailflow-api";
 import { Brand } from "./pages";
 
-type Phase = "loading" | "setup" | "sign-in" | "app" | "error";
+type Phase = "loading" | "setup" | "sign-in" | "recovery" | "app" | "error";
 type Translator = (key: TranslationKey) => string;
 
 function LanguageButton({ locale, onChange }: { locale: Locale; onChange: () => void }) {
@@ -50,6 +52,7 @@ function errorTranslation(error: unknown): TranslationKey {
   if (error.code === "bootstrap_rejected") return "bootstrapRejected";
   if (error.code === "registration_closed") return "registrationClosed";
   if (error.code === "invalid_credentials") return "invalidCredentials";
+  if (error.code === "recovery_rejected") return "recoveryRejected";
   return "authUnavailable";
 }
 
@@ -147,7 +150,15 @@ function SetupForm({ locale, onComplete }: { locale: Locale; onComplete: () => v
   );
 }
 
-function SignInForm({ locale, onComplete }: { locale: Locale; onComplete: () => void }) {
+function SignInForm({
+  locale,
+  onComplete,
+  onRecovery,
+}: {
+  locale: Locale;
+  onComplete: () => void;
+  onRecovery: () => void;
+}) {
   const t: Translator = (key) => translate(locale, key);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -164,6 +175,19 @@ function SignInForm({ locale, onComplete }: { locale: Locale; onComplete: () => 
       onComplete();
     } catch (cause) {
       setPassword("");
+      setError(errorTranslation(cause));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const passkey = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await signInWithPasskey();
+      onComplete();
+    } catch (cause) {
       setError(errorTranslation(cause));
     } finally {
       setSubmitting(false);
@@ -206,6 +230,99 @@ function SignInForm({ locale, onComplete }: { locale: Locale; onComplete: () => 
         <Button variant="primary" type="submit" disabled={submitting}>
           {submitting && <LoaderCircle className="spin" size={16} />}
           {t("signIn")}
+        </Button>
+        <Button
+          variant="outline"
+          type="button"
+          disabled={submitting}
+          onClick={() => void passkey()}
+        >
+          <KeyRound size={16} /> {t("signInWithPasskey")}
+        </Button>
+        <Button variant="ghost" type="button" disabled={submitting} onClick={onRecovery}>
+          {t("useRecoveryCode")}
+        </Button>
+      </form>
+    </section>
+  );
+}
+
+function RecoveryForm({
+  locale,
+  onComplete,
+  onCancel,
+}: {
+  locale: Locale;
+  onComplete: () => void;
+  onCancel: () => void;
+}) {
+  const t: Translator = (key) => translate(locale, key);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [error, setError] = useState<TranslationKey | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await recoverOwner(recoveryCode, newPassword);
+      setRecoveryCode("");
+      setNewPassword("");
+      onComplete();
+    } catch (cause) {
+      setRecoveryCode("");
+      setNewPassword("");
+      setError(errorTranslation(cause));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="auth-card compact" aria-labelledby="recovery-title">
+      <div className="auth-icon" aria-hidden="true">
+        <KeyRound size={21} />
+      </div>
+      <h1 id="recovery-title">{t("recoveryTitle")}</h1>
+      <p>{t("recoveryDescription")}</p>
+      <form onSubmit={submit}>
+        <label>
+          <span>{t("recoveryCode")}</span>
+          <input
+            autoComplete="off"
+            required
+            spellCheck={false}
+            type="password"
+            value={recoveryCode}
+            onChange={(event) => setRecoveryCode(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>{t("newPassword")}</span>
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            maxLength={128}
+            required
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+          <small>{t("passwordHint")}</small>
+        </label>
+        {error && (
+          <p className="auth-error" role="alert">
+            {t(error)}
+          </p>
+        )}
+        <Button variant="primary" type="submit" disabled={submitting}>
+          {submitting && <LoaderCircle className="spin" size={16} />}
+          {t("recoverAccount")}
+        </Button>
+        <Button variant="ghost" type="button" disabled={submitting} onClick={onCancel}>
+          {t("backToSignIn")}
         </Button>
       </form>
     </section>
@@ -282,7 +399,20 @@ export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNo
         </section>
       )}
       {phase === "setup" && <SetupForm locale={locale} onComplete={() => setPhase("app")} />}
-      {phase === "sign-in" && <SignInForm locale={locale} onComplete={() => setPhase("app")} />}
+      {phase === "sign-in" && (
+        <SignInForm
+          locale={locale}
+          onComplete={() => setPhase("app")}
+          onRecovery={() => setPhase("recovery")}
+        />
+      )}
+      {phase === "recovery" && (
+        <RecoveryForm
+          locale={locale}
+          onComplete={() => setPhase("sign-in")}
+          onCancel={() => setPhase("sign-in")}
+        />
+      )}
     </AuthFrame>
   );
 }

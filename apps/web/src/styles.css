@@ -1862,6 +1862,8 @@ select:focus-visible {
   width: 100%;
   height: 42px;
   margin-top: 4px;
+}
+.auth-card form > button.bg-white {
   color: #000;
 }
 .auth-error {

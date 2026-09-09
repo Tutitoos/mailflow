@@ -218,6 +218,26 @@ impl OfflineCache {
         self.remove_account_unlocked(account_id)
     }
 
+    pub fn clear_all(&self) -> Result<(), CacheError> {
+        let _operation = self.operation()?;
+        if !self.path.exists() {
+            return Ok(());
+        }
+        let connection = self.connection()?;
+        let mut statement =
+            connection.prepare("SELECT DISTINCT hex(account_hash) FROM cache_records")?;
+        let account_hashes = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        for account_hash in account_hashes {
+            self.secrets.delete(&account_hash.to_lowercase())?;
+        }
+        connection.execute("DELETE FROM cache_records", [])?;
+        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")?;
+        Ok(())
+    }
+
     fn remove_account_unlocked(&self, account_id: &str) -> Result<(), CacheError> {
         validate_identifier(account_id)?;
         let account_hash = hash(account_id.as_bytes());
@@ -766,6 +786,38 @@ mod tests {
                 Some(serde_json::json!({"index":index}))
             );
         }
+    }
+
+    #[test]
+    fn clear_all_destroys_every_cached_account_key_and_record() {
+        let (_, secrets, cache) = fixture();
+        cache
+            .write(
+                "account-a",
+                CacheKind::Inbox,
+                "primary:first",
+                &serde_json::json!({"id": 1}),
+            )
+            .unwrap();
+        cache
+            .write(
+                "account-b",
+                CacheKind::Conversation,
+                "thread-1",
+                &serde_json::json!({"id": 2}),
+            )
+            .unwrap();
+
+        cache.clear_all().unwrap();
+
+        assert!(secrets.0.lock().unwrap().is_empty());
+        assert!(!cache.has_accounts().unwrap());
+        assert!(
+            cache
+                .read("account-a", CacheKind::Inbox, "primary:first")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

@@ -14,7 +14,7 @@ The desktop service worker caches only `/`, the known SPA routes, and their fing
 
 SQLite contains SHA-256 account and lookup hashes plus AES-256-GCM nonces and ciphertext. Account IDs, search expressions, subjects, previews, addresses, bodies, and serialized response JSON are not stored in plaintext. Associated data binds every ciphertext to its account hash, record kind, and cache-key hash, preventing records from being moved between scopes.
 
-Each account receives an independent random 256-bit key stored as a generic-password item in the macOS Keychain service `dev.tutitoos.mailflow.offline-cache`. Keys never cross IPC and never enter SQLite. Removing an account destroys its Keychain key before deleting and vacuuming its rows; even if the filesystem step fails, any remaining ciphertext is no longer decryptable. Session secrets will use a separate Keychain contract in the next desktop phase.
+Each account receives an independent random 256-bit key stored as a generic-password item in the macOS Keychain service `dev.tutitoos.mailflow.offline-cache`. Keys never cross IPC and never enter SQLite. Removing an account destroys its Keychain key before deleting and vacuuming its rows; even if the filesystem step fails, any remaining ciphertext is no longer decryptable. Native authentication uses the separate `dev.tutitoos.mailflow.native-session` service documented in [Native sessions](native-sessions.md). Logout and recovery destroy the native session and all account cache keys before the signed-out shell can continue.
 
 The database is created under Tauri's application-local-data directory with mode `0600`, WAL, full synchronization, foreign-key checks, and secure deletion enabled. Schema migrations run transactionally through SQLite `user_version`. A schema newer than the application is rejected instead of downgraded.
 
@@ -27,6 +27,7 @@ The webview can call only these application operations:
 - store a complete successful account list;
 - read or write one allowlisted `navigation`, `inbox`, `search`, or `conversation` record;
 - remove one account and its key.
+- remove the native session and all cached account material during logout or recovery.
 
 No command accepts SQL, a filesystem path, a URL, raw key material, or an unbounded record type. At build time, Tauri's remote capability is generated for only the exact installation origin and the `main` window. Rust independently compares the current top-level scheme, host, and effective port with that embedded origin before every operation. All navigation outside that origin is denied by the shell.
 

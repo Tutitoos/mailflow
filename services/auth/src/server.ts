@@ -3,10 +3,11 @@ import { loadConfig } from "./config";
 import { createAuthRequestHandler } from "./http";
 
 const config = loadConfig();
-const handleRequest = createAuthRequestHandler(auth, pool);
+const handleRequest = createAuthRequestHandler(auth, pool, config);
 
 const server = Bun.serve({
   port: config.port,
+  maxRequestBodySize: 64 * 1024,
   fetch: handleRequest,
 });
 

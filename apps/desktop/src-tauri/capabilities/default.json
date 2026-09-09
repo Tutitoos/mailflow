@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The local development document can access only the encrypted offline cache commands",
+  "description": "The local development document can access encrypted offline data and native session commands",
   "local": true,
   "windows": ["main"],
   "permissions": ["allow-offline-cache"]

@@ -150,7 +150,7 @@ La tabla `users` es la identidad canónica y usa UUID de extremo a extremo. Bett
 - Better Auth y Fiber comparten un emisor configurado y la audiencia fija `mailflow-api`; la API exige `iss`, `aud`, `sub` y `exp` antes de resolver el perfil.
 - Las claves JWKS se refrescan periódicamente y de inmediato ante un `kid` nuevo para tolerar rotaciones sin relajar la validación.
 - El usuario actual se expone a los servicios mediante `context.Context`; los módulos de dominio no importan Fiber.
-- Sesiones nativas renovables y revocables almacenadas en Keychain.
+- Sesiones nativas renovables y revocables almacenadas en Keychain según el [contrato de sesiones nativas](native-sessions.md). Cada instalación tiene una identidad aleatoria propia, recibe solo JWT de 15 minutos en la WebView y puede revocarse sin afectar a las demás sesiones.
 
 Las identidades de Mailflow estarán separadas de las credenciales utilizadas para acceder a los buzones.
 

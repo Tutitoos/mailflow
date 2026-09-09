@@ -15,11 +15,35 @@ databaseTest("Better Auth creates one canonical Mailflow profile", async () => {
   process.env.BETTER_AUTH_URL = "http://localhost:3001";
   process.env.BETTER_AUTH_SECRET = "integration-secret-0123456789abcdef";
   process.env.MAILFLOW_BOOTSTRAP_TOKEN = "integration-bootstrap-token";
+  process.env.MAILFLOW_RECOVERY_CODE = "integration-recovery-code";
 
   const { auth, pool } = await import("./auth");
   openPool = pool;
   await pool.query("truncate table users cascade");
-  const handleRequest = createAuthRequestHandler(auth, pool);
+  const handleRequest = createAuthRequestHandler(auth, pool, {
+    recoveryCode: "integration-recovery-code",
+  });
+
+  const nativeCookieBoundary = createAuthRequestHandler(
+    {
+      handler: async () => {
+        const headers = new Headers({ "set-auth-token": "signed.session" });
+        headers.append("set-cookie", "better-auth.session_token=signed.session; HttpOnly");
+        headers.append("set-cookie", "better-auth.passkey=challenge; HttpOnly");
+        return new Response(null, { headers });
+      },
+    },
+    pool,
+  );
+  const boundedCookies = await nativeCookieBoundary(
+    new Request("http://localhost:3001/api/auth/native-cookie-test", {
+      headers: { "x-mailflow-native": "1" },
+    }),
+  );
+  expect(boundedCookies.headers.getSetCookie()).toEqual([
+    "better-auth.passkey=challenge; HttpOnly",
+  ]);
+  expect(boundedCookies.headers.get("set-auth-token")).toBe("signed.session");
 
   const setupBefore = await handleRequest(
     new Request("http://localhost:3001/api/auth/setup/status"),
@@ -105,4 +129,115 @@ databaseTest("Better Auth creates one canonical Mailflow profile", async () => {
     sub: profiles.rows[0]?.id,
   });
   expect(payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+
+  const nativeSignIn = await handleRequest(
+    new Request("http://localhost:3001/api/auth/sign-in/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mailflow-native": "1",
+        "x-mailflow-installation": "a".repeat(64),
+      },
+      body: JSON.stringify({
+        email: "owner@example.test",
+        password: "mailflow-test-password",
+      }),
+    }),
+  );
+  expect(nativeSignIn.status).toBe(200);
+  expect(nativeSignIn.headers.get("set-cookie")).toBeNull();
+  const nativeSession = nativeSignIn.headers.get("set-auth-token");
+  expect(nativeSession).toBeTruthy();
+  const nativeUserAgent = await pool.query<{ user_agent: string }>(
+    "select user_agent from auth_sessions where user_agent like 'MailflowDesktop/%'",
+  );
+  expect(nativeUserAgent.rows[0]?.user_agent).toBe(`MailflowDesktop/${"a".repeat(64)}`);
+  const nativeTokenResponse = await handleRequest(
+    new Request("http://localhost:3001/api/auth/token", {
+      headers: { authorization: `Bearer ${nativeSession}` },
+    }),
+  );
+  expect(nativeTokenResponse.status).toBe(200);
+  await pool.query(
+    "insert into auth_passkeys (name, public_key, user_id, credential_id, counter, device_type, backed_up) values ('test passkey', 'sanitized-public-key', $1, 'sanitized-credential', 0, 'singleDevice', false)",
+    [profiles.rows[0]?.id],
+  );
+
+  const rejectedRecovery = await handleRequest(
+    new Request("http://localhost:3001/api/auth/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        recoveryCode: "incorrect-recovery-code",
+        newPassword: "replacement-test-password",
+      }),
+    }),
+  );
+  expect(rejectedRecovery.status).toBe(403);
+
+  const oversizedRecovery = await handleRequest(
+    new Request("http://localhost:3001/api/auth/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recoveryCode: "x".repeat(1100), newPassword: "valid-test-password" }),
+    }),
+  );
+  expect(oversizedRecovery.status).toBe(413);
+
+  const rejectedOrigin = await handleRequest(
+    new Request("http://localhost:3001/api/auth/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://untrusted.example.test" },
+      body: JSON.stringify({
+        recoveryCode: "integration-recovery-code",
+        newPassword: "valid-test-password",
+      }),
+    }),
+  );
+  expect(rejectedOrigin.status).toBe(403);
+
+  const recovery = await handleRequest(
+    new Request("http://localhost:3001/api/auth/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        recoveryCode: "integration-recovery-code",
+        newPassword: "replacement-test-password",
+      }),
+    }),
+  );
+  expect(recovery.status).toBe(200);
+  expect(recovery.headers.get("clear-site-data")).toContain("cookies");
+  const passkeysAfterRecovery = await pool.query("select id from auth_passkeys");
+  expect(passkeysAfterRecovery.rows).toHaveLength(0);
+
+  const revokedNativeToken = await handleRequest(
+    new Request("http://localhost:3001/api/auth/token", {
+      headers: { authorization: `Bearer ${nativeSession}` },
+    }),
+  );
+  expect(revokedNativeToken.status).toBe(401);
+
+  const oldPassword = await handleRequest(
+    new Request("http://localhost:3001/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "owner@example.test",
+        password: "mailflow-test-password",
+      }),
+    }),
+  );
+  expect(oldPassword.status).toBe(401);
+  const newPassword = await handleRequest(
+    new Request("http://localhost:3001/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "owner@example.test",
+        password: "replacement-test-password",
+      }),
+    }),
+  );
+  expect(newPassword.status).toBe(200);
 });

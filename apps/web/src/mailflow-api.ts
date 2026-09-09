@@ -8,6 +8,7 @@ import {
   writeDesktopCache,
 } from "./desktop-cache";
 import { isDesktopRuntime } from "./desktop-runtime";
+import { desktopAccessToken } from "./desktop-session";
 
 export type MailAccount = {
   id: string;
@@ -419,6 +420,11 @@ export class APIError extends Error {
 }
 
 async function accessToken(signal?: AbortSignal): Promise<string> {
+  if (isDesktopRuntime()) {
+    const token = await desktopAccessToken();
+    if (!token) throw new APIError("authentication_failed");
+    return token;
+  }
   const response = await fetch("/api/auth/token", {
     credentials: "include",
     cache: "no-store",

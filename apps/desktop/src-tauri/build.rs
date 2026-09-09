@@ -23,7 +23,7 @@ fn generate_capabilities() -> PathBuf {
         .expect("failed to copy local capability");
     let remote = serde_json::json!({
         "identifier": "remote-cache",
-        "description": "Only the configured Mailflow installation can access the encrypted offline cache",
+        "description": "Only the configured Mailflow installation can access encrypted offline data and native sessions",
         "windows": ["main"],
         "remote": { "urls": [origin] },
         "permissions": ["allow-offline-cache"]

@@ -4,6 +4,7 @@ export type AuthConfig = {
   secret: string;
   baseUrl: string;
   bootstrapToken: string;
+  recoveryCode: string;
   port: number;
   trustedOrigins: string[];
 };
@@ -39,6 +40,7 @@ export function loadConfig(): AuthConfig {
     secret: secret("BETTER_AUTH_SECRET"),
     baseUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:3001",
     bootstrapToken: secret("MAILFLOW_BOOTSTRAP_TOKEN"),
+    recoveryCode: secret("MAILFLOW_RECOVERY_CODE"),
     port: Number.parseInt(process.env.PORT ?? "3001", 10),
     trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "http://localhost:4310")
       .split(",")

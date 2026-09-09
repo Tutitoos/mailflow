@@ -75,6 +75,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Releases de contenedores](docs/container-releases.md)
 - [Evidencias de la cadena de suministro](docs/supply-chain.md)
 - [Despliegue de producción y rollback](docs/deployment.md)
+- [Pruebas privadas mediante Tailscale](docs/tailscale-testing.md)
 - [Operator runbook (EN)](docs/operator-runbook.md) · [Guía de operaciones (ES)](docs/es/operator-runbook.md)
 - [Caché cifrada offline de macOS](docs/offline-cache.md)
 - [Contribuir](CONTRIBUTING.md)

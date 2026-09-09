@@ -69,6 +69,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Pruebas locales y de integración](docs/testing.md)
 - [Eventos WebSocket y replay](docs/events.md)
 - [Shell de escritorio macOS](docs/desktop.md)
+- [Actualizador firmado de macOS](docs/desktop-updater.md)
 - [Caché cifrada offline de macOS](docs/offline-cache.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)

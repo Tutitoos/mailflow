@@ -172,6 +172,17 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button", { name: "Cancel" }).click();
   await expect(confirmation).toBeHidden();
+  if ((page.viewportSize()?.width ?? 0) > 900) {
+    await page.getByRole("button", { name: "Updates", exact: true }).click();
+  } else {
+    await page.locator(".admin-mobile-navigation select").selectOption("updates");
+  }
+  await expect(page).toHaveURL(/\/admin\/updates$/);
+  await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/controls are available only inside the installed macOS application/i),
+  ).toBeVisible();
+  await expect(page.getByText(/never receive Docker socket access/i)).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).color))
     .toBe("rgb(237, 237, 237)");

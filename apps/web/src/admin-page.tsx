@@ -4,10 +4,12 @@ import {
   CheckCircle2,
   Clock3,
   Database,
+  Download,
   HardDrive,
   Languages,
   ListRestart,
   RefreshCw,
+  RotateCcw,
   Server,
   Settings2,
   ShieldAlert,
@@ -16,6 +18,17 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Button } from "./components/ui/button";
+import {
+  cancelDesktopUpdate,
+  checkDesktopUpdate,
+  type DesktopUpdateState,
+  desktopUpdateErrorKey,
+  desktopUpdatePercent,
+  installDesktopUpdate,
+  listenForDesktopUpdater,
+  loadDesktopUpdater,
+  restartDesktopAfterUpdate,
+} from "./desktop-updater";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
   type AdminAlertStatus,
@@ -220,6 +233,8 @@ export function AdminPage({ locale }: { locale: Locale }) {
   const [spanishValue, setSpanishValue] = useState("");
   const [candidateValid, setCandidateValid] = useState(false);
   const [translationNotice, setTranslationNotice] = useState<TranslationKey | null>(null);
+  const [desktopUpdater, setDesktopUpdater] = useState<DesktopUpdateState | null>(null);
+  const [confirmUpdate, setConfirmUpdate] = useState(false);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -278,6 +293,28 @@ export function AdminPage({ locale }: { locale: Locale }) {
       controller.signal,
     );
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let removeListener: () => void = () => undefined;
+    void loadDesktopUpdater()
+      .then((state) => {
+        if (!disposed) setDesktopUpdater(state);
+      })
+      .catch(() => undefined);
+    void listenForDesktopUpdater((state) => {
+      if (!disposed) setDesktopUpdater(state);
+    })
+      .then((remove) => {
+        if (disposed) remove();
+        else removeListener = remove;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      removeListener();
+    };
   }, []);
 
   const catalogKeys = useMemo(
@@ -391,6 +428,29 @@ export function AdminPage({ locale }: { locale: Locale }) {
     }
   };
 
+  const refreshDesktopUpdater = async () => {
+    try {
+      setDesktopUpdater(await checkDesktopUpdate());
+    } catch {
+      setDesktopUpdater(await loadDesktopUpdater().catch(() => null));
+    }
+  };
+
+  const applyDesktopUpdate = async () => {
+    const identity = desktopUpdater?.candidate?.identity;
+    if (!identity) return;
+    setConfirmUpdate(false);
+    try {
+      setDesktopUpdater(await installDesktopUpdate(identity));
+    } catch {
+      setDesktopUpdater(await loadDesktopUpdater().catch(() => null));
+    }
+  };
+
+  const stopDesktopUpdate = async () => {
+    await cancelDesktopUpdate().catch(() => false);
+  };
+
   const filteredLogs = logs.filter((entry) => logLevel === "all" || entry.level === logLevel);
   const metricSummary = metrics.find(
     (point) => point.name === "mailflow_http_request_duration_seconds",
@@ -424,6 +484,104 @@ export function AdminPage({ locale }: { locale: Locale }) {
       </div>
     </section>
   );
+
+  const renderUpdates = () => {
+    const phase = desktopUpdater?.phase ?? "idle";
+    const busy = phase === "checking" || phase === "downloading" || phase === "installing";
+    const percent = desktopUpdater ? desktopUpdatePercent(desktopUpdater) : null;
+    return (
+      <div className="admin-update-grid">
+        <section className="admin-panel admin-settings">
+          <header>
+            <strong>{t("admin.updater.desktop")}</strong>
+            <Download size={16} />
+          </header>
+          {desktopUpdater ? (
+            <div className="admin-updater-content" aria-live="polite">
+              <dl>
+                <div>
+                  <dt>{t("admin.updater.current")}</dt>
+                  <dd>{desktopUpdater.currentVersion}</dd>
+                </div>
+                <div>
+                  <dt>{t("admin.updater.channel")}</dt>
+                  <dd>{desktopUpdater.channel ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>{t("admin.updater.status")}</dt>
+                  <dd>{t(`admin.updater.phase.${phase}` as TranslationKey)}</dd>
+                </div>
+              </dl>
+              {!desktopUpdater.configured && !desktopUpdater.errorCode && (
+                <p>{t("admin.updater.notConfigured")}</p>
+              )}
+              {desktopUpdater.candidate && (
+                <article className="admin-update-candidate">
+                  <strong>
+                    {t("admin.updater.availableVersion")} {desktopUpdater.candidate.version}
+                  </strong>
+                  {desktopUpdater.candidate.publishedAt && (
+                    <time>{formatTime(desktopUpdater.candidate.publishedAt, locale)}</time>
+                  )}
+                  {desktopUpdater.candidate.notes && <p>{desktopUpdater.candidate.notes}</p>}
+                </article>
+              )}
+              {phase === "downloading" && (
+                <div className="admin-update-progress">
+                  <progress
+                    max={desktopUpdater.totalBytes ?? undefined}
+                    value={desktopUpdater.totalBytes ? desktopUpdater.downloadedBytes : undefined}
+                    aria-label={t("admin.updater.downloading")}
+                  />
+                  <span>
+                    {percent === null ? formatBytes(desktopUpdater.downloadedBytes) : `${percent}%`}
+                  </span>
+                </div>
+              )}
+              {desktopUpdater.errorCode && (
+                <p className="admin-error" role="alert">
+                  {t(desktopUpdateErrorKey(desktopUpdater.errorCode))}
+                </p>
+              )}
+              <div className="admin-update-actions">
+                <Button
+                  variant="outline"
+                  disabled={!desktopUpdater.configured || busy || phase === "restart_required"}
+                  onClick={() => void refreshDesktopUpdater()}
+                >
+                  <RefreshCw size={14} /> {t("admin.updater.check")}
+                </Button>
+                {phase === "available" && desktopUpdater.candidate && (
+                  <Button onClick={() => setConfirmUpdate(true)}>
+                    <Download size={14} /> {t("admin.updater.install")}
+                  </Button>
+                )}
+                {phase === "downloading" && (
+                  <Button variant="outline" onClick={() => void stopDesktopUpdate()}>
+                    {t("cancel")}
+                  </Button>
+                )}
+                {phase === "restart_required" && (
+                  <Button onClick={() => void restartDesktopAfterUpdate()}>
+                    <RotateCcw size={14} /> {t("admin.updater.restart")}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p>{t("admin.updater.webOnly")}</p>
+          )}
+        </section>
+        <section className="admin-panel admin-settings">
+          <header>
+            <strong>{t("admin.updater.server")}</strong>
+            <Server size={16} />
+          </header>
+          <p>{t("admin.placeholder.updates")}</p>
+        </section>
+      </div>
+    );
+  };
 
   const renderOperations = () => (
     <section className="admin-panel">
@@ -850,13 +1008,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
           </section>
         </>
       );
-    if (section === "updates")
-      return (
-        <section className="admin-placeholder">
-          <Server size={24} />
-          <p>{t("admin.placeholder.updates")}</p>
-        </section>
-      );
+    if (section === "updates") return renderUpdates();
     return (
       <section className="admin-panel admin-settings">
         <header>
@@ -967,6 +1119,16 @@ export function AdminPage({ locale }: { locale: Locale }) {
           cancel={t("admin.queue.cancel")}
           onConfirm={() => void toggleDebug()}
           onCancel={() => setConfirmDebug(false)}
+        />
+      )}
+      {confirmUpdate && desktopUpdater?.candidate && (
+        <Confirmation
+          title={t("admin.updater.confirmTitle")}
+          body={t("admin.updater.confirmBody")}
+          confirm={t("admin.updater.install")}
+          cancel={t("cancel")}
+          onConfirm={() => void applyDesktopUpdate()}
+          onCancel={() => setConfirmUpdate(false)}
         />
       )}
     </div>

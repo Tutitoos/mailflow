@@ -1749,6 +1749,60 @@ select:focus-visible {
   color: var(--muted);
   text-align: center;
 }
+.admin-update-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  gap: 16px;
+}
+.admin-updater-content {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+.admin-updater-content dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.admin-updater-content dl > div,
+.admin-update-candidate {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.admin-updater-content dt,
+.admin-update-candidate time {
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-updater-content dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-update-candidate p {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+}
+.admin-update-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.admin-update-progress progress {
+  width: 100%;
+  accent-color: var(--foreground);
+}
+.admin-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .admin-settings {
   padding-bottom: 18px;
 }
@@ -2062,6 +2116,9 @@ select:focus-visible {
   .admin-grid {
     grid-template-columns: 1fr;
   }
+  .admin-update-grid {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 620px) {
   .app-shell {
@@ -2074,6 +2131,9 @@ select:focus-visible {
   }
   .topbar .brand {
     display: none;
+  }
+  .admin-updater-content dl {
+    grid-template-columns: 1fr;
   }
   .search-box {
     height: 40px;

@@ -269,23 +269,23 @@ services:
 
 secrets:
   better_auth_secret:
-    file: ./secrets/better_auth_secret
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/better_auth_secret
   bootstrap_token:
-    file: ./secrets/bootstrap_token
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/bootstrap_token
   recovery_code:
-    file: ./secrets/recovery_code
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/recovery_code
   postgres_password:
-    file: ./secrets/postgres_password
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/postgres_password
   restic_password:
-    file: ./secrets/restic_password
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/restic_password
   master_key:
-    file: ./secrets/master_key
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/master_key
   google_oauth_client_secret:
-    file: ./secrets/google_oauth_client_secret
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/google_oauth_client_secret
   microsoft_oauth_client_secret:
-    file: ./secrets/microsoft_oauth_client_secret
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/microsoft_oauth_client_secret
   alert_smtp_password:
-    file: ./secrets/alert_smtp_password
+    file: ${MAILFLOW_SECRETS_PATH:-./secrets}/alert_smtp_password
 
 volumes:
   traefik-acme:

@@ -85,7 +85,8 @@ cosign verify \
 ```
 
 Repeat the verification for web, auth, worker and backup. Configure only digest
-references, never mutable tags:
+references, never mutable tags, in a private copy of
+`deploy/.env.production.example`:
 
 ```dotenv
 MAILFLOW_WEB_IMAGE=ghcr.io/tutitoos/mailflow-web@sha256:<digest>
@@ -95,19 +96,22 @@ MAILFLOW_WORKER_IMAGE=ghcr.io/tutitoos/mailflow-worker@sha256:<digest>
 MAILFLOW_BACKUP_IMAGE=ghcr.io/tutitoos/mailflow-backup@sha256:<digest>
 ```
 
-Pull and start without invoking local builds:
+Pin the reviewed Traefik, PostgreSQL and Redis images by digest as well. Then use
+the fail-closed production entrypoint, which validates the complete deployment
+before pulling or starting anything:
 
 ```bash
-docker compose --env-file deploy/.env -f deploy/compose.yml pull web auth api worker backup
-docker compose --env-file deploy/.env -f deploy/compose.yml up -d --no-build
+./scripts/production-compose.sh check deploy/.env.production
+./scripts/production-compose.sh apply deploy/.env.production
 ```
 
 The migration job intentionally reuses the API digest. Keep the previous
-manifest file alongside every backup. Rollback means restoring a compatible
-backup if required, replacing the five image variables with their previous
-digests, pulling them, and starting with `--no-build`. Database compatibility
-and the restore drill remain mandatory; an image rollback never reverses data
-by itself.
+manifest file alongside every backup. Rollback means selecting the prior,
+unchanged release environment and running
+`./scripts/production-compose.sh rollback PREVIOUS_ENV_FILE`, restoring its
+compatible backup first when required. Database compatibility and the restore
+drill remain mandatory; an image rollback never reverses data by itself. See
+[`deployment.md`](deployment.md) for the complete operator boundary.
 
 ## Local builds
 

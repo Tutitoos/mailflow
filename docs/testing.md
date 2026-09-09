@@ -52,3 +52,23 @@ authority. Evidence-manifest tests validate CycloneDX metadata, SHA-256 bindings
 safe filenames, complete OCI identities and rejection after artifact or SBOM
 tampering.
 See [`container-releases.md`](container-releases.md) for the evidence boundary.
+
+## Production Compose verification
+
+The production policy tests render the complete base-plus-production model and
+reject mutable images, local builds, public data services, Docker socket
+access, missing resource bounds and writable roots. The operator-guard tests
+also reject permissive or symlinked secret files and ambient environment
+overrides. A separate disposable drill starts the pinned Traefik image on
+ephemeral localhost ports and proves health, HTTP-to-HTTPS redirection, routing,
+security headers, dropped capabilities, read-only root and cleanup:
+
+```bash
+bun test scripts/production-compose-policy.test.ts scripts/production-compose-script.test.ts
+./scripts/verify-production-edge.sh
+```
+
+The drill never requests a public certificate or starts application/data
+services. A real-domain certificate and complete healthy stack remain release
+acceptance on the target host, using the verified digests and private secrets
+described in [`deployment.md`](deployment.md).

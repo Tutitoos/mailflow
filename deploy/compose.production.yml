@@ -1,0 +1,170 @@
+name: mailflow
+
+x-runtime-security: &runtime-security
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
+services:
+  traefik:
+    <<: *runtime-security
+    image: ${MAILFLOW_TRAEFIK_IMAGE:?set MAILFLOW_TRAEFIK_IMAGE to a verified digest reference}
+    command:
+      - --api=false
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --providers.file.watch=false
+      - --entrypoints.web.address=:8080
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:8443
+      - --entrypoints.ping.address=:8082
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --ping=true
+      - --ping.entrypoint=ping
+      - --accesslog=true
+      - --accesslog.format=json
+      - --log.format=json
+    ports: !override
+      - target: 8080
+        published: "80"
+        protocol: tcp
+        mode: host
+      - target: 8443
+        published: "443"
+        protocol: tcp
+        mode: host
+    volumes: !override
+      - traefik-acme:/acme
+    configs:
+      - source: traefik_dynamic
+        target: /etc/traefik/dynamic.yml
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    networks: [edge]
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://127.0.0.1:8082/ping]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    cpus: 0.50
+    mem_limit: 256m
+    pids_limit: 128
+
+  web:
+    <<: *runtime-security
+    image: ${MAILFLOW_WEB_IMAGE:?set MAILFLOW_WEB_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=4m
+      - /tmp:rw,noexec,nosuid,size=16m
+    networks: [edge]
+    cpus: 0.50
+    mem_limit: 256m
+    pids_limit: 128
+
+  auth:
+    image: ${MAILFLOW_AUTH_IMAGE:?set MAILFLOW_AUTH_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [SETGID, SETUID]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    networks: [edge, backend]
+    cpus: 0.75
+    mem_limit: 512m
+    pids_limit: 256
+
+  migrate:
+    <<: *runtime-security
+    image: ${MAILFLOW_API_IMAGE:?set MAILFLOW_API_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    networks: [backend]
+    cpus: 1.00
+    mem_limit: 1g
+    pids_limit: 256
+
+  api:
+    <<: *runtime-security
+    image: ${MAILFLOW_API_IMAGE:?set MAILFLOW_API_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    networks: [edge, backend]
+    cpus: 1.00
+    mem_limit: 1g
+    pids_limit: 512
+
+  worker:
+    <<: *runtime-security
+    image: ${MAILFLOW_WORKER_IMAGE:?set MAILFLOW_WORKER_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    networks: [backend]
+    cpus: 2.00
+    mem_limit: 2g
+    pids_limit: 512
+
+  postgres-preflight:
+    <<: *runtime-security
+    image: ${MAILFLOW_POSTGRES_IMAGE:?set MAILFLOW_POSTGRES_IMAGE to a digest reference}
+    networks: [backend]
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 64
+
+  postgres:
+    image: ${MAILFLOW_POSTGRES_IMAGE:?set MAILFLOW_POSTGRES_IMAGE to a digest reference}
+    pull_policy: always
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /var/run/postgresql:rw,noexec,nosuid,size=16m
+    networks: [backend]
+    cpus: 2.00
+    mem_limit: 2g
+    pids_limit: 512
+
+  redis:
+    <<: *runtime-security
+    image: ${MAILFLOW_REDIS_IMAGE:?set MAILFLOW_REDIS_IMAGE to a digest reference}
+    pull_policy: always
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    networks: [backend]
+    cpus: 0.50
+    mem_limit: 512m
+    pids_limit: 256
+
+  backup:
+    image: ${MAILFLOW_BACKUP_IMAGE:?set MAILFLOW_BACKUP_IMAGE to a verified digest reference}
+    build: !reset null
+    pull_policy: always
+    read_only: true
+    security_opt: !override [no-new-privileges:true]
+    cap_drop: !override [ALL]
+    tmpfs: !override ["/tmp:rw,noexec,nosuid,size=64m"]
+    networks: [backend]
+    cpus: 2.00
+    mem_limit: 2g
+    pids_limit: 512
+
+networks:
+  edge:
+    name: mailflow-edge
+  backend:
+    name: mailflow-backend
+    internal: true
+
+configs:
+  traefik_dynamic:
+    file: ${MAILFLOW_TRAEFIK_CONFIG_PATH:?set MAILFLOW_TRAEFIK_CONFIG_PATH to the rendered configuration}

@@ -5,3 +5,8 @@ Create `better_auth_secret`, `bootstrap_token`, `recovery_code`, `master_key`, `
 On a fresh installation, open Mailflow and enter the `bootstrap_token` value in the first-run form together with the owner's name, email, password, and language. The browser sends it once in the `X-Mailflow-Bootstrap-Token` header; it is never placed in a URL or browser storage. After the owner exists, registration is closed at both the application and database layers, so the token cannot create another account.
 
 Keep the secret files readable only by the account operating Docker. Do not paste their values into issues, logs, screenshots, shell history, or repository files.
+
+Local Compose uses this directory by default. Production requires an absolute
+`MAILFLOW_SECRETS_PATH` outside the checkout, a directory mode of `700`, and a
+mode of `600` for every secret file; see
+[`docs/deployment.md`](../../docs/deployment.md).

@@ -73,6 +73,7 @@ Advanced productivity features, Android, collaboration, calendars and AI remain 
 - [Pipeline de release macOS](docs/macos-release.md)
 - [Releases de contenedores](docs/container-releases.md)
 - [Evidencias de la cadena de suministro](docs/supply-chain.md)
+- [Despliegue de producción y rollback](docs/deployment.md)
 - [Caché cifrada offline de macOS](docs/offline-cache.md)
 - [Contribuir](CONTRIBUTING.md)
 - [Seguridad](SECURITY.md)

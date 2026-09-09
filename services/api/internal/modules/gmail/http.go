@@ -16,6 +16,7 @@ import (
 )
 
 const maxResponseBytes = 32 << 20
+const maxDecodedPayloadBytes = 25 << 20
 
 type historyCursor struct {
 	HistoryID string `json:"historyId"`
@@ -146,8 +147,8 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		if err := provider.json(ctx, http.MethodGet, "/messages/"+url.PathEscape(id), url.Values{"format": {"raw"}}, nil, &response); err != nil {
 			return mail.ChangePage{}, err
 		}
-		raw, err := base64.RawURLEncoding.DecodeString(response.Raw)
-		if err != nil {
+		raw, ok := decodeBase64URL(response.Raw, maxDecodedPayloadBytes)
+		if !ok {
 			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent}
 		}
 		content, err := provider.normalizer.Normalize(bytes.NewReader(raw))
@@ -166,6 +167,20 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		page.Messages = append(page.Messages, remoteMessage(response.ID, response.ThreadID, milliseconds, response.LabelIDs, content))
 	}
 	return page, nil
+}
+
+func decodeBase64URL(value string, maxBytes int) ([]byte, bool) {
+	if maxBytes < 0 || len(value) > base64.URLEncoding.EncodedLen(maxBytes) {
+		return nil, false
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(value)
+	}
+	if err != nil || len(decoded) > maxBytes {
+		return nil, false
+	}
+	return decoded, true
 }
 
 func remoteMessage(id, threadID string, milliseconds int64, labels []string, content mail.NormalizedMessageContent) mail.RemoteMessage {

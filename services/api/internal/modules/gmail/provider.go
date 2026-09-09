@@ -3,7 +3,6 @@ package gmail
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -339,11 +338,8 @@ func (provider *Provider) DownloadAttachment(ctx context.Context, messageID, att
 	if err := provider.json(ctx, http.MethodGet, "/messages/"+url.PathEscape(messageID)+"/attachments/"+url.PathEscape(attachmentID), nil, nil, &response); err != nil {
 		return nil, err
 	}
-	if base64.RawURLEncoding.DecodedLen(len(response.Data)) > 25<<20 {
-		return nil, &ProviderError{Kind: ErrorPermanent}
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(response.Data)
-	if err != nil {
+	decoded, ok := decodeBase64URL(response.Data, maxDecodedPayloadBytes)
+	if !ok {
 		return nil, &ProviderError{Kind: ErrorPermanent}
 	}
 	return io.NopCloser(bytes.NewReader(decoded)), nil

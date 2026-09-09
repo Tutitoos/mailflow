@@ -15,4 +15,10 @@ commands.allow = [
   "native_session_forget_local",
   "native_session_identity",
   "native_session_logout",
+  "native_experience_state",
+  "native_notifications_enable",
+  "native_notifications_set_privacy",
+  "native_notify_new_mail",
+  "native_notification_take_pending",
+  "native_set_unread_badge",
 ]

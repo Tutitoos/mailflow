@@ -96,6 +96,8 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
+      - name: Isolate Playwright from unrelated APT sources
+        run: ./scripts/prepare-playwright-apt.sh
       - run: bunx playwright install --with-deps chromium
       - run: bun run --cwd apps/web test:e2e
 

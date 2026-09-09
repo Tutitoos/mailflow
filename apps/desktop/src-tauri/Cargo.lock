@@ -2274,10 +2274,12 @@ name = "mailflow-desktop"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "base64 0.22.1",
  "block2",
  "getrandom 0.3.4",
  "hex",
  "keyring",
+ "minisign-verify",
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",

@@ -24,3 +24,12 @@ go test -race -count=1 ./internal/platform/queue
 ```
 
 These values are disposable local examples, not production credentials. CI invokes the same Docker harness and needs no private configuration.
+
+## macOS release verification
+
+The protected desktop release workflow builds one arm64 and x86_64 universal
+application and gates upload on Developer ID signature, hardened runtime,
+notarization tickets, Gatekeeper assessment, DMG mounting, updater signature
+and tamper rejection, and a clean temporary install-launch-uninstall smoke test.
+See [`macos-release.md`](macos-release.md) for the exact evidence boundary and
+the checks that remain impossible without protected Apple credentials.

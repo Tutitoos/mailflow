@@ -1,0 +1,259 @@
+name: Desktop release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-release.yml"
+      - "apps/desktop/**"
+      - "bun.lock"
+      - "package.json"
+      - "scripts/desktop-release-manifest*"
+      - "scripts/verify-macos-release.sh"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing vX.Y.Z or vX.Y.Z-beta.N tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  universal-contract:
+    name: Universal application contract
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: bun install --frozen-lockfile
+      - name: Build ad-hoc universal application
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+          MAILFLOW_DESKTOP_ORIGIN: https://mailflow.invalid
+        run: bun run --cwd apps/desktop tauri build --target universal-apple-darwin --bundles app
+      - name: Verify universal and hardened structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Mailflow.app
+          executable="$app/Contents/MacOS/mailflow-desktop"
+          architectures=$(lipo -archs "$executable")
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
+          codesign --verify --deep --strict --verbose=2 "$app"
+          entitlements="$RUNNER_TEMP/entitlements.plist"
+          codesign --display --entitlements :- "$app" >"$entitlements" 2>/dev/null
+          if /usr/libexec/PlistBuddy -c "Print :com.apple.security.get-task-allow" "$entitlements" 2>/dev/null | grep -iq '^true$'; then
+            echo "Universal contract enables get-task-allow" >&2
+            exit 1
+          fi
+
+  macos-universal:
+    name: Signed notarized universal DMG
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    environment: desktop-release
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      MAILFLOW_DESKTOP_ORIGIN: ${{ vars.MAILFLOW_DESKTOP_ORIGIN }}
+      MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY: ${{ vars.MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY }}
+      STABLE_UPDATE_ENDPOINT: ${{ vars.MAILFLOW_DESKTOP_UPDATE_ENDPOINT_STABLE }}
+      BETA_UPDATE_ENDPOINT: ${{ vars.MAILFLOW_DESKTOP_UPDATE_ENDPOINT_BETA }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Validate release identity and protected configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Release tag must be vX.Y.Z or vX.Y.Z-beta.N" >&2; exit 1 ;;
+          esac
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            channel=stable
+            update_endpoint=$STABLE_UPDATE_ENDPOINT
+          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+)$ ]]; then
+            channel=beta
+            update_endpoint=$BETA_UPDATE_ENDPOINT
+          else
+            echo "Release tag does not use a supported channel" >&2
+            exit 1
+          fi
+          version=${BASH_REMATCH[1]}
+          [[ "$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)" == "$version" ]]
+          [[ "$(jq -r .version apps/desktop/package.json)" == "$version" ]]
+          [[ "$(cargo metadata --no-deps --format-version 1 --manifest-path apps/desktop/src-tauri/Cargo.toml | jq -r '.packages[] | select(.name == "mailflow-desktop") | .version')" == "$version" ]]
+          [[ "$(git rev-list -n 1 "$RELEASE_TAG")" == "$(git rev-parse HEAD)" ]]
+          for required in MAILFLOW_DESKTOP_ORIGIN MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY APPLE_TEAM_ID APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_ISSUER APPLE_API_KEY APPLE_API_PRIVATE_KEY KEYCHAIN_PASSWORD TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            [[ -n "${!required:-}" ]] || { echo "Missing protected release value: $required" >&2; exit 1; }
+          done
+          [[ -n "$update_endpoint" ]] || { echo "Missing update endpoint for $channel" >&2; exit 1; }
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]
+          [[ "$APPLE_API_KEY" =~ ^[A-Z0-9]{10}$ ]]
+          [[ "$APPLE_API_ISSUER" =~ ^[0-9A-Fa-f-]{36}$ ]]
+          [[ "$MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY" =~ ^[A-Za-z0-9+/=]+$ ]]
+          bun -e '
+            const [originValue, endpointValue] = process.argv.slice(1);
+            const origin = new URL(originValue);
+            const endpoint = new URL(endpointValue);
+            if (origin.protocol !== "https:" || origin.origin !== originValue || origin.username || origin.password) process.exit(1);
+            if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.hash) process.exit(1);
+          ' "$MAILFLOW_DESKTOP_ORIGIN" "$update_endpoint"
+          draft_state="$RUNNER_TEMP/release-draft"
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft >"$draft_state" 2>/dev/null; then
+            [[ "$(<"$draft_state")" == true ]] || { echo "Published releases are immutable" >&2; exit 1; }
+          fi
+          published_at=$(bun -e 'console.log(new Date(Number(process.argv[1]) * 1000).toISOString())' "$(git show -s --format=%ct)")
+          {
+            echo "MAILFLOW_DESKTOP_UPDATE_CHANNEL=$channel"
+            echo "MAILFLOW_DESKTOP_UPDATE_ENDPOINT=$update_endpoint"
+            echo "RELEASE_VERSION=$version"
+            echo "RELEASE_PUBLISHED_AT=$published_at"
+          } >> "$GITHUB_ENV"
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Import Developer ID Application certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/mailflow-release.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          identity=$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p')
+          [[ -n "$identity" && "$(wc -l <<<"$identity" | tr -d ' ')" == 1 ]] || { echo "Expected one Developer ID Application identity" >&2; exit 1; }
+          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "MAILFLOW_RELEASE_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Prepare notarization and updater trust files
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" | base64 --decode > "$api_key_path"
+          chmod 600 "$api_key_path"
+          release_config="$RUNNER_TEMP/tauri.release.conf.json"
+          jq -n --arg pubkey "$MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY" '{bundle:{createUpdaterArtifacts:true},plugins:{updater:{pubkey:$pubkey}}}' > "$release_config"
+          echo "APPLE_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
+          echo "MAILFLOW_TAURI_RELEASE_CONFIG=$release_config" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, and staple universal application
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run --cwd apps/desktop tauri build \
+            --target universal-apple-darwin \
+            --bundles app,dmg \
+            --config "$MAILFLOW_TAURI_RELEASE_CONFIG"
+
+      - name: Stage deterministic release artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
+          app_path="$bundle_root/macos/Mailflow.app"
+          updater_path="$bundle_root/macos/Mailflow.app.tar.gz"
+          signature_path="$updater_path.sig"
+          dmg_count=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')
+          dmg_path=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          [[ -d "$app_path" && -f "$updater_path" && -f "$signature_path" && "$dmg_count" == 1 && -n "$dmg_path" ]]
+          release_root="$RUNNER_TEMP/mailflow-release"
+          mkdir -p "$release_root"
+          dmg_name="Mailflow_${RELEASE_VERSION}_universal.dmg"
+          updater_name="Mailflow_${RELEASE_VERSION}_universal.app.tar.gz"
+          cp "$dmg_path" "$release_root/$dmg_name"
+          cp "$updater_path" "$release_root/$updater_name"
+          cp "$signature_path" "$release_root/$updater_name.sig"
+          MAILFLOW_TEST_UPDATE_ARTIFACT="$release_root/$updater_name" \
+          MAILFLOW_TEST_UPDATE_SIGNATURE="$release_root/$updater_name.sig" \
+          MAILFLOW_TEST_UPDATE_PUBLIC_KEY="$MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY" \
+            cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --test updater_signature
+          ./scripts/verify-macos-release.sh "$app_path" "$release_root/$dmg_name" "$release_root/$updater_name" "$RELEASE_VERSION" "$APPLE_TEAM_ID"
+          artifact_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${updater_name}"
+          bun scripts/desktop-release-manifest.ts \
+            --version "$RELEASE_VERSION" \
+            --channel "$MAILFLOW_DESKTOP_UPDATE_CHANNEL" \
+            --published-at "$RELEASE_PUBLISHED_AT" \
+            --notes "Mailflow $RELEASE_VERSION" \
+            --artifact-url "$artifact_url" \
+            --signature-file "$release_root/$updater_name.sig" \
+            --output "$release_root/mailflow-${MAILFLOW_DESKTOP_UPDATE_CHANNEL}.json"
+          (cd "$release_root" && shasum -a 256 "$dmg_name" "$updater_name" "$updater_name.sig" "mailflow-${MAILFLOW_DESKTOP_UPDATE_CHANNEL}.json" > SHA256SUMS)
+          echo "release_root=$release_root" >> "$GITHUB_OUTPUT"
+
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.artifacts.outputs.release_root }}/*
+
+      - name: Retain verified workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mailflow-${{ env.RELEASE_VERSION }}-macOS-universal
+          path: ${{ steps.artifacts.outputs.release_root }}/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or update draft GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "Mailflow $RELEASE_VERSION"
+          fi
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/mailflow-release"/* --clobber
+
+      - name: Remove ephemeral signing material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          [[ -n "${MAILFLOW_RELEASE_KEYCHAIN:-}" ]] && security delete-keychain "$MAILFLOW_RELEASE_KEYCHAIN"
+          [[ -n "${APPLE_API_KEY_PATH:-}" ]] && truncate -s 0 "$APPLE_API_KEY_PATH"
+          truncate -s 0 "$RUNNER_TEMP/developer-id.p12" 2>/dev/null

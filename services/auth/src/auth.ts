@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
-import { jwt } from "better-auth/plugins";
+import { bearer, jwt } from "better-auth/plugins";
 import { Pool } from "pg";
 import { loadConfig } from "./config";
 
@@ -80,6 +80,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    bearer({ requireSignature: true }),
     passkey({
       schema: {
         passkey: {

@@ -11,7 +11,9 @@ import {
   FileText,
   Inbox,
   Info,
+  KeyRound,
   Languages,
+  LogOut,
   Mail,
   MailOpen,
   Menu,
@@ -32,6 +34,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { registerPasskey, signOut } from "./auth-client";
 import { Button } from "./components/ui/button";
 import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
@@ -1260,6 +1263,29 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     imap: { host: "", port: 993, tlsMode: "implicit" },
     smtp: { host: "", port: 587, tlsMode: "starttls" },
   });
+  const [passkeyStatus, setPasskeyStatus] = useState<
+    "idle" | "registering" | "registered" | "error"
+  >("idle");
+
+  const logout = async () => {
+    setError(null);
+    try {
+      await signOut();
+      window.location.replace("/");
+    } catch {
+      setError("generic");
+    }
+  };
+
+  const addPasskey = async () => {
+    setPasskeyStatus("registering");
+    try {
+      await registerPasskey();
+      setPasskeyStatus("registered");
+    } catch {
+      setPasskeyStatus("error");
+    }
+  };
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -1389,9 +1415,14 @@ export function AccountsPage({ locale }: { locale: Locale }) {
     <div className="settings-shell">
       <header className="admin-header">
         <Brand />
-        <Button variant="outline" onClick={() => navigate("/")}>
-          <ArrowLeft size={16} /> {t("viewInbox")}
-        </Button>
+        <div className="settings-actions">
+          <Button variant="outline" onClick={() => navigate("/")}>
+            <ArrowLeft size={16} /> {t("viewInbox")}
+          </Button>
+          <Button variant="outline" onClick={() => void logout()}>
+            <LogOut size={16} /> {t("signOut")}
+          </Button>
+        </div>
       </header>
       <main className="settings-content" aria-labelledby="accounts-title">
         <div className="settings-heading">
@@ -1423,6 +1454,23 @@ export function AccountsPage({ locale }: { locale: Locale }) {
             </Button>
           </div>
         </div>
+        <section className="settings-notice warning" aria-labelledby="passkey-settings-title">
+          <KeyRound size={17} />
+          <span>
+            <strong id="passkey-settings-title">{t("passkeySettingsTitle")}</strong>
+            <br />
+            {t("passkeySettingsDescription")}
+          </span>
+          <Button
+            variant="outline"
+            disabled={passkeyStatus === "registering"}
+            onClick={() => void addPasskey()}
+          >
+            {t("registerPasskey")}
+          </Button>
+          {passkeyStatus === "registered" && <span role="status">{t("passkeyRegistered")}</span>}
+          {passkeyStatus === "error" && <span role="alert">{t("passkeyRegistrationFailed")}</span>}
+        </section>
         {mailSetup && (
           <form
             className="imap-form"

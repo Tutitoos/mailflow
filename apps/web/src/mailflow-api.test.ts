@@ -20,10 +20,16 @@ import {
   sendDraft,
 } from "./mailflow-api";
 
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  invoke.mockReset();
+  vi.unstubAllGlobals();
+});
 
 describe("Mailflow API client", () => {
   it("honors declared capabilities and preserves legacy provider accounts", () => {
@@ -114,15 +120,15 @@ describe("Mailflow API client", () => {
         getItem: (key: string) => (key === "mailflow.desktop" ? "1" : null),
       },
     });
+    invoke.mockResolvedValue({ locale: "en", accessToken: "short-jwt" });
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(json({ token: "short-jwt" }))
       .mockResolvedValueOnce(json({ authorizationUrl: "https://accounts.example.test/authorize" }));
     vi.stubGlobal("fetch", fetch);
 
     await createGoogleAuthorization();
 
-    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
       reconsent: false,
       desktop: true,
     });

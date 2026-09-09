@@ -74,3 +74,41 @@ test("shows deterministic errors and clears the installation token", async ({ pa
   await expect(page.getByLabel("Password")).toHaveValue("");
   expect(await page.locator("body").innerText()).not.toContain("sensitive upstream detail");
 });
+
+test("offers localized passkey and offline recovery without persisting the code", async ({
+  page,
+}) => {
+  const recoveryCode = "offline-recovery-code";
+  const newPassword = "replacement-browser-password";
+  await page.route("**/api/auth/setup/status", (route) =>
+    route.fulfill({ json: { configured: true } }),
+  );
+  await page.route("**/api/auth/get-session", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/recover", async (route) => {
+    const request = route.request();
+    expect(request.url()).not.toContain(recoveryCode);
+    expect(request.postDataJSON()).toEqual({ recoveryCode, newPassword });
+    await route.fulfill({ json: { recovered: true } });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
+  await page.getByRole("button", { name: "Use recovery code" }).click();
+  await expect(page.getByRole("heading", { name: "Recover your Mailflow owner" })).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(
+    accessibility.violations.filter(
+      (violation) => violation.impact === "critical" || violation.impact === "serious",
+    ),
+  ).toEqual([]);
+
+  await page.getByLabel("Recovery code").fill(recoveryCode);
+  await page.getByLabel("New password").fill(newPassword);
+  await page.getByRole("button", { name: "Recover account" }).click();
+
+  await expect(page.getByRole("heading", { name: "Sign in to Mailflow" })).toBeVisible();
+  expect(page.url()).not.toContain(recoveryCode);
+  expect(await page.locator("body").innerText()).not.toContain(recoveryCode);
+  expect(await page.locator("body").innerText()).not.toContain(newPassword);
+  expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
+});

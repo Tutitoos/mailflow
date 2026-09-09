@@ -47,12 +47,13 @@ services:
       MAILFLOW_AUTH_AUDIENCE: mailflow-api
       BETTER_AUTH_SECRET_FILE: /run/secrets/better_auth_secret
       MAILFLOW_BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+      MAILFLOW_RECOVERY_CODE_FILE: /run/secrets/recovery_code
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_HOST: postgres
       POSTGRES_USER: mailflow
       POSTGRES_DB: mailflow
       TRUSTED_ORIGINS: https://${MAILFLOW_DOMAIN}
-    secrets: [better_auth_secret, bootstrap_token, postgres_password]
+    secrets: [better_auth_secret, bootstrap_token, postgres_password, recovery_code]
     labels:
       - traefik.enable=true
       - traefik.http.routers.auth.rule=Host(`${MAILFLOW_DOMAIN}`) && PathPrefix(`/api/auth`)
@@ -261,6 +262,8 @@ secrets:
     file: ./secrets/better_auth_secret
   bootstrap_token:
     file: ./secrets/bootstrap_token
+  recovery_code:
+    file: ./secrets/recovery_code
   postgres_password:
     file: ./secrets/postgres_password
   restic_password:

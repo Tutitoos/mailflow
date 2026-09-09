@@ -45,7 +45,7 @@ The web application is available at `http://127.0.0.1:4310`. Run the complete lo
 make check
 ```
 
-For Compose, copy `deploy/.env.example`, create the five files documented in `deploy/secrets/README.md`, and run Docker Compose from the repository root.
+For Compose, copy `deploy/.env.example`, create the secret files documented in `deploy/secrets/README.md`, and run Docker Compose from the repository root.
 
 ## Version 1.0
 

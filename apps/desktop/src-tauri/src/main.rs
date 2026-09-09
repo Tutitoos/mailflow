@@ -5,6 +5,8 @@ use std::{error::Error, fmt};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder, webview::NewWindowResponse};
 use tauri_plugin_deep_link::DeepLinkExt;
 
+mod native_session;
+mod native_session_commands;
 mod offline_cache;
 mod offline_commands;
 
@@ -41,12 +43,19 @@ fn main() {
         )
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            native_session_commands::native_passkey_begin,
+            native_session_commands::native_passkey_finish,
             offline_commands::offline_cache_has_accounts,
             offline_commands::offline_cache_list_accounts,
             offline_commands::offline_cache_read,
             offline_commands::offline_cache_remove_account,
             offline_commands::offline_cache_store_accounts,
             offline_commands::offline_cache_write,
+            native_session_commands::native_session_activate,
+            native_session_commands::native_session_current,
+            native_session_commands::native_session_forget_local,
+            native_session_commands::native_session_identity,
+            native_session_commands::native_session_logout,
         ])
         .setup(setup)
         .run(tauri::generate_context!())
@@ -58,6 +67,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     app.manage(Arc::new(offline_cache::OfflineCache::new(
         cache_directory.join("offline-cache.sqlite3"),
     )));
+    app.manage(native_session_commands::manager()?);
     let origin = configured_origin()?;
     let initial_url = app
         .deep_link()

@@ -22,21 +22,23 @@ describe("Mailflow desktop offline data", () => {
   it("opens cached accounts when the installation is unreachable", async () => {
     markDesktop();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
-    nativeInvoke.mockResolvedValueOnce([
-      {
-        id: "account-a",
-        provider: "google",
-        displayName: "Fixture",
-        syncState: "idle",
-        disabledAt: null,
-        capabilities: {},
-      },
-    ]);
+    nativeInvoke
+      .mockRejectedValueOnce(new Error("installation unavailable"))
+      .mockResolvedValueOnce([
+        {
+          id: "account-a",
+          provider: "google",
+          displayName: "Fixture",
+          syncState: "idle",
+          disabledAt: null,
+          capabilities: {},
+        },
+      ]);
 
     await expect(loadMailAccounts()).resolves.toMatchObject({
       items: [{ id: "account-a" }],
     });
-    expect(nativeInvoke).toHaveBeenCalledWith("offline_cache_list_accounts", {});
+    expect(nativeInvoke).toHaveBeenNthCalledWith(2, "offline_cache_list_accounts", {});
   });
 
   it("writes successful inbox pages and falls back to the same cursor offline", async () => {
@@ -44,21 +46,26 @@ describe("Mailflow desktop offline data", () => {
     const page = { items: [], nextCursor: "opaque-next" };
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(json({ token: "fixture-jwt" }))
       .mockResolvedValueOnce(json(page))
       .mockRejectedValueOnce(new TypeError("offline"));
     vi.stubGlobal("fetch", fetch);
-    nativeInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce(page);
+    nativeInvoke
+      .mockResolvedValueOnce({ locale: "en", accessToken: "e30.eyJleHAiOjF9.signature" })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ locale: "en", accessToken: "e30.eyJleHAiOjF9.signature" })
+      .mockResolvedValueOnce(page);
 
     await expect(loadInboxPage("account-a", "primary")).resolves.toEqual(page);
     await expect(loadInboxPage("account-a", "primary")).resolves.toEqual(page);
 
     const key = JSON.stringify(["primary", ""]);
     expect(nativeInvoke.mock.calls).toEqual([
+      ["native_session_current"],
       [
         "offline_cache_write",
         { accountId: "account-a", kind: "inbox", cacheKey: key, value: page },
       ],
+      ["native_session_current"],
       ["offline_cache_read", { accountId: "account-a", kind: "inbox", cacheKey: key }],
     ]);
   });
@@ -67,12 +74,11 @@ describe("Mailflow desktop offline data", () => {
     markDesktop();
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(json({ token: "fixture-jwt" }))
-        .mockResolvedValueOnce(json({ account: { id: "account-a" }, remoteRevoked: true })),
+      vi.fn().mockResolvedValueOnce(json({ account: { id: "account-a" }, remoteRevoked: true })),
     );
-    nativeInvoke.mockResolvedValueOnce(undefined);
+    nativeInvoke
+      .mockResolvedValueOnce({ locale: "en", accessToken: "e30.eyJleHAiOjF9.signature" })
+      .mockResolvedValueOnce(undefined);
 
     await disconnectAccount("account-a");
 

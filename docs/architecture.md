@@ -38,6 +38,13 @@ Docker Compose ejecutará ocho servicios principales y dos jobs efímeros de ini
 | `migrate` | Aplicación única de migraciones Goose antes de arrancar los procesos de aplicación |
 
 La configuración de producción expondrá únicamente Traefik en los puertos 80 y 443.
+El overlay de producción elimina los builds locales, exige referencias OCI por
+digest, sirve una configuración dinámica de Traefik sin montar el socket Docker
+y separa `edge` de una red `backend` marcada como interna. Todos los servicios
+tienen límites de CPU, memoria y procesos; los sistemas de archivos raíz son de
+solo lectura y las capacidades se eliminan donde el arranque no necesita
+privilegios específicos. El procedimiento y el rollback están definidos en
+[`deployment.md`](deployment.md).
 
 ## Monorepo previsto
 

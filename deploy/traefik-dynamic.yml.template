@@ -1,0 +1,57 @@
+http:
+  routers:
+    auth:
+      rule: Host(`__MAILFLOW_DOMAIN__`) && PathPrefix(`/api/auth`)
+      entryPoints: [websecure]
+      priority: 120
+      middlewares: [secure-headers, api-rate-limit, compression]
+      service: auth
+      tls:
+        certResolver: letsencrypt
+    api:
+      rule: Host(`__MAILFLOW_DOMAIN__`) && (PathPrefix(`/api/v1`) || PathPrefix(`/sentry`))
+      entryPoints: [websecure]
+      priority: 110
+      middlewares: [secure-headers, api-rate-limit, compression]
+      service: api
+      tls:
+        certResolver: letsencrypt
+    web:
+      rule: Host(`__MAILFLOW_DOMAIN__`)
+      entryPoints: [websecure]
+      priority: 1
+      middlewares: [secure-headers, web-rate-limit, compression]
+      service: web
+      tls:
+        certResolver: letsencrypt
+  services:
+    auth:
+      loadBalancer:
+        servers: [{ url: http://auth:3001 }]
+    api:
+      loadBalancer:
+        servers: [{ url: http://api:8080 }]
+    web:
+      loadBalancer:
+        servers: [{ url: http://web:8080 }]
+  middlewares:
+    secure-headers:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: camera=(), microphone=(), geolocation=()
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+    api-rate-limit:
+      rateLimit:
+        average: 60
+        burst: 120
+        period: 1s
+    web-rate-limit:
+      rateLimit:
+        average: 120
+        burst: 240
+        period: 1s
+    compression:
+      compress: {}

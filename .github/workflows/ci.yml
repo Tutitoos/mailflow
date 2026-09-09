@@ -116,5 +116,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
       - run: cp deploy/.env.example deploy/.env
       - run: docker compose --env-file deploy/.env -f deploy/compose.yml config --quiet
+      - name: Verify the production deployment contract
+        run: bun test scripts/production-compose-policy.test.ts scripts/production-compose-script.test.ts
+      - name: Exercise the isolated production edge
+        run: ./scripts/verify-production-edge.sh

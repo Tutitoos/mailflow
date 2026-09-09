@@ -1,5 +1,9 @@
 # Production deployment
 
+For the complete ordered installation, provider, recovery, backup, update and
+uninstall procedure, start with the [operator runbook](operator-runbook.md) or
+its complete [Spanish version](es/operator-runbook.md).
+
 Mailflow production uses the base Compose model plus
 `deploy/compose.production.yml`. The production overlay removes every local
 build, requires immutable image digests, exposes only Traefik on host ports 80

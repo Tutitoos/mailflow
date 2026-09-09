@@ -1,5 +1,9 @@
 # Encrypted backups and restore
 
+The [operator runbook](operator-runbook.md) defines when to capture and prove a
+snapshot in the full install/update lifecycle. This document is the detailed
+backup and restore contract.
+
 Mailflow runs Restic in an isolated Compose service. The service creates a
 consistent custom-format PostgreSQL dump, copies the immutable CDN tree into a
 private staging directory, and includes the account-encryption master key in the

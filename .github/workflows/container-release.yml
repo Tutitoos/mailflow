@@ -1,0 +1,250 @@
+name: Container release
+
+on:
+  pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/container-release.yml
+      - apps/web/**
+      - deploy/**
+      - package.json
+      - bun.lock
+      - scripts/container-release-manifest.ts
+      - scripts/container-release-manifest.test.ts
+      - services/api/**
+      - services/auth/**
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ghcr.io/tutitoos
+
+jobs:
+  multi-architecture-contract:
+    name: ${{ matrix.name }} linux/amd64 + linux/arm64
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            target: web
+          - name: auth
+            dockerfile: services/auth/Dockerfile
+            target: auth
+          - name: api
+            dockerfile: services/api/Dockerfile
+            target: api
+          - name: worker
+            dockerfile: services/api/Dockerfile
+            target: worker
+          - name: backup
+            dockerfile: services/api/backup.Dockerfile
+            target: backup
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build both release architectures without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: VERSION=0.0.0-pr.${{ github.event.pull_request.number }}
+          cache-from: type=gha,scope=container-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=container-${{ matrix.name }}
+
+  acceptance:
+    name: First-party image acceptance
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build native acceptance images
+        env:
+          VERSION: 0.0.0-pr.${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          docker build --build-arg "VERSION=$VERSION" --target web -t mailflow-web:acceptance -f apps/web/Dockerfile .
+          docker build --build-arg "VERSION=$VERSION" --target auth -t mailflow-auth:acceptance -f services/auth/Dockerfile .
+          docker build --build-arg "VERSION=$VERSION" --target api -t mailflow-api:acceptance -f services/api/Dockerfile .
+          docker build --build-arg "VERSION=$VERSION" --target worker -t mailflow-worker:acceptance -f services/api/Dockerfile .
+          docker build --build-arg "VERSION=$VERSION" --target backup -t mailflow-backup:acceptance -f services/api/backup.Dockerfile .
+      - name: Reject secrets and development residue
+        run: ./scripts/verify-container-images.sh inspect
+      - name: Start the first-party stack and verify health
+        run: ./scripts/verify-container-images.sh health
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: container-release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            target: web
+          - name: auth
+            dockerfile: services/auth/Dockerfile
+            target: auth
+          - name: api
+            dockerfile: services/api/Dockerfile
+            target: api
+          - name: worker
+            dockerfile: services/api/Dockerfile
+            target: worker
+          - name: backup
+            dockerfile: services/api/backup.Dockerfile
+            target: backup
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate immutable release identity
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+          version="${RELEASE_TAG#v}"
+          test "$(jq -r .version package.json)" = "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse to overwrite a published release tag
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable image tag $IMAGE:$VERSION" >&2
+            exit 1
+          fi
+      - name: Generate immutable image metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          labels: |
+            org.opencontainers.image.title=Mailflow ${{ matrix.name }}
+            org.opencontainers.image.description=Mailflow self-hosted mail ${{ matrix.name }} service
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long,prefix=sha-
+      - name: Build and publish manifest list
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: VERSION=${{ steps.release.outputs.version }}
+          cache-from: type=gha,scope=container-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=container-${{ matrix.name }}
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@v4.1.2
+      - name: Sign the immutable manifest digest
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Record exact digest
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p release-digests
+          jq -n --arg name '${{ matrix.name }}' --arg image "${IMAGE,,}" --arg digest "$DIGEST" \
+            '{name:$name,image:$image,digest:$digest}' > "release-digests/${{ matrix.name }}.json"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: container-digest-${{ matrix.name }}
+          path: release-digests/${{ matrix.name }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  finalize:
+    name: Verify published container release
+    needs: publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: container-release
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: container-digest-*
+          path: release-digests
+          merge-multiple: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Create deterministic release manifest
+        run: bun scripts/container-release-manifest.ts release-digests "$GITHUB_REF_NAME" "$GITHUB_SHA" container-release-manifest.json
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v4.1.2
+      - name: Verify digests, architectures, signatures, and attestations
+        env:
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/container-release.yml@${{ github.ref }}
+        run: ./scripts/verify-container-images.sh release container-release-manifest.json "$CERTIFICATE_IDENTITY"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: container-release-${{ github.ref_name }}
+          path: container-release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

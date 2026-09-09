@@ -9,11 +9,19 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/sentry-token ./cmd/sentry-token && \
     mkdir -p /out/cdn && chmod 0750 /out/cdn
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="Mailflow API and worker" \
+      org.opencontainers.image.version="${VERSION}"
 USER root
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/worker /usr/local/bin/worker
 COPY --from=build /out/sentry-token /usr/local/bin/sentry-token
 COPY --from=build --chown=65532:65532 /out/cdn /data/cdn
+
+FROM runtime AS api
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/api"]
+
+FROM runtime AS worker
+ENTRYPOINT ["/usr/local/bin/worker"]

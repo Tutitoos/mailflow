@@ -20,6 +20,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${MAILFLOW_WEB_IMAGE:-mailflow-web:local}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
@@ -38,6 +39,7 @@ services:
     restart: unless-stopped
 
   auth:
+    image: ${MAILFLOW_AUTH_IMAGE:-mailflow-auth:local}
     build:
       context: ..
       dockerfile: services/auth/Dockerfile
@@ -70,9 +72,11 @@ services:
     restart: unless-stopped
 
   migrate:
+    image: ${MAILFLOW_API_IMAGE:-mailflow-api:local}
     build:
       context: ..
       dockerfile: services/api/Dockerfile
+      target: api
     command: [--migrate]
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -85,9 +89,11 @@ services:
     restart: "no"
 
   api:
+    image: ${MAILFLOW_API_IMAGE:-mailflow-api:local}
     build:
       context: ..
       dockerfile: services/api/Dockerfile
+      target: api
     environment:
       MAILFLOW_API_ADDRESS: :8080
       MAILFLOW_CDN_ROOT: /data/cdn
@@ -138,10 +144,11 @@ services:
     restart: unless-stopped
 
   worker:
+    image: ${MAILFLOW_WORKER_IMAGE:-mailflow-worker:local}
     build:
       context: ..
       dockerfile: services/api/Dockerfile
-    entrypoint: [/usr/local/bin/worker]
+      target: worker
     environment:
       MAILFLOW_CDN_ROOT: /data/cdn
       MAILFLOW_CDN_MAX_BYTES: 26214400
@@ -227,6 +234,7 @@ services:
     restart: unless-stopped
 
   backup:
+    image: ${MAILFLOW_BACKUP_IMAGE:-mailflow-backup:local}
     build:
       context: ..
       dockerfile: services/api/backup.Dockerfile

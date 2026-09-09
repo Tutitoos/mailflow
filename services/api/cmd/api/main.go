@@ -293,6 +293,9 @@ func main() {
 			os.Exit(1)
 		}
 		queueConfig := queue.DefaultConfig()
+		// The API only produces jobs, but the shared Redis store still requires a
+		// stable consumer identity when it creates the stream group.
+		queueConfig.Consumer = "api"
 		if prefix := os.Getenv("MAILFLOW_QUEUE_PREFIX"); prefix != "" {
 			queueConfig.Prefix = prefix
 		}

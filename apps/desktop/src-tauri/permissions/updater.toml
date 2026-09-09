@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-updater"
+description = "Allows explicit signed update checks, verified installation, cancellation, state, and restart for Mailflow's macOS application."
+commands.allow = [
+  "native_updater_cancel",
+  "native_updater_check",
+  "native_updater_install",
+  "native_updater_restart",
+  "native_updater_state",
+]

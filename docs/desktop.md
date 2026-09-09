@@ -59,6 +59,8 @@ The native **Mailbox** menu exposes these standard commands:
 
 Menu labels remain available to VoiceOver and dispatch a closed command allowlist to the authenticated SPA. These integrations add no native animation; the SPA continues to honor `prefers-reduced-motion`.
 
+Signed application updates use a separately configured Tauri channel with explicit check, confirmation, download, cancellation, installation, and restart states. See [`desktop-updater.md`](desktop-updater.md) for the manifest, trust, rollback, and key-rotation contract. Server updates remain non-privileged and separate.
+
 ## Validation
 
 Run the pure origin, navigation, and deep-link tests plus the repository checks:
@@ -73,4 +75,4 @@ Before a release, install the produced `.app` and verify launch, every current S
 
 ## Resumen en español
 
-La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. Rust limita la navegación, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. El IPC remoto está cerrado a la caché cifrada, la sesión nativa y la experiencia nativa documentada. Las notificaciones requieren permiso, ocultan el contenido por defecto, evitan duplicados y solo abren objetivos validados después de autenticar. El menú nativo ofrece redacción, búsqueda, bandeja, actualización y ajustes con atajos estándar. La firma, notarización y el updater se implementan en Issues posteriores.
+La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. Rust limita la navegación, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. El IPC remoto está cerrado a la caché cifrada, la sesión nativa y la experiencia nativa documentada. Las notificaciones requieren permiso, ocultan el contenido por defecto, evitan duplicados y solo abren objetivos validados después de autenticar. El menú nativo ofrece redacción, búsqueda, bandeja, actualización y ajustes con atajos estándar. El updater añade firma minisign, canal y compatibilidad cerrados, confirmación manual, cancelación y reinicio explícito; la firma y notarización de Apple se implementan por separado.

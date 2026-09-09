@@ -13,8 +13,10 @@ backup scheduler and operational-alert history. The Alerts section exposes only
 allowlisted incident codes and delivery outcomes; its test action uses a
 fixed template and an idempotency key. `GET /api/v1/admin/backups` is read-only; execution
 and restore remain operator commands documented in [Encrypted backups and
-restore](backups.md). Server updates remain informational. Admin never receives
-Docker socket access, arbitrary SQL, or a privileged update command.
+restore](backups.md). Server updates remain informational. The installed macOS
+app exposes its separately signed, user-confirmed [desktop updater](desktop-updater.md)
+in the same screen without granting the server any update capability. Admin never
+receives Docker socket access, arbitrary SQL, or a privileged server update command.
 
 ## Queue controls and audit
 

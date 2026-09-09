@@ -12,6 +12,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 mod native_experience;
 mod native_session;
 mod native_session_commands;
+mod native_updater;
 mod offline_cache;
 mod offline_commands;
 
@@ -41,6 +42,7 @@ fn main() {
 
     builder
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_opener::Builder::new()
                 .open_js_links_on_click(false)
@@ -67,6 +69,11 @@ fn main() {
             native_experience::native_notify_new_mail,
             native_experience::native_notification_take_pending,
             native_experience::native_set_unread_badge,
+            native_updater::native_updater_cancel,
+            native_updater::native_updater_check,
+            native_updater::native_updater_install,
+            native_updater::native_updater_restart,
+            native_updater::native_updater_state,
         ])
         .setup(setup)
         .run(tauri::generate_context!())
@@ -79,6 +86,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
         cache_directory.join("offline-cache.sqlite3"),
     )));
     app.manage(native_session_commands::manager()?);
+    app.manage(Arc::new(native_updater::NativeUpdater::load(
+        app.package_info().version.to_string(),
+    )));
     app.manage(native_experience::NativeExperience::load(
         cache_directory.join("native-experience.json"),
     )?);

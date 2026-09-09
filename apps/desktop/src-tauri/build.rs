@@ -5,6 +5,9 @@ const DEV_ORIGIN: &str = "http://127.0.0.1:4310";
 
 fn main() {
     println!("cargo:rerun-if-env-changed=MAILFLOW_DESKTOP_ORIGIN");
+    println!("cargo:rerun-if-env-changed=MAILFLOW_DESKTOP_UPDATE_CHANNEL");
+    println!("cargo:rerun-if-env-changed=MAILFLOW_DESKTOP_UPDATE_ENDPOINT");
+    println!("cargo:rerun-if-env-changed=MAILFLOW_DESKTOP_UPDATE_PUBLIC_KEY");
     println!("cargo:rerun-if-changed=capabilities/default.json");
     let capabilities = generate_capabilities();
     let pattern = Box::leak(format!("{}/**/*.json", capabilities.display()).into_boxed_str());
@@ -23,10 +26,10 @@ fn generate_capabilities() -> PathBuf {
         .expect("failed to copy local capability");
     let remote = serde_json::json!({
         "identifier": "remote-cache",
-        "description": "Only the configured Mailflow installation can access encrypted offline data and native sessions",
+        "description": "Only the configured Mailflow installation can access bounded encrypted cache, native session, notification, and signed updater commands",
         "windows": ["main"],
         "remote": { "urls": [origin] },
-        "permissions": ["allow-offline-cache"]
+        "permissions": ["allow-offline-cache", "allow-updater"]
     });
     fs::write(
         directory.join("remote-cache.json"),

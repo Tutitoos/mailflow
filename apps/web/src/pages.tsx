@@ -39,6 +39,18 @@ import { Button } from "./components/ui/button";
 import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
 import { desktopConnectivityEvent, isDesktopCacheFallback } from "./desktop-cache";
+import {
+  listenForNativeExperience,
+  loadNativeExperience,
+  type NativeExperienceState,
+  type NativeNotificationPrivacy,
+  newUnreadThreads,
+  notifyNativeNewMail,
+  setNativeNotificationPrivacy,
+  setNativeNotificationsEnabled,
+  setNativeUnreadBadge,
+  takePendingNativeNotification,
+} from "./desktop-native";
 import { isDesktopRuntime } from "./desktop-runtime";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
@@ -135,8 +147,13 @@ function Header({
         searchInput.current?.focus();
       }
     };
+    const focusNativeSearch = () => searchInput.current?.focus();
     window.addEventListener("keydown", focusSearch);
-    return () => window.removeEventListener("keydown", focusSearch);
+    window.addEventListener("mailflow:focus-search", focusNativeSearch);
+    return () => {
+      window.removeEventListener("keydown", focusSearch);
+      window.removeEventListener("mailflow:focus-search", focusNativeSearch);
+    };
   }, []);
   return (
     <header className="topbar">
@@ -680,6 +697,8 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [starred, setStarred] = useState<Set<string>>(new Set());
   const [actionNotice, setActionNotice] = useState<"pending" | "failed" | "partial" | null>(null);
   const actionKeys = useRef(new Map<string, string>());
+  const knownNativeThreads = useRef(new Map<string, Set<string>>());
+  const nativeUnreadByAccount = useRef(new Map<string, number>());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => window.matchMedia("(max-width: 900px)").matches,
   );
@@ -696,6 +715,28 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const canCategories = activeAccount ? accountSupports(activeAccount, "categories") : false;
   const canLabels = activeAccount ? accountSupports(activeAccount, "labels") : false;
 
+  const refreshNativeAccount = useCallback(
+    async (accountId: string, shouldNotify: boolean, signal?: AbortSignal) => {
+      if (!isDesktopRuntime()) return;
+      const [page, navigation] = await Promise.all([
+        loadInboxPage(accountId, "primary", undefined, signal),
+        loadMailNavigation(accountId, signal),
+      ]);
+      const known = knownNativeThreads.current.get(accountId);
+      const unseen = shouldNotify ? newUnreadThreads(known, page.items) : [];
+      knownNativeThreads.current.set(accountId, new Set(page.items.map(({ id }) => id)));
+      const inbox = navigation.mailboxes.find(({ role }) => role === "inbox");
+      nativeUnreadByAccount.current.set(accountId, inbox?.unreadCount ?? 0);
+      const totalUnread = [...nativeUnreadByAccount.current.values()].reduce(
+        (total, count) => total + count,
+        0,
+      );
+      await setNativeUnreadBadge(totalUnread).catch(() => undefined);
+      await Promise.allSettled(unseen.map((thread) => notifyNativeNewMail(accountId, thread)));
+    },
+    [],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     void loadTranslationCatalog(locale, controller.signal)
@@ -705,6 +746,64 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       .catch(() => undefined);
     return () => controller.abort();
   }, [locale]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime() || accounts.length === 0) return;
+    const controller = new AbortController();
+    for (const account of accounts) {
+      void refreshNativeAccount(account.id, false, controller.signal).catch(() => undefined);
+    }
+    return () => controller.abort();
+  }, [accounts, refreshNativeAccount]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: native commands must use the active account and current capabilities.
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let disposed = false;
+    let removeListeners: () => void = () => undefined;
+    const openTarget = ({ accountId, threadId }: { accountId: string; threadId: string }) => {
+      if (!accounts.some(({ id }) => id === accountId)) return;
+      setSubmittedSearch("");
+      setQuery("");
+      setSearchResults([]);
+      setActiveAccountId(accountId);
+      setActiveThreadId(threadId);
+    };
+    const command = (value: "compose" | "search" | "inbox" | "refresh" | "settings") => {
+      if (value === "compose" && canCompose) {
+        setComposeContext({ mode: "new" });
+        setComposeOpen(true);
+      } else if (value === "search") {
+        window.dispatchEvent(new Event("mailflow:focus-search"));
+      } else if (value === "inbox") {
+        setSubmittedSearch("");
+        setQuery("");
+        setSearchResults([]);
+        setCategory("primary");
+        setActiveThreadId(null);
+        window.history.replaceState(null, "", "/");
+      } else if (value === "refresh") {
+        setRefreshRevision((current) => current + 1);
+      } else if (value === "settings") {
+        void navigate("/settings/accounts");
+      }
+    };
+    void takePendingNativeNotification()
+      .then((target) => {
+        if (!disposed && target) openTarget(target);
+      })
+      .catch(() => undefined);
+    void listenForNativeExperience(command, openTarget)
+      .then((remove) => {
+        if (disposed) remove();
+        else removeListeners = remove;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      removeListeners();
+    };
+  }, [accounts, activeAccountId, canCompose]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -814,9 +913,9 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     void subscribeMailEvents(
       (event) => {
         const eventAccount = event.payload.accountId;
-        if (activeAccountId && typeof eventAccount === "string" && eventAccount !== activeAccountId)
-          return;
-        if (event.type === "system.resync_required") setLoadState("resync");
+        const affectsActiveAccount =
+          typeof eventAccount !== "string" || !activeAccountId || eventAccount === activeAccountId;
+        if (event.type === "system.resync_required" && affectsActiveAccount) setLoadState("resync");
         if (event.type === "translations.changed") {
           void loadTranslationCatalog(locale, controller.signal)
             .then((catalog) => {
@@ -825,14 +924,17 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             .catch(() => undefined);
         }
         if (event.type === "mail.changed" || event.type === "sync.progress") {
-          setRefreshRevision((current) => current + 1);
+          if (affectsActiveAccount) setRefreshRevision((current) => current + 1);
+          if (typeof eventAccount === "string") {
+            void refreshNativeAccount(eventAccount, true, controller.signal).catch(() => undefined);
+          }
         }
       },
       setEventsConnected,
       controller.signal,
     ).catch(() => setEventsConnected(false));
     return () => controller.abort();
-  }, [activeAccountId, locale, online]);
+  }, [activeAccountId, locale, online, refreshNativeAccount]);
 
   const searchThreads = useMemo(() => {
     const unique = new Map<string, InboxThread>();
@@ -1266,6 +1368,38 @@ export function AccountsPage({ locale }: { locale: Locale }) {
   const [passkeyStatus, setPasskeyStatus] = useState<
     "idle" | "registering" | "registered" | "error"
   >("idle");
+  const [nativeExperience, setNativeExperience] = useState<NativeExperienceState | null>(null);
+  const [nativeExperienceError, setNativeExperienceError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadNativeExperience()
+      .then((state) => {
+        if (!controller.signal.aborted) setNativeExperience(state);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setNativeExperienceError(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const updateNativeNotifications = async (enabled: boolean) => {
+    setNativeExperienceError(false);
+    try {
+      setNativeExperience(await setNativeNotificationsEnabled(enabled));
+    } catch {
+      setNativeExperienceError(true);
+    }
+  };
+
+  const updateNativePrivacy = async (privacy: NativeNotificationPrivacy) => {
+    setNativeExperienceError(false);
+    try {
+      setNativeExperience(await setNativeNotificationPrivacy(privacy));
+    } catch {
+      setNativeExperienceError(true);
+    }
+  };
 
   const logout = async () => {
     setError(null);
@@ -1471,6 +1605,50 @@ export function AccountsPage({ locale }: { locale: Locale }) {
           {passkeyStatus === "registered" && <span role="status">{t("passkeyRegistered")}</span>}
           {passkeyStatus === "error" && <span role="alert">{t("passkeyRegistrationFailed")}</span>}
         </section>
+        {nativeExperience && (
+          <section
+            className="native-notification-settings"
+            aria-labelledby="native-notification-title"
+          >
+            <div>
+              <Bell size={18} />
+              <span>
+                <strong id="native-notification-title">{t("desktopNotificationsTitle")}</strong>
+                <br />
+                {t("desktopNotificationsDescription")}
+              </span>
+            </div>
+            <label>
+              <input
+                type="checkbox"
+                checked={nativeExperience.notificationsEnabled}
+                onChange={(event) => void updateNativeNotifications(event.target.checked)}
+              />
+              {t("desktopNotificationsEnabled")}
+            </label>
+            <label>
+              {t("desktopNotificationPrivacy")}
+              <select
+                value={nativeExperience.privacy}
+                onChange={(event) =>
+                  void updateNativePrivacy(event.target.value as NativeNotificationPrivacy)
+                }
+              >
+                <option value="hidden">{t("desktopNotificationHidden")}</option>
+                <option value="sender">{t("desktopNotificationSender")}</option>
+                <option value="full">{t("desktopNotificationFull")}</option>
+              </select>
+            </label>
+            {nativeExperience.permission === "denied" && (
+              <p role="alert">{t("desktopNotificationDenied")}</p>
+            )}
+          </section>
+        )}
+        {nativeExperienceError && (
+          <p className="settings-notice" data-tone="warning" role="alert">
+            {t("desktopNotificationFailed")}
+          </p>
+        )}
         {mailSetup && (
           <form
             className="imap-form"

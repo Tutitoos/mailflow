@@ -2,9 +2,14 @@
 
 use std::sync::Arc;
 use std::{error::Error, fmt};
-use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder, webview::NewWindowResponse};
+use tauri::{
+    Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder,
+    menu::{Menu, MenuItemBuilder, SubmenuBuilder},
+    webview::NewWindowResponse,
+};
 use tauri_plugin_deep_link::DeepLinkExt;
 
+mod native_experience;
 mod native_session;
 mod native_session_commands;
 mod offline_cache;
@@ -56,6 +61,12 @@ fn main() {
             native_session_commands::native_session_forget_local,
             native_session_commands::native_session_identity,
             native_session_commands::native_session_logout,
+            native_experience::native_experience_state,
+            native_experience::native_notifications_enable,
+            native_experience::native_notifications_set_privacy,
+            native_experience::native_notify_new_mail,
+            native_experience::native_notification_take_pending,
+            native_experience::native_set_unread_badge,
         ])
         .setup(setup)
         .run(tauri::generate_context!())
@@ -68,6 +79,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
         cache_directory.join("offline-cache.sqlite3"),
     )));
     app.manage(native_session_commands::manager()?);
+    app.manage(native_experience::NativeExperience::load(
+        cache_directory.join("native-experience.json"),
+    )?);
+    native_experience::install_notification_delegate(app.handle());
+    install_native_menu(app)?;
     let origin = configured_origin()?;
     let initial_url = app
         .deep_link()
@@ -106,6 +122,54 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     });
 
     Ok(())
+}
+
+fn install_native_menu(app: &tauri::App) -> tauri::Result<()> {
+    let new_message = MenuItemBuilder::with_id("mailflow.compose", "New Message")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let search = MenuItemBuilder::with_id("mailflow.search", "Search Mail")
+        .accelerator("CmdOrCtrl+K")
+        .build(app)?;
+    let inbox = MenuItemBuilder::with_id("mailflow.inbox", "Inbox")
+        .accelerator("CmdOrCtrl+1")
+        .build(app)?;
+    let refresh = MenuItemBuilder::with_id("mailflow.refresh", "Refresh")
+        .accelerator("CmdOrCtrl+R")
+        .build(app)?;
+    let settings = MenuItemBuilder::with_id("mailflow.settings", "Settings")
+        .accelerator("CmdOrCtrl+Comma")
+        .build(app)?;
+    let mailbox = SubmenuBuilder::new(app, "Mailbox")
+        .items(&[&new_message, &search, &inbox, &refresh])
+        .separator()
+        .item(&settings)
+        .build()?;
+    let menu = Menu::default(app.handle())?;
+    menu.insert(&mailbox, 1)?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app_handle, event| {
+        let command = native_menu_command(event.id().as_ref());
+        if let Some(command) = command {
+            focus_main_window(app_handle);
+            let _ = app_handle.emit(
+                "mailflow:native-command",
+                serde_json::json!({ "command": command }),
+            );
+        }
+    });
+    Ok(())
+}
+
+fn native_menu_command(id: &str) -> Option<&'static str> {
+    match id {
+        "mailflow.compose" => Some("compose"),
+        "mailflow.search" => Some("search"),
+        "mailflow.inbox" => Some("inbox"),
+        "mailflow.refresh" => Some("refresh"),
+        "mailflow.settings" => Some("settings"),
+        _ => None,
+    }
 }
 
 fn configured_origin() -> Result<Url, DesktopConfigError> {
@@ -300,5 +364,15 @@ mod tests {
         ] {
             assert!(deep_link_target(&origin, &Url::parse(invalid).unwrap()).is_none());
         }
+    }
+
+    #[test]
+    fn native_menu_ids_map_only_to_supported_web_commands() {
+        assert_eq!(native_menu_command("mailflow.compose"), Some("compose"));
+        assert_eq!(native_menu_command("mailflow.search"), Some("search"));
+        assert_eq!(native_menu_command("mailflow.inbox"), Some("inbox"));
+        assert_eq!(native_menu_command("mailflow.refresh"), Some("refresh"));
+        assert_eq!(native_menu_command("mailflow.settings"), Some("settings"));
+        assert_eq!(native_menu_command("mailflow.private"), None);
     }
 }

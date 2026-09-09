@@ -1,6 +1,6 @@
 # macOS desktop shell
 
-Mailflow for macOS is a Tauri 2 host for the same SPA served by a Mailflow installation. The web origin remains responsible for HTML, authentication cookies, REST, and WebSocket traffic. The desktop process does not proxy provider credentials. Its only remote IPC surface is the bounded encrypted-cache API described in [`offline-cache.md`](offline-cache.md).
+Mailflow for macOS is a Tauri 2 host for the same SPA served by a Mailflow installation. The web origin remains responsible for HTML, authentication cookies, REST, and WebSocket traffic. The desktop process does not proxy provider credentials. Its remote IPC surface is limited to the encrypted cache, native session, notification, badge, and native-command APIs described here and in [`offline-cache.md`](offline-cache.md) and [`native-sessions.md`](native-sessions.md).
 
 ## Origins and builds
 
@@ -41,6 +41,24 @@ Only one desktop process remains active. A second launch focuses the main window
 
 After one successful desktop load, a desktop-only service worker keeps the versioned SPA shell available without caching API or authentication responses. If the installation becomes unavailable, the shell reads only authenticated local ciphertext that is still within its retention policy. It never attempts an alternate origin. A first launch cannot work offline because no shell or account cache exists yet.
 
+## Notifications, badge, menus, and shortcuts
+
+Desktop notifications are opt-in. The first enable action uses the macOS notification permission sheet and persists only the enabled flag, preview preference, and bounded hashes used to suppress duplicate events. The default preview is generic and contains neither sender nor subject. The owner can explicitly choose sender-only or full previews from Settings. Denied permission leaves notifications disabled and is shown without repeatedly prompting.
+
+The SPA derives notification candidates from newly observed unread threads after establishing an inbox baseline. Rust validates every event, account, and thread identifier, bounds and strips control characters from optional previews, and suppresses the last 256 event hashes across restarts. No body, recipient, credential, token, or preview text is written to the native settings file. The Dock badge is the bounded total inbox unread count for connected accounts.
+
+Selecting a notification focuses the existing app and queues only its validated account and thread identifiers. The authenticated SPA consumes that target after its authorization gate, verifies that the account still belongs to the owner, and opens the exact conversation. The target is kept in process memory only and is cleared after consumption; it never appears in the URL or on disk.
+
+The native **Mailbox** menu exposes these standard commands:
+
+- New Message: <kbd>Command</kbd>+<kbd>N</kbd>
+- Search Mail: <kbd>Command</kbd>+<kbd>K</kbd>
+- Inbox: <kbd>Command</kbd>+<kbd>1</kbd>
+- Refresh: <kbd>Command</kbd>+<kbd>R</kbd>
+- Settings: <kbd>Command</kbd>+<kbd>,</kbd>
+
+Menu labels remain available to VoiceOver and dispatch a closed command allowlist to the authenticated SPA. These integrations add no native animation; the SPA continues to honor `prefers-reduced-motion`.
+
 ## Validation
 
 Run the pure origin, navigation, and deep-link tests plus the repository checks:
@@ -51,8 +69,8 @@ cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
 make check
 ```
 
-Before a release, install the produced `.app` and verify launch, every current SPA route, window restoration, same-origin navigation, external links, both OAuth success/failure callbacks, server-unavailable behavior, and clean shutdown. Signing, notarization, DMG production, and updater validation remain separate roadmap work.
+Before a release, install the produced `.app` and verify launch, every current SPA route, window restoration, same-origin navigation, external links, both OAuth success/failure callbacks, server-unavailable behavior, and clean shutdown. Also verify the permission sheet on a fresh macOS notification state, all three privacy modes with sanitized fixtures, duplicate suppression, notification click routing after sign-in, Dock badge clearing, each menu shortcut, and VoiceOver menu announcements. Signing, notarization, DMG production, and updater validation remain separate roadmap work.
 
 ## Resumen en español
 
-La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. Rust limita la navegación, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. El único IPC remoto permite operar la caché local cifrada y vuelve a validar el origen. Las sesiones nativas en Keychain, firma, notarización y updater se implementan en Issues posteriores.
+La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. Rust limita la navegación, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. El IPC remoto está cerrado a la caché cifrada, la sesión nativa y la experiencia nativa documentada. Las notificaciones requieren permiso, ocultan el contenido por defecto, evitan duplicados y solo abren objetivos validados después de autenticar. El menú nativo ofrece redacción, búsqueda, bandeja, actualización y ajustes con atajos estándar. La firma, notarización y el updater se implementan en Issues posteriores.

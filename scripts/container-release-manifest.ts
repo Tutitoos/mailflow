@@ -3,8 +3,7 @@ import { resolve } from "node:path";
 
 const EXPECTED_IMAGES = ["api", "auth", "backup", "web", "worker"] as const;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
-const IMAGE =
-  /^ghcr\.io\/tutitoos\/mailflow-(api|auth|backup|web|worker)$/;
+const IMAGE = /^ghcr\.io\/tutitoos\/mailflow-(api|auth|backup|web|worker)$/;
 const RELEASE = /^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/;
 const COMMIT = /^[a-f0-9]{40}$/;
 

@@ -72,3 +72,10 @@ The drill never requests a public certificate or starts application/data
 services. A real-domain certificate and complete healthy stack remain release
 acceptance on the target host, using the verified digests and private secrets
 described in [`deployment.md`](deployment.md).
+
+The operator documentation is executable policy too. `operator-docs.test.ts`
+checks EN/ES lifecycle parity, local links, secret inventory, immutable command
+forms and destructive warnings. `verify-operator-runbook.sh` creates two
+private temporary release records, validates both through the production guard,
+and proves that the generated edge configuration changes atomically without
+starting or mutating a live installation.

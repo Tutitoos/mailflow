@@ -123,5 +123,7 @@ jobs:
       - run: docker compose --env-file deploy/.env -f deploy/compose.yml config --quiet
       - name: Verify the production deployment contract
         run: bun test scripts/production-compose-policy.test.ts scripts/production-compose-script.test.ts
+      - name: Walk through the operator runbook
+        run: ./scripts/verify-operator-runbook.sh
       - name: Exercise the isolated production edge
         run: ./scripts/verify-production-edge.sh

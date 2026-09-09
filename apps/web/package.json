@@ -11,6 +11,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.11.1",
     "@lexical/html": "0.50.0",
     "@lexical/react": "0.50.0",
     "@sentry/react": "10.73.0",

@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-offline-cache"
+description = "Allows bounded reads and writes to Mailflow's encrypted account-scoped offline cache."
+commands.allow = [
+  "offline_cache_has_accounts",
+  "offline_cache_list_accounts",
+  "offline_cache_read",
+  "offline_cache_remove_account",
+  "offline_cache_store_accounts",
+  "offline_cache_write",
+]

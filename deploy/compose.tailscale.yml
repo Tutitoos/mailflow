@@ -1,0 +1,25 @@
+name: mailflow
+
+services:
+  # The public Traefik edge cannot share port 443 with Tailscale Serve. Keep it
+  # available only when an operator explicitly selects the public-edge profile.
+  traefik:
+    profiles: [public-edge]
+
+  tailscale-gateway:
+    image: nginx:1.29-alpine
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - ./nginx.tailscale.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+      auth: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:8080/health/live]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped

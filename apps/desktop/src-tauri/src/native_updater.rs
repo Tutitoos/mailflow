@@ -98,6 +98,14 @@ impl UpdaterConfig {
     }
 }
 
+pub fn plugin_enabled() -> bool {
+    should_register_plugin(UpdaterConfig::compile_time())
+}
+
+fn should_register_plugin(config: Result<Option<UpdaterConfig>, &'static str>) -> bool {
+    matches!(config, Ok(Some(_))) && cfg!(target_os = "macos")
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MailflowManifest {
@@ -584,6 +592,22 @@ mod tests {
         );
         assert!(UpdaterConfig::parse(Some("stable"), None, Some(TEST_PUBLIC_KEY)).is_err());
         assert!(UpdaterConfig::parse(Some("stable"), None, None).is_err());
+    }
+
+    #[test]
+    fn updater_plugin_requires_complete_trust_inputs() {
+        assert!(!should_register_plugin(Ok(None)));
+        assert!(!should_register_plugin(Err("update_config_invalid")));
+
+        let configured = UpdaterConfig::parse(
+            Some("stable"),
+            Some("https://updates.example.test/stable.json"),
+            Some("untrusted test public key material long enough"),
+        );
+        assert_eq!(
+            should_register_plugin(configured),
+            cfg!(target_os = "macos")
+        );
     }
 
     #[test]

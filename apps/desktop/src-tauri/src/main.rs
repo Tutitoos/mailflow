@@ -1,8 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Arc;
 use std::{error::Error, fmt};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder, webview::NewWindowResponse};
 use tauri_plugin_deep_link::DeepLinkExt;
+
+mod offline_cache;
+mod offline_commands;
 
 const DEV_ORIGIN: &str = "http://127.0.0.1:4310";
 const DESKTOP_MARKER: &str = "desktop=1";
@@ -36,12 +40,24 @@ fn main() {
                 .build(),
         )
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .invoke_handler(tauri::generate_handler![
+            offline_commands::offline_cache_has_accounts,
+            offline_commands::offline_cache_list_accounts,
+            offline_commands::offline_cache_read,
+            offline_commands::offline_cache_remove_account,
+            offline_commands::offline_cache_store_accounts,
+            offline_commands::offline_cache_write,
+        ])
         .setup(setup)
         .run(tauri::generate_context!())
         .expect("failed to run Mailflow desktop");
 }
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
+    let cache_directory = app.path().app_local_data_dir()?;
+    app.manage(Arc::new(offline_cache::OfflineCache::new(
+        cache_directory.join("offline-cache.sqlite3"),
+    )));
     let origin = configured_origin()?;
     let initial_url = app
         .deep_link()

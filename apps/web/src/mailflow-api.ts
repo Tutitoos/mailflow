@@ -1,3 +1,12 @@
+import {
+  desktopCacheKey,
+  readDesktopAccounts,
+  readDesktopCache,
+  removeDesktopAccount,
+  setDesktopCacheFallback,
+  storeDesktopAccounts,
+  writeDesktopCache,
+} from "./desktop-cache";
 import { isDesktopRuntime } from "./desktop-runtime";
 
 export type MailAccount = {
@@ -521,7 +530,7 @@ export async function startMicrosoftConnection(reconsent = false) {
 }
 
 export async function disconnectAccount(accountId: string) {
-  return request<{
+  const result = await request<{
     account: MailAccount;
     remoteRevoked: boolean;
     credentialsRemoved?: boolean;
@@ -529,6 +538,8 @@ export async function disconnectAccount(accountId: string) {
   }>(`/accounts/${accountId}`, {
     method: "DELETE",
   });
+  await removeDesktopAccount(accountId);
+  return result;
 }
 
 export async function refreshAccountCredentials(accountId: string) {
@@ -536,7 +547,20 @@ export async function refreshAccountCredentials(accountId: string) {
 }
 
 export async function loadMailAccounts(signal?: AbortSignal) {
-  return request<{ items: MailAccount[] }>("/accounts", { signal });
+  try {
+    const result = await request<{ items: MailAccount[] }>("/accounts", { signal });
+    await storeDesktopAccounts(result.items);
+    setDesktopCacheFallback(false);
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = await readDesktopAccounts<MailAccount>();
+    if (cached) {
+      setDesktopCacheFallback(true);
+      return cached;
+    }
+    throw error;
+  }
 }
 
 export async function loadSentryTelemetry(signal?: AbortSignal) {
@@ -674,11 +698,29 @@ export async function activateTranslationChanges(
 
 export async function loadMailNavigation(accountId: string, signal?: AbortSignal) {
   const query = new URLSearchParams({ accountId }).toString();
-  const [mailboxes, labels] = await Promise.all([
-    request<{ items: Mailbox[] }>(`/mailboxes?${query}`, { signal }),
-    request<{ items: MailLabel[] }>(`/labels?${query}`, { signal }),
-  ]);
-  return { mailboxes: mailboxes.items, labels: labels.items };
+  const cacheKey = "current";
+  try {
+    const [mailboxes, labels] = await Promise.all([
+      request<{ items: Mailbox[] }>(`/mailboxes?${query}`, { signal }),
+      request<{ items: MailLabel[] }>(`/labels?${query}`, { signal }),
+    ]);
+    const result = { mailboxes: mailboxes.items, labels: labels.items };
+    await writeDesktopCache(accountId, "navigation", cacheKey, result);
+    setDesktopCacheFallback(false);
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = await readDesktopCache<{ mailboxes: Mailbox[]; labels: MailLabel[] }>(
+      accountId,
+      "navigation",
+      cacheKey,
+    );
+    if (cached) {
+      setDesktopCacheFallback(true);
+      return cached;
+    }
+    throw error;
+  }
 }
 
 export async function loadInboxPage(
@@ -689,7 +731,21 @@ export async function loadInboxPage(
 ) {
   const query = new URLSearchParams({ accountId, category, limit: "50" });
   if (cursor) query.set("cursor", cursor);
-  return request<InboxPage>(`/threads?${query}`, { signal });
+  const cacheKey = desktopCacheKey(category, cursor);
+  try {
+    const result = await request<InboxPage>(`/threads?${query}`, { signal });
+    await writeDesktopCache(accountId, "inbox", cacheKey, result);
+    setDesktopCacheFallback(false);
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = await readDesktopCache<InboxPage>(accountId, "inbox", cacheKey);
+    if (cached) {
+      setDesktopCacheFallback(true);
+      return cached;
+    }
+    throw error;
+  }
 }
 
 export async function loadConversationPage(
@@ -700,7 +756,24 @@ export async function loadConversationPage(
 ) {
   const query = new URLSearchParams({ accountId });
   if (cursor) query.set("cursor", cursor);
-  return request<ConversationPage>(`/threads/${encodeURIComponent(threadId)}?${query}`, { signal });
+  const cacheKey = desktopCacheKey(threadId, cursor);
+  try {
+    const result = await request<ConversationPage>(
+      `/threads/${encodeURIComponent(threadId)}?${query}`,
+      { signal },
+    );
+    await writeDesktopCache(accountId, "conversation", cacheKey, result);
+    setDesktopCacheFallback(false);
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = await readDesktopCache<ConversationPage>(accountId, "conversation", cacheKey);
+    if (cached) {
+      setDesktopCacheFallback(true);
+      return cached;
+    }
+    throw error;
+  }
 }
 
 export async function searchMail(
@@ -711,7 +784,21 @@ export async function searchMail(
 ) {
   const query = new URLSearchParams({ accountId, q: expression, limit: "50" });
   if (cursor) query.set("cursor", cursor);
-  return request<SearchPage>(`/search?${query}`, { signal });
+  const cacheKey = desktopCacheKey(expression, cursor);
+  try {
+    const result = await request<SearchPage>(`/search?${query}`, { signal });
+    await writeDesktopCache(accountId, "search", cacheKey, result);
+    setDesktopCacheFallback(false);
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = await readDesktopCache<SearchPage>(accountId, "search", cacheKey);
+    if (cached) {
+      setDesktopCacheFallback(true);
+      return cached;
+    }
+    throw error;
+  }
 }
 
 export async function createMailActions(

@@ -8,6 +8,7 @@ import {
   signIn,
 } from "./auth-client";
 import { Button } from "./components/ui/button";
+import { hasDesktopOfflineAccounts, setDesktopCacheFallback } from "./desktop-cache";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import { loadTranslationCatalog } from "./mailflow-api";
 import { Brand } from "./pages";
@@ -234,6 +235,11 @@ export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNo
       }
     } catch {
       if (signal?.aborted) return;
+      if (await hasDesktopOfflineAccounts()) {
+        setDesktopCacheFallback(true);
+        setPhase("app");
+        return;
+      }
       setPhase("error");
     }
   }, []);

@@ -1,6 +1,6 @@
 # macOS desktop shell
 
-Mailflow for macOS is a Tauri 2 host for the same SPA served by a Mailflow installation. The web origin remains responsible for HTML, authentication cookies, REST, and WebSocket traffic. The desktop process does not proxy mail data, persist credentials, or grant native IPC access to remote content.
+Mailflow for macOS is a Tauri 2 host for the same SPA served by a Mailflow installation. The web origin remains responsible for HTML, authentication cookies, REST, and WebSocket traffic. The desktop process does not proxy provider credentials. Its only remote IPC surface is the bounded encrypted-cache API described in [`offline-cache.md`](offline-cache.md).
 
 ## Origins and builds
 
@@ -20,7 +20,7 @@ The main window permits navigation only when scheme, host, and effective port ma
 
 The pre-release macOS bundle identifier is `dev.tutitoos.mailflow`. Treat it as a stable application identity when adding Keychain access groups, signing, notarization, and updater signatures in later phases.
 
-The capability assigned to `main` is local-only and contains no native command permissions. Because the production window is remote, its scripts receive no Tauri IPC authority. Deep-link, external-open, single-instance, and window-state behavior executes in Rust.
+The capability assigned to `main` exposes only application commands for account-scoped offline-cache status, reads, writes, and erasure. It exposes no file path, SQL, shell, generic HTTP, opener, Keychain, or window command. Tauri first applies its remote capability and every Rust command independently checks that the top-level webview still matches the exact configured origin. Deep-link, external-open, single-instance, and window-state behavior remains entirely in Rust.
 
 ## OAuth and deep links
 
@@ -39,7 +39,7 @@ On macOS, deep links work only for a bundled and installed application because t
 
 Only one desktop process remains active. A second launch focuses the main window, and a deep-link launch is delivered to that instance. Window size and position are restored by the native window-state plugin. Normal Tauri shutdown saves that state; no mail content or protocol URL is written by Mailflow desktop.
 
-If the configured installation is unavailable, the operating-system webview shows its connection failure and no alternate origin is attempted. Offline mail is intentionally deferred to the encrypted SQLite cache work.
+After one successful desktop load, a desktop-only service worker keeps the versioned SPA shell available without caching API or authentication responses. If the installation becomes unavailable, the shell reads only authenticated local ciphertext that is still within its retention policy. It never attempts an alternate origin. A first launch cannot work offline because no shell or account cache exists yet.
 
 ## Validation
 
@@ -55,4 +55,4 @@ Before a release, install the produced `.app` and verify launch, every current S
 
 ## Resumen en español
 
-La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. El contenido remoto no recibe permisos IPC; Rust limita la navegación al origen configurado, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. La caché offline, Keychain, firma, notarización y updater se implementan en Issues posteriores.
+La aplicación de macOS carga la misma SPA desde el origen HTTPS fijado durante la compilación. Rust limita la navegación, abre OAuth y enlaces externos fuera del webview, valida callbacks `mailflow://` cerrados, conserva la ventana y mantiene una sola instancia. El único IPC remoto permite operar la caché local cifrada y vuelve a validar el origen. Las sesiones nativas en Keychain, firma, notarización y updater se implementan en Issues posteriores.

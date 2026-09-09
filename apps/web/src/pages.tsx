@@ -35,6 +35,8 @@ import { useNavigate } from "react-router";
 import { Button } from "./components/ui/button";
 import { type ComposeContext, ComposePanel } from "./composer";
 import { ConversationView } from "./conversation";
+import { desktopConnectivityEvent, isDesktopCacheFallback } from "./desktop-cache";
+import { isDesktopRuntime } from "./desktop-runtime";
 import { installTranslationCatalog, type Locale, type TranslationKey, translate } from "./i18n";
 import {
   APIError,
@@ -669,7 +671,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error" | "resync">("loading");
   const [refreshRevision, setRefreshRevision] = useState(0);
-  const [online, setOnline] = useState(() => navigator.onLine);
+  const [online, setOnline] = useState(() => navigator.onLine && !isDesktopCacheFallback());
   const [eventsConnected, setEventsConnected] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [starred, setStarred] = useState<Set<string>>(new Set());
@@ -744,7 +746,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRevision intentionally reloads the current cursor.
   useEffect(() => {
-    if (!activeAccountId || !online) return;
+    if (!activeAccountId) return;
     const controller = new AbortController();
     setLoadState("loading");
     void loadInboxPage(activeAccountId, category, pageCursor, controller.signal)
@@ -762,10 +764,10 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         if (!controller.signal.aborted) setLoadState("error");
       });
     return () => controller.abort();
-  }, [activeAccountId, category, online, pageCursor, refreshRevision]);
+  }, [activeAccountId, category, pageCursor, refreshRevision]);
 
   useEffect(() => {
-    if (!activeAccountId || !online || !submittedSearch) return;
+    if (!activeAccountId || !submittedSearch) return;
     const controller = new AbortController();
     setSearchLoadState("loading");
     void searchMail(activeAccountId, submittedSearch, searchCursor, controller.signal)
@@ -781,7 +783,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         }
       });
     return () => controller.abort();
-  }, [activeAccountId, online, searchCursor, submittedSearch]);
+  }, [activeAccountId, searchCursor, submittedSearch]);
 
   useEffect(() => {
     const becameOnline = () => {
@@ -789,11 +791,17 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       setRefreshRevision((current) => current + 1);
     };
     const becameOffline = () => setOnline(false);
+    const desktopConnectivity = (event: Event) => {
+      const offline = (event as CustomEvent<{ offline?: boolean }>).detail?.offline === true;
+      setOnline(navigator.onLine && !offline);
+    };
     window.addEventListener("online", becameOnline);
     window.addEventListener("offline", becameOffline);
+    window.addEventListener(desktopConnectivityEvent, desktopConnectivity);
     return () => {
       window.removeEventListener("online", becameOnline);
       window.removeEventListener("offline", becameOffline);
+      window.removeEventListener(desktopConnectivityEvent, desktopConnectivity);
     };
   }, []);
 
@@ -1140,13 +1148,13 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   {t("navigationPartial")}
                 </div>
               )}
-              {!online ? (
-                <div className="mail-state" role="status">
-                  <Inbox size={30} />
-                  <strong>{t("offline")}</strong>
-                  <span>{t("offlineDescription")}</span>
+              {!online && (
+                <div className="partial-banner" role="status">
+                  <strong>{t("offline")}</strong> ·{" "}
+                  {t(isDesktopRuntime() ? "desktopOfflineDescription" : "offlineDescription")}
                 </div>
-              ) : activeLoadState === "loading" ? (
+              )}
+              {activeLoadState === "loading" ? (
                 <div className="mail-state" role="status">
                   <span className="loading-spinner" />
                   <strong>{searching ? t("searchResults") : t("loadingInbox")}</strong>

@@ -39,6 +39,8 @@ tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
 tauri-plugin-window-state = "2.4.1"
 
 [dev-dependencies]
+base64 = "0.22.1"
+minisign-verify = "0.2.5"
 tempfile = "3.27.0"
 
 [features]

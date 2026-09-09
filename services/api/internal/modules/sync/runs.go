@@ -22,6 +22,7 @@ const (
 	RunRunning   RunState = "running"
 	RunCompleted RunState = "completed"
 	RunCancelled RunState = "cancelled"
+	RunFailed    RunState = "failed"
 
 	RecentWindow         = 90 * 24 * time.Hour
 	ReconciliationPeriod = 24 * time.Hour
@@ -53,6 +54,7 @@ type Run struct {
 	StartedAt       *time.Time      `json:"startedAt,omitempty"`
 	LastSuccessAt   *time.Time      `json:"lastSuccessAt,omitempty"`
 	CompletedAt     *time.Time      `json:"completedAt,omitempty"`
+	FailureCode     string          `json:"failureCode,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
 }
@@ -89,6 +91,8 @@ type RunStore interface {
 	StartRun(context.Context, string, string, string, int64, time.Time) (Run, error)
 	CommitPage(context.Context, CommitPageInput) (Run, error)
 	RequeueRun(context.Context, string, string, string, int64, time.Time) error
+	FailRun(context.Context, string, string, string, int64, string, time.Time) (Run, error)
+	RecoverFailedRun(context.Context, string, string, time.Time) (Run, error)
 	CancelRun(context.Context, string, string, string, time.Time) (Run, error)
 	DueRuns(context.Context, time.Time, int) ([]DueRun, error)
 	ExpediteReconciliation(context.Context, string, string, time.Time) (Run, error)

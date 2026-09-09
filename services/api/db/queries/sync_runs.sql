@@ -85,6 +85,44 @@ WHERE id = sqlc.arg(id)
   AND NOT cancel_requested
 RETURNING *;
 
+-- name: FailSyncRun :one
+UPDATE sync_runs SET
+  state = 'failed',
+  failure_code = sqlc.arg(failure_code),
+  version = version + 1,
+  updated_at = sqlc.arg(failed_at)
+FROM accounts
+WHERE sync_runs.id = sqlc.arg(id)
+  AND sync_runs.account_id = sqlc.arg(account_id)
+  AND sync_runs.version = sqlc.arg(expected_version)
+  AND sync_runs.state IN ('queued', 'running')
+  AND sync_runs.account_id = accounts.id
+  AND accounts.user_id = sqlc.arg(user_id)
+RETURNING sync_runs.*;
+
+-- name: RecoverFailedSyncRun :one
+WITH candidate AS (
+  SELECT sync_runs.id
+  FROM sync_runs
+  JOIN accounts ON accounts.id = sync_runs.account_id
+  WHERE sync_runs.account_id = sqlc.arg(account_id)
+    AND accounts.user_id = sqlc.arg(user_id)
+    AND accounts.disabled_at IS NULL
+    AND sync_runs.state = 'failed'
+  ORDER BY sync_runs.updated_at DESC, sync_runs.id DESC
+  LIMIT 1
+)
+UPDATE sync_runs SET
+  state = 'queued',
+  failure_code = NULL,
+  version = version + 1,
+  scheduled_for = sqlc.arg(recovered_at),
+  started_at = NULL,
+  updated_at = sqlc.arg(recovered_at)
+FROM candidate
+WHERE sync_runs.id = candidate.id
+RETURNING sync_runs.*;
+
 -- name: ExpediteSyncReconciliation :one
 UPDATE sync_runs
 SET scheduled_for = CASE WHEN state = 'queued' THEN sqlc.arg(requested_at) ELSE scheduled_for END,

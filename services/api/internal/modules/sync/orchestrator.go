@@ -175,10 +175,22 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 			}
 			return nil
 		}
+		failureCode := providerFailureCode(provider)
+		if job.Attempt+1 >= job.MaxAttempts {
+			failed, failErr := orchestrator.runs.FailRun(ctx, payload.UserID, payload.AccountID, payload.RunID, payload.Version, failureCode, orchestrator.now())
+			if failErr != nil && !errors.Is(failErr, ErrRunStale) {
+				return syncJobError{code: "sync_fail_state_failed"}
+			}
+			if failErr == nil {
+				orchestrator.observe(run.Phase, provider, "failed")
+				orchestrator.publish(payload.UserID, failed, "failed")
+			}
+			return syncJobError{code: failureCode}
+		}
 		orchestrator.requeue(payload)
 		orchestrator.observe(run.Phase, provider, "retry")
 		orchestrator.publish(payload.UserID, run, "queued")
-		return syncJobError{code: "sync_provider_failed", retryAfter: retryDelay(err)}
+		return syncJobError{code: failureCode, retryAfter: retryDelay(err)}
 	}
 	if !validPage(page) {
 		orchestrator.requeue(payload)
@@ -201,6 +213,19 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 		return orchestrator.enqueue(ctx, payload.UserID, committed)
 	}
 	return orchestrator.scheduleSuccessor(ctx, payload.UserID, committed)
+}
+
+func providerFailureCode(provider mail.ProviderKind) string {
+	switch provider {
+	case mail.ProviderGoogle:
+		return "sync_provider_google_failed"
+	case mail.ProviderMicrosoft:
+		return "sync_provider_microsoft_failed"
+	case mail.ProviderIMAP:
+		return "sync_provider_imap_failed"
+	default:
+		return "sync_provider_unknown_failed"
+	}
 }
 
 func (orchestrator *Orchestrator) scheduleSuccessor(ctx context.Context, user string, completed Run) error {

@@ -75,13 +75,24 @@ func (repository *RunRepository) StartRun(ctx context.Context, user, account, ru
 	if _, err := repository.GetRun(ctx, user, account, run); err != nil {
 		return Run{}, err
 	}
-	_, accountID, runID, _ := runIDs(user, account, run)
-	row, err := dbgen.New(repository.pool).StartSyncRun(ctx, dbgen.StartSyncRunParams{StartedAt: runTimestamp(now), ID: runID, AccountID: accountID, ExpectedVersion: expectedVersion})
+	userID, accountID, runID, _ := runIDs(user, account, run)
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Run{}, fmt.Errorf("begin sync run: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	row, err := dbgen.New(tx).StartSyncRun(ctx, dbgen.StartSyncRunParams{StartedAt: runTimestamp(now), ID: runID, AccountID: accountID, ExpectedVersion: expectedVersion})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Run{}, ErrRunStale
 	}
 	if err != nil {
 		return Run{}, fmt.Errorf("start sync run: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `update accounts set sync_state='syncing', updated_at=$1 where id=$2 and user_id=$3 and disabled_at is null`, now.UTC(), accountID, userID); err != nil {
+		return Run{}, fmt.Errorf("mark account syncing: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Run{}, fmt.Errorf("commit sync start: %w", err)
 	}
 	return mapRun(row), nil
 }
@@ -124,6 +135,11 @@ func (repository *RunRepository) CommitPage(ctx context.Context, input CommitPag
 	if err != nil {
 		return Run{}, fmt.Errorf("commit sync page: %w", err)
 	}
+	if nextState == RunCompleted {
+		if _, err := tx.Exec(ctx, `update accounts set sync_state='idle', updated_at=$1 where id=$2 and user_id=$3 and disabled_at is null`, input.CompletedAt.UTC(), accountID, userID); err != nil {
+			return Run{}, fmt.Errorf("mark account idle: %w", err)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Run{}, fmt.Errorf("commit sync transaction: %w", err)
 	}
@@ -143,6 +159,61 @@ func (repository *RunRepository) RequeueRun(ctx context.Context, user, account, 
 		return fmt.Errorf("requeue sync run: %w", err)
 	}
 	return nil
+}
+
+func (repository *RunRepository) FailRun(ctx context.Context, user, account, run string, expectedVersion int64, failureCode string, now time.Time) (Run, error) {
+	userID, accountID, runID, err := runIDs(user, account, run)
+	if err != nil || len(failureCode) < 6 || len(failureCode) > 101 {
+		return Run{}, ErrInvalidRun
+	}
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Run{}, fmt.Errorf("begin sync failure: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	row, err := dbgen.New(tx).FailSyncRun(ctx, dbgen.FailSyncRunParams{
+		FailureCode: pgtype.Text{String: failureCode, Valid: true}, FailedAt: runTimestamp(now), ID: runID, AccountID: accountID,
+		ExpectedVersion: expectedVersion, UserID: userID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrRunStale
+	}
+	if err != nil {
+		return Run{}, fmt.Errorf("fail sync run: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `update accounts set sync_state='error', updated_at=$1 where id=$2 and user_id=$3 and disabled_at is null`, now.UTC(), accountID, userID); err != nil {
+		return Run{}, fmt.Errorf("mark account failed: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Run{}, fmt.Errorf("commit sync failure: %w", err)
+	}
+	return mapRun(row), nil
+}
+
+func (repository *RunRepository) RecoverFailedRun(ctx context.Context, user, account string, now time.Time) (Run, error) {
+	userID, accountID, err := cursorIDs(user, account)
+	if err != nil {
+		return Run{}, ErrInvalidRun
+	}
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return Run{}, fmt.Errorf("begin sync recovery: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	row, err := dbgen.New(tx).RecoverFailedSyncRun(ctx, dbgen.RecoverFailedSyncRunParams{AccountID: accountID, UserID: userID, RecoveredAt: runTimestamp(now)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrRunNotFound
+	}
+	if err != nil {
+		return Run{}, fmt.Errorf("recover sync run: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `update accounts set sync_state='pending', updated_at=$1 where id=$2 and user_id=$3 and disabled_at is null`, now.UTC(), accountID, userID); err != nil {
+		return Run{}, fmt.Errorf("mark account recovery pending: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Run{}, fmt.Errorf("commit sync recovery: %w", err)
+	}
+	return mapRun(row), nil
 }
 
 func (repository *RunRepository) CancelRun(ctx context.Context, user, account, run string, now time.Time) (Run, error) {
@@ -221,9 +292,9 @@ func runTimestamp(value time.Time) pgtype.Timestamptz {
 }
 
 func mapRun(row dbgen.SyncRun) Run {
-	return Run{ID: uuid.UUID(row.ID.Bytes).String(), AccountID: uuid.UUID(row.AccountID.Bytes).String(), Phase: RunPhase(row.Phase), State: RunState(row.State), Checkpoint: append(json.RawMessage(nil), row.Checkpoint...), Version: row.Version, WindowStart: timePointer(row.WindowStart), AppliedCount: row.AppliedCount, CancelRequested: row.CancelRequested, ScheduledFor: row.ScheduledFor.Time.UTC(), StartedAt: timePointer(row.StartedAt), LastSuccessAt: timePointer(row.LastSuccessAt), CompletedAt: timePointer(row.CompletedAt), CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Run{ID: uuid.UUID(row.ID.Bytes).String(), AccountID: uuid.UUID(row.AccountID.Bytes).String(), Phase: RunPhase(row.Phase), State: RunState(row.State), Checkpoint: append(json.RawMessage(nil), row.Checkpoint...), Version: row.Version, WindowStart: timePointer(row.WindowStart), AppliedCount: row.AppliedCount, CancelRequested: row.CancelRequested, ScheduledFor: row.ScheduledFor.Time.UTC(), StartedAt: timePointer(row.StartedAt), LastSuccessAt: timePointer(row.LastSuccessAt), CompletedAt: timePointer(row.CompletedAt), FailureCode: row.FailureCode.String, CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
 }
 
 func mapDueRun(row dbgen.ListDueSyncRunsRow) Run {
-	return Run{ID: uuid.UUID(row.ID.Bytes).String(), AccountID: uuid.UUID(row.AccountID.Bytes).String(), Phase: RunPhase(row.Phase), State: RunState(row.State), Checkpoint: append(json.RawMessage(nil), row.Checkpoint...), Version: row.Version, WindowStart: timePointer(row.WindowStart), AppliedCount: row.AppliedCount, CancelRequested: row.CancelRequested, ScheduledFor: row.ScheduledFor.Time.UTC(), StartedAt: timePointer(row.StartedAt), LastSuccessAt: timePointer(row.LastSuccessAt), CompletedAt: timePointer(row.CompletedAt), CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Run{ID: uuid.UUID(row.ID.Bytes).String(), AccountID: uuid.UUID(row.AccountID.Bytes).String(), Phase: RunPhase(row.Phase), State: RunState(row.State), Checkpoint: append(json.RawMessage(nil), row.Checkpoint...), Version: row.Version, WindowStart: timePointer(row.WindowStart), AppliedCount: row.AppliedCount, CancelRequested: row.CancelRequested, ScheduledFor: row.ScheduledFor.Time.UTC(), StartedAt: timePointer(row.StartedAt), LastSuccessAt: timePointer(row.LastSuccessAt), CompletedAt: timePointer(row.CompletedAt), FailureCode: row.FailureCode.String, CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
 }

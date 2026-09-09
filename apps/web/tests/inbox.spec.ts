@@ -269,6 +269,27 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible({ timeout: 10_000 });
   expect(await page.locator(".message-row").count()).toBeLessThan(100);
 
+  await page.keyboard.press("/");
+  await expect(page.getByRole("combobox", { name: "Search mail" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  const reducedMotion = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.animationDuration = "1s";
+    probe.style.transitionDuration = "1s";
+    document.body.append(probe);
+    const styles = getComputedStyle(probe);
+    const result = {
+      preferred: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      animationDurationSeconds: Number.parseFloat(styles.animationDuration),
+      transitionDurationSeconds: Number.parseFloat(styles.transitionDuration),
+    };
+    probe.remove();
+    return result;
+  });
+  expect(reducedMotion.preferred).toBe(true);
+  expect(reducedMotion.animationDurationSeconds).toBeLessThanOrEqual(0.00001);
+  expect(reducedMotion.transitionDurationSeconds).toBeLessThanOrEqual(0.00001);
+
   await page.getByRole("button", { name: "Select Sender 0" }).click();
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(page.getByRole("button", { name: "Select Sender 0" })).toHaveClass(/checked/);
@@ -322,6 +343,14 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   });
   await search.press("Escape");
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Select Sender 0" }).click();
+  await page.keyboard.press("e");
+  await expect.poll(() => actionRequests.length).toBe(2);
+  expect(actionRequests[1]?.body).toMatchObject({
+    accountId: account.id,
+    kind: "archive",
+    targetIds: [syntheticThreads[0]?.id],
+  });
 
   await page.getByRole("tab", { name: "Promotions" }).click();
   await expect(page.getByText("No messages here")).toBeVisible();

@@ -79,3 +79,17 @@ forms and destructive warnings. `verify-operator-runbook.sh` creates two
 private temporary release records, validates both through the production guard,
 and proves that the generated edge configuration changes atomically without
 starting or mutating a live installation.
+
+## Product acceptance
+
+The 1.0 release candidate has a single repeatable gate for the 100,000-message
+performance target, six responsive widths, accessibility, keyboard navigation,
+reduced motion and durable service restarts:
+
+```bash
+make release-acceptance
+```
+
+The protected Google, Microsoft and IMAP timing matrix and the sanitized
+evidence format are documented in [`release-acceptance.md`](release-acceptance.md).
+Real provider accounts and private message data never enter public CI.

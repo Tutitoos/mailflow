@@ -118,10 +118,7 @@ func (stager *Stager) Prepare(ctx context.Context, now time.Time) (Manifest, err
 }
 
 func (stager *Stager) Cleanup() error {
-	if err := safeAbsolutePath(stager.config.Root); err != nil {
-		return err
-	}
-	return os.RemoveAll(stager.config.Root)
+	return emptyDirectory(stager.config.Root)
 }
 
 func copyTree(ctx context.Context, source, target string, maxFiles, maxBytes int64) (int64, int64, error) {
@@ -211,13 +208,30 @@ func writeJSONAtomic(path string, value any) error {
 }
 
 func resetDirectory(path string) error {
+	return emptyDirectory(path)
+}
+
+func emptyDirectory(path string) error {
 	if err := safeAbsolutePath(path); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(path); err != nil {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return os.MkdirAll(path, 0o700)
+	}
+	if err != nil || !info.IsDir() {
+		return ErrInvalidSource
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
 		return err
 	}
-	return os.MkdirAll(path, 0o700)
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(path, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func safeAbsolutePath(path string) error {

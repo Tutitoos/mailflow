@@ -113,7 +113,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
         .min_inner_size(900.0, 620.0)
         .resizable(true)
         .on_navigation(move |url| {
-            if same_origin(url, &navigation_origin) {
+            if allowed_navigation(url, &navigation_origin) {
                 return true;
             }
             open_external(url);
@@ -239,6 +239,18 @@ fn same_origin(candidate: &Url, origin: &Url) -> bool {
         && candidate.password().is_none()
 }
 
+fn allowed_navigation(candidate: &Url, origin: &Url) -> bool {
+    if same_origin(candidate, origin) {
+        return true;
+    }
+    let Some(blob_target) = candidate.as_str().strip_prefix("blob:") else {
+        return false;
+    };
+    Url::parse(blob_target)
+        .ok()
+        .is_some_and(|target| same_origin(&target, origin))
+}
+
 fn open_external(url: &Url) {
     if matches!(url.scheme(), "http" | "https" | "mailto") {
         let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
@@ -344,20 +356,27 @@ mod tests {
     }
 
     #[test]
-    fn navigation_allows_only_the_configured_origin() {
+    fn navigation_allows_the_origin_and_its_isolated_blob_documents() {
         let origin = Url::parse("https://mail.example.test/").unwrap();
-        assert!(same_origin(
+        assert!(allowed_navigation(
             &Url::parse("https://mail.example.test/admin/metrics").unwrap(),
             &origin
         ));
-        assert!(!same_origin(
-            &Url::parse("https://login.example.test/").unwrap(),
+        assert!(allowed_navigation(
+            &Url::parse("blob:https://mail.example.test/4f5fdd31").unwrap(),
             &origin
         ));
-        assert!(!same_origin(
-            &Url::parse("http://mail.example.test/").unwrap(),
-            &origin
-        ));
+
+        for denied in [
+            "https://login.example.test/",
+            "http://mail.example.test/",
+            "blob:https://login.example.test/4f5fdd31",
+            "blob:null/4f5fdd31",
+            "data:text/html,mail",
+            "javascript:alert(1)",
+        ] {
+            assert!(!allowed_navigation(&Url::parse(denied).unwrap(), &origin));
+        }
     }
 
     #[test]

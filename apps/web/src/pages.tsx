@@ -520,7 +520,7 @@ function MessageRow({
         className={starred ? "row-icon starred" : "row-icon"}
         type="button"
         onClick={onStar}
-        aria-label={`Star ${message.subject || message.senderName}`}
+        aria-label={`${starred ? "Unstar" : "Star"} ${message.subject || message.senderName}`}
         disabled={!actionsEnabled}
       >
         <Star size={16} fill={starred ? "currentColor" : "none"} />
@@ -595,7 +595,6 @@ function ContextRail({ t }: { t: Translator }) {
 function VirtualMessageList({
   messages,
   selected,
-  starred,
   onSelect,
   onStar,
   onOpen,
@@ -605,9 +604,8 @@ function VirtualMessageList({
 }: {
   messages: InboxThread[];
   selected: Set<string>;
-  starred: Set<string>;
   onSelect: (id: string) => void;
-  onStar: (id: string) => void;
+  onStar: (id: string, starred: boolean) => void;
   onOpen: (id: string) => void;
   onAction: (kind: MailActionKind, ids: string[]) => void;
   t: Translator;
@@ -638,10 +636,10 @@ function VirtualMessageList({
               <MessageRow
                 message={message}
                 selected={selected.has(message.id)}
-                starred={starred.has(message.id) || message.isStarred}
+                starred={message.isStarred}
                 onSelect={() => onSelect(message.id)}
                 onOpen={() => onOpen(message.id)}
-                onStar={() => onStar(message.id)}
+                onStar={() => onStar(message.id, message.isStarred)}
                 onArchive={() => onAction("archive", [message.id])}
                 onTrash={() => onAction("move_to_trash", [message.id])}
                 onUnread={() => onAction("mark_unread", [message.id])}
@@ -694,7 +692,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const [online, setOnline] = useState(() => navigator.onLine && !isDesktopCacheFallback());
   const [eventsConnected, setEventsConnected] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [starred, setStarred] = useState<Set<string>>(new Set());
   const [actionNotice, setActionNotice] = useState<"pending" | "failed" | "partial" | null>(null);
   const actionKeys = useRef(new Map<string, string>());
   const knownNativeThreads = useRef(new Map<string, Set<string>>());
@@ -856,11 +853,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
       .then((page) => {
         setThreads(page.items);
         setNextCursor(page.nextCursor);
-        setStarred((current) => {
-          const next = new Set(current);
-          for (const item of page.items) if (item.isStarred) next.add(item.id);
-          return next;
-        });
         setLoadState("ready");
       })
       .catch(() => {
@@ -869,6 +861,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     return () => controller.abort();
   }, [activeAccountId, category, pageCursor, refreshRevision]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRevision intentionally reloads the current search cursor.
   useEffect(() => {
     if (!activeAccountId || !submittedSearch) return;
     const controller = new AbortController();
@@ -886,7 +879,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         }
       });
     return () => controller.abort();
-  }, [activeAccountId, searchCursor, submittedSearch]);
+  }, [activeAccountId, refreshRevision, searchCursor, submittedSearch]);
 
   useEffect(() => {
     const becameOnline = () => {
@@ -1021,11 +1014,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     actionKeys.current.set(signature, key);
     const previousThreads = threads;
     const previousSearch = searchResults;
-    const previousStarred = new Set(starred);
     const targets = new Set(targetIds);
     const updateThread = (item: InboxThread) => ({
       ...item,
       isRead: kind === "mark_read" ? true : kind === "mark_unread" ? false : item.isRead,
+      isStarred: kind === "star" ? true : kind === "unstar" ? false : item.isStarred,
       isImportant:
         kind === "mark_important" ? true : kind === "mark_unimportant" ? false : item.isImportant,
     });
@@ -1043,6 +1036,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             ? {
                 ...item,
                 isRead: kind === "mark_read" ? true : kind === "mark_unread" ? false : item.isRead,
+                isStarred: kind === "star" ? true : kind === "unstar" ? false : item.isStarred,
                 isImportant:
                   kind === "mark_important"
                     ? true
@@ -1053,13 +1047,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             : item,
         ),
     );
-    if (kind === "star" || kind === "unstar") {
-      setStarred((current) => {
-        const next = new Set(current);
-        for (const id of targetIds) kind === "star" ? next.add(id) : next.delete(id);
-        return next;
-      });
-    }
     setSelected((current) => new Set([...current].filter((id) => !targets.has(id))));
     setActionNotice("pending");
     try {
@@ -1069,7 +1056,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     } catch {
       setThreads(previousThreads);
       setSearchResults(previousSearch);
-      setStarred(previousStarred);
       setActionNotice("failed");
     } finally {
       actionKeys.current.delete(signature);
@@ -1096,7 +1082,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
     };
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [selected, activeAccountId, online, threads, searchResults, starred]);
+  }, [selected, activeAccountId, online, threads, searchResults]);
 
   const toggleSelection = (id: string) => {
     setSelected((current) => {
@@ -1299,12 +1285,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                 <VirtualMessageList
                   messages={displayedThreads}
                   selected={selected}
-                  starred={starred}
                   onSelect={toggleSelection}
                   onOpen={setActiveThreadId}
                   onAction={(kind, ids) => void runAction(kind, ids)}
                   t={t}
-                  onStar={(id) => void runAction(starred.has(id) ? "unstar" : "star", [id])}
+                  onStar={(id, isStarred) => void runAction(isStarred ? "unstar" : "star", [id])}
                   actionsEnabled={canActions}
                 />
               ) : (

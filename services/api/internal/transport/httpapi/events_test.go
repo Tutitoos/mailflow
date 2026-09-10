@@ -53,7 +53,7 @@ func TestWebSocketAuthenticationReplayExpiryAndShutdown(t *testing.T) {
 	defer cancel()
 	registry := metrics.NewRegistry()
 	accountID := "0199ed3b-c950-7000-8000-000000000016"
-	activity := recordingClientActivity{activated: make(chan string, 1)}
+	activity := recordingClientActivity{activated: make(chan string, 4)}
 	app := httpapi.New(httpapi.Dependencies{
 		Admin: admin.NewService("test", registry), AuthAudience: testAudience, AuthIssuer: testIssuer,
 		AuthJWKSURL: keyServer.URL, CurrentUsers: fakeUserResolver{user: authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}},

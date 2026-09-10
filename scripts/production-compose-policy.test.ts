@@ -25,6 +25,7 @@ type Service = {
   read_only?: boolean;
   cap_drop?: string[];
   cap_add?: string[];
+  group_add?: string[];
   security_opt?: string[];
   mem_limit?: string;
   pids_limit?: number;
@@ -113,5 +114,9 @@ describe("production Compose policy", () => {
       if (name !== "postgres") expect(service.cap_drop, name).toContain("ALL");
     }
     expect(config.services.auth?.cap_add).toEqual(expect.arrayContaining(["SETGID", "SETUID"]));
+    expect(config.services.backup?.group_add).toEqual(["65532"]);
+    expect(config.services.backup?.volumes).toContainEqual(
+      expect.objectContaining({ target: "/data/cdn", read_only: true }),
+    );
   });
 });

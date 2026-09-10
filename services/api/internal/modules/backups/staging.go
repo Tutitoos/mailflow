@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,10 +70,14 @@ func (stager *Stager) Prepare(ctx context.Context, now time.Time) (Manifest, err
 		}
 	}
 	dumpPath := filepath.Join(stager.config.Root, "database", "mailflow.dump")
-	_, err := stager.runner.Run(ctx, Command{
+	databaseEnvironment, err := postgresEnvironment(stager.config.DatabaseURL)
+	if err != nil {
+		return Manifest{}, err
+	}
+	_, err = stager.runner.Run(ctx, Command{
 		Name: "pg_dump",
 		Args: []string{"--format=custom", "--no-owner", "--no-privileges", "--file", dumpPath},
-		Env:  map[string]string{"PGDATABASE": stager.config.DatabaseURL},
+		Env:  databaseEnvironment,
 	})
 	if err != nil {
 		return Manifest{}, fmt.Errorf("dump database: %w", err)
@@ -240,4 +245,34 @@ func safeAbsolutePath(path string) error {
 		return ErrInvalidPath
 	}
 	return nil
+}
+
+func postgresEnvironment(databaseURL string) (map[string]string, error) {
+	parsed, err := url.Parse(databaseURL)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.User == nil || parsed.Hostname() == "" {
+		return nil, ErrInvalidSource
+	}
+	database := strings.TrimPrefix(parsed.Path, "/")
+	if database == "" || strings.Contains(database, "/") {
+		return nil, ErrInvalidSource
+	}
+	password, hasPassword := parsed.User.Password()
+	if parsed.User.Username() == "" || !hasPassword || password == "" {
+		return nil, ErrInvalidSource
+	}
+	port := parsed.Port()
+	if port == "" {
+		port = "5432"
+	}
+	environment := map[string]string{
+		"PGHOST":     parsed.Hostname(),
+		"PGPORT":     port,
+		"PGUSER":     parsed.User.Username(),
+		"PGDATABASE": database,
+		"PGPASSWORD": password,
+	}
+	if sslMode := parsed.Query().Get("sslmode"); sslMode != "" {
+		environment["PGSSLMODE"] = sslMode
+	}
+	return environment, nil
 }

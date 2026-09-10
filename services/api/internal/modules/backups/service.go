@@ -201,7 +201,11 @@ func (service *Service) Restore(ctx context.Context, snapshotID, target string, 
 	if cdnErr != nil && !errors.Is(cdnErr, os.ErrNotExist) {
 		return Manifest{}, ErrInvalidSource
 	}
-	if _, err := service.runner.Run(ctx, Command{Name: "pg_restore", Args: []string{"--no-owner", "--no-privileges", "--exit-on-error", dump}, Env: map[string]string{"PGDATABASE": service.config.RestoreDatabaseURL}}); err != nil {
+	databaseEnvironment, err := postgresEnvironment(service.config.RestoreDatabaseURL)
+	if err != nil {
+		return Manifest{}, ErrInvalidSource
+	}
+	if _, err := service.runner.Run(ctx, Command{Name: "pg_restore", Args: []string{"--no-owner", "--no-privileges", "--exit-on-error", dump}, Env: databaseEnvironment}); err != nil {
 		return Manifest{}, err
 	}
 	if err := os.MkdirAll(service.config.RestoreCDNRoot, 0o700); err != nil {

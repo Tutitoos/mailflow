@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/ui/button";
 import type { ComposeContext } from "./composer";
+import { isDesktopRuntime } from "./desktop-runtime";
 import { type Locale, translate } from "./i18n";
 import {
   type ConversationMessage,
@@ -48,6 +49,32 @@ function readableBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function SafeMailFrame({ document, title }: { document: string; title: string }) {
+  const desktop = isDesktopRuntime();
+  const [desktopSource, setDesktopSource] = useState<string>();
+
+  useEffect(() => {
+    if (!desktop) {
+      setDesktopSource(undefined);
+      return;
+    }
+    const source = URL.createObjectURL(new Blob([document], { type: "text/html" }));
+    setDesktopSource(source);
+    return () => URL.revokeObjectURL(source);
+  }, [desktop, document]);
+
+  return (
+    <iframe
+      className="safe-mail-frame"
+      title={title}
+      sandbox="allow-popups"
+      referrerPolicy="no-referrer"
+      src={desktop ? desktopSource : undefined}
+      srcDoc={desktop ? undefined : document}
+    />
+  );
 }
 
 function MessageAttachmentCard({
@@ -184,12 +211,9 @@ function MessageCard({
             )}
           </div>
           {message.bodyHtml ? (
-            <iframe
-              className="safe-mail-frame"
+            <SafeMailFrame
               title={`${t("messageFrom")} ${from.name}`}
-              sandbox="allow-popups"
-              referrerPolicy="no-referrer"
-              srcDoc={buildSafeMailDocument(message.bodyHtml, allowRemoteImages)}
+              document={buildSafeMailDocument(message.bodyHtml, allowRemoteImages)}
             />
           ) : (
             <pre className="plain-mail-body">{message.bodyText || t("emptyMessage")}</pre>

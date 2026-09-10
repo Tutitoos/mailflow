@@ -59,6 +59,7 @@ type Dependencies struct {
 	CaptureSentry  bool
 	Shutdown       context.Context
 	Sync           SyncRequester
+	ClientActivity ClientActivity
 }
 
 type AccountLister interface {
@@ -69,6 +70,10 @@ type AccountLister interface {
 type SyncRequester interface {
 	Request(context.Context, string, string) (mailflowsync.Run, error)
 	StartInitial(context.Context, string, string) (mailflowsync.Run, error)
+}
+
+type ClientActivity interface {
+	Activate(context.Context, string, string) error
 }
 
 type InboxReader interface {
@@ -181,7 +186,7 @@ func New(deps Dependencies) *fiber.App {
 		}
 		return c.JSON(user)
 	})
-	v1.Get("/events", eventEndpoint(deps.Events, deps.Shutdown, deps.AuthIssuer))
+	v1.Get("/events", eventEndpoint(deps.Events, deps.Shutdown, deps.AuthIssuer, deps.Accounts, deps.ClientActivity))
 	v1.Get("/accounts", func(c fiber.Ctx) error {
 		user, ok := authbridge.UserFromContext(c.Context())
 		if !ok {

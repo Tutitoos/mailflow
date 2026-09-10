@@ -134,3 +134,17 @@ WHERE sync_runs.account_id = sqlc.arg(account_id)
   AND accounts.id = sync_runs.account_id
   AND accounts.user_id = sqlc.arg(user_id)
 RETURNING sync_runs.*;
+
+-- name: ExpediteSyncIncremental :one
+UPDATE sync_runs
+SET scheduled_for = sqlc.arg(requested_at),
+    updated_at = sqlc.arg(requested_at)
+FROM accounts
+WHERE sync_runs.account_id = sqlc.arg(account_id)
+  AND sync_runs.phase = 'incremental'
+  AND sync_runs.state = 'queued'
+  AND NOT sync_runs.cancel_requested
+  AND sync_runs.scheduled_for > sqlc.arg(requested_at)
+  AND accounts.id = sync_runs.account_id
+  AND accounts.user_id = sqlc.arg(user_id)
+RETURNING sync_runs.*;

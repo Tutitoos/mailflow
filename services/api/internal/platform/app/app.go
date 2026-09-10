@@ -106,5 +106,6 @@ func Build(version string, options ...Options) *fiber.App {
 		CaptureSentry:  runtimeOptions.SentryEnabled,
 		Shutdown:       runtimeOptions.Shutdown,
 		Sync:           runtimeOptions.Sync,
+		ClientActivity: runtimeOptions.Sync,
 	})
 }

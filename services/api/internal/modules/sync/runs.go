@@ -96,4 +96,5 @@ type RunStore interface {
 	CancelRun(context.Context, string, string, string, time.Time) (Run, error)
 	DueRuns(context.Context, time.Time, int) ([]DueRun, error)
 	ExpediteReconciliation(context.Context, string, string, time.Time) (Run, error)
+	ExpediteIncremental(context.Context, string, string, time.Time) (Run, error)
 }

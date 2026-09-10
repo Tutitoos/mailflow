@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const testDatabaseURL = "postgres://mailflow:private%21@postgres:5432/mailflow?sslmode=disable"
+
 type fakeRunner struct {
 	commands      []Command
 	failName      string
@@ -112,7 +114,7 @@ func TestStagerCreatesPrivateBoundedManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &fakeRunner{}
-	stager, err := NewStager(StagingConfig{Root: stage, CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: "postgres://private", MaxFiles: 10, MaxBytes: 1024}, runner)
+	stager, err := NewStager(StagingConfig{Root: stage, CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: testDatabaseURL, MaxFiles: 10, MaxBytes: 1024}, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +131,9 @@ func TestStagerCreatesPrivateBoundedManifest(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Join(stage, "secrets", "master_key")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("staged key permissions=%v err=%v", info, err)
+	}
+	if got, want := runner.commands[0].Env, map[string]string{"PGHOST": "postgres", "PGPORT": "5432", "PGUSER": "mailflow", "PGDATABASE": "mailflow", "PGPASSWORD": "private!", "PGSSLMODE": "disable"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("pg_dump environment=%v want=%v", got, want)
 	}
 	stageAfter, err := os.Stat(stage)
 	if err != nil || !os.SameFile(stageBefore, stageAfter) {
@@ -163,7 +168,7 @@ func TestStagerRejectsSymlinksAndLimits(t *testing.T) {
 	if err := os.Symlink(key, filepath.Join(cdn, "link")); err != nil {
 		t.Fatal(err)
 	}
-	stager, err := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: "postgres://db", MaxFiles: 10, MaxBytes: 1024}, &fakeRunner{})
+	stager, err := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: testDatabaseURL, MaxFiles: 10, MaxBytes: 1024}, &fakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +204,22 @@ func TestEmptyDirectoryRejectsFileAndSymlinkRoots(t *testing.T) {
 	}
 }
 
+func TestPostgresEnvironmentRejectsIncompleteURLs(t *testing.T) {
+	for name, databaseURL := range map[string]string{
+		"keyword DSN":      "host=postgres dbname=mailflow",
+		"missing user":     "postgres://postgres/mailflow",
+		"missing password": "postgres://mailflow@postgres/mailflow",
+		"missing host":     "postgres://mailflow:secret@/mailflow",
+		"missing database": "postgres://mailflow:secret@postgres",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := postgresEnvironment(databaseURL); !errors.Is(err, ErrInvalidSource) {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
 func TestBackupOnlySucceedsAfterVerificationAndRetention(t *testing.T) {
 	root := t.TempDir()
 	cdn := filepath.Join(root, "cdn")
@@ -216,7 +237,7 @@ func TestBackupOnlySucceedsAfterVerificationAndRetention(t *testing.T) {
 	}
 	runner := &fakeRunner{}
 	store := &fakeStore{}
-	stager, err := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: "postgres://private-db", MaxFiles: 10, MaxBytes: 1024}, runner)
+	stager, err := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: testDatabaseURL, MaxFiles: 10, MaxBytes: 1024}, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +290,7 @@ func TestBackupFailureIsNeverMarkedSuccessful(t *testing.T) {
 	}
 	runner := &fakeRunner{failName: "restic"}
 	store := &fakeStore{}
-	stager, _ := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: "postgres://db", MaxFiles: 10, MaxBytes: 1024}, runner)
+	stager, _ := NewStager(StagingConfig{Root: filepath.Join(root, "stage", "source"), CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: testDatabaseURL, MaxFiles: 10, MaxBytes: 1024}, runner)
 	service, _ := NewService(store, stager, runner, ServiceConfig{Repository: filepath.Join(root, "repo"), RepositoryPasswordFile: password})
 	if _, err := service.RunOnce(context.Background(), "command", time.Now()); err == nil || store.finished.State != "failed" || store.finished.ErrorCode != "repository_failed" {
 		t.Fatalf("finished=%+v err=%v", store.finished, err)
@@ -305,7 +326,7 @@ func TestRestoreVerifiesAndAppliesOnlyToEmptyTargets(t *testing.T) {
 	dummyStager := &Stager{config: StagingConfig{Root: filepath.Join(root, "stage")}, runner: runner}
 	service, err := NewService(&fakeStore{}, dummyStager, runner, ServiceConfig{
 		Repository: filepath.Join(root, "repository"), RepositoryPasswordFile: password,
-		RestoreDatabaseURL: "postgres://empty", RestoreCDNRoot: filepath.Join(root, "restored", "cdn"),
+		RestoreDatabaseURL: testDatabaseURL, RestoreCDNRoot: filepath.Join(root, "restored", "cdn"),
 		RestoreMasterKeyOutput: filepath.Join(root, "restored", "master_key"),
 	})
 	if err != nil {

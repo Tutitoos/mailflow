@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/admin"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/authbridge"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
@@ -23,6 +24,13 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+type recordingClientActivity struct{ activated chan string }
+
+func (activity recordingClientActivity) Activate(_ context.Context, userID, accountID string) error {
+	activity.activated <- userID + ":" + accountID
+	return nil
+}
 
 func TestWebSocketAuthenticationReplayExpiryAndShutdown(t *testing.T) {
 	client, prefix := testkit.Redis(t)
@@ -44,10 +52,13 @@ func TestWebSocketAuthenticationReplayExpiryAndShutdown(t *testing.T) {
 	shutdown, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	registry := metrics.NewRegistry()
+	accountID := "0199ed3b-c950-7000-8000-000000000016"
+	activity := recordingClientActivity{activated: make(chan string, 4)}
 	app := httpapi.New(httpapi.Dependencies{
 		Admin: admin.NewService("test", registry), AuthAudience: testAudience, AuthIssuer: testIssuer,
 		AuthJWKSURL: keyServer.URL, CurrentUsers: fakeUserResolver{user: authbridge.User{ID: testUserID, Email: "owner@example.test", Locale: "en"}},
-		Events: store, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(), Shutdown: shutdown,
+		Accounts:       fakeAccountLister{items: []accounts.Account{{ID: accountID, Provider: accounts.ProviderGoogle}}},
+		ClientActivity: activity, Events: store, Sentry: mailflowsentry.NewService(1024), Translations: translations.NewCatalog(), Shutdown: shutdown,
 	})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -75,6 +86,14 @@ func TestWebSocketAuthenticationReplayExpiryAndShutdown(t *testing.T) {
 	browser := dialBrowserEvents(t, url, token)
 	if browser.Subprotocol() != "mailflow.v1" {
 		t.Fatalf("negotiated subprotocol = %q", browser.Subprotocol())
+	}
+	select {
+	case activated := <-activity.activated:
+		if activated != testUserID+":"+accountID {
+			t.Fatalf("activated account = %q", activated)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("connected browser did not activate account polling")
 	}
 	_ = browser.Close(websocket.StatusNormalClosure, "browser authenticated")
 	first, err := store.Publish(context.Background(), testUserID, "system.status", json.RawMessage(`{"status":"one"}`))

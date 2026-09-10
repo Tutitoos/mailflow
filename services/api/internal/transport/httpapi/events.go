@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	eventWriteTimeout = 5 * time.Second
-	eventPongTimeout  = 45 * time.Second
-	eventPingInterval = 20 * time.Second
+	eventWriteTimeout    = 5 * time.Second
+	eventPongTimeout     = 45 * time.Second
+	eventPingInterval    = 20 * time.Second
+	eventActivityRefresh = time.Minute
 )
 
 type EventStream interface {
@@ -25,13 +26,24 @@ type EventStream interface {
 	Next(context.Context, string, string) ([]events.Envelope, error)
 }
 
-func eventEndpoint(stream EventStream, shutdown context.Context, origin string) fiber.Handler {
+func eventEndpoint(stream EventStream, shutdown context.Context, origin string, accounts AccountLister, activity ClientActivity) fiber.Handler {
 	origins := []string(nil)
 	if origin != "" {
 		origins = []string{origin}
 	}
 	upgrade := websocket.New(func(connection *websocket.Conn) {
-		serveEvents(connection, stream, shutdown)
+		serveEvents(connection, stream, shutdown, func(ctx context.Context, userID string) {
+			if accounts == nil || activity == nil {
+				return
+			}
+			items, err := accounts.List(ctx, userID)
+			if err != nil {
+				return
+			}
+			for _, account := range items {
+				_ = activity.Activate(ctx, userID, account.ID)
+			}
+		})
 	}, websocket.Config{
 		Origins: origins, AllowEmptyOrigin: true, Subprotocols: []string{"mailflow.v1"},
 		HandshakeTimeout: 5 * time.Second, ReadBufferSize: 1024, WriteBufferSize: 32 << 10,
@@ -76,7 +88,7 @@ func websocketBearer(c fiber.Ctx) error {
 	return c.Next()
 }
 
-func serveEvents(connection *websocket.Conn, stream EventStream, shutdown context.Context) {
+func serveEvents(connection *websocket.Conn, stream EventStream, shutdown context.Context, markActivity func(context.Context, string)) {
 	userID, _ := connection.Locals("mailflow.event.user").(string)
 	cursor, _ := connection.Locals("mailflow.event.cursor").(string)
 	if shutdown == nil {
@@ -84,6 +96,9 @@ func serveEvents(connection *websocket.Conn, stream EventStream, shutdown contex
 	}
 	ctx, cancel := context.WithCancel(shutdown)
 	defer cancel()
+	if markActivity != nil {
+		markActivity(ctx, userID)
+	}
 	connection.SetReadLimit(1024)
 	_ = connection.SetReadDeadline(time.Now().Add(eventPongTimeout))
 	connection.SetPongHandler(func(string) error {
@@ -117,6 +132,7 @@ func serveEvents(connection *websocket.Conn, stream EventStream, shutdown contex
 	}
 	cursor = latest
 	lastPing := time.Now()
+	lastActivity := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -141,6 +157,10 @@ func serveEvents(connection *websocket.Conn, stream EventStream, shutdown contex
 				return
 			}
 			lastPing = time.Now()
+		}
+		if markActivity != nil && time.Since(lastActivity) >= eventActivityRefresh {
+			markActivity(ctx, userID)
+			lastActivity = time.Now()
 		}
 	}
 }

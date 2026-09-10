@@ -261,6 +261,23 @@ func (repository *RunRepository) ExpediteReconciliation(ctx context.Context, use
 	return mapRun(row), nil
 }
 
+func (repository *RunRepository) ExpediteIncremental(ctx context.Context, user, account string, requestedAt time.Time) (Run, error) {
+	userID, accountID, err := cursorIDs(user, account)
+	if err != nil {
+		return Run{}, ErrInvalidRun
+	}
+	row, err := dbgen.New(repository.pool).ExpediteSyncIncremental(ctx, dbgen.ExpediteSyncIncrementalParams{
+		RequestedAt: runTimestamp(requestedAt), AccountID: accountID, UserID: userID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrRunNotFound
+	}
+	if err != nil {
+		return Run{}, fmt.Errorf("expedite incremental sync: %w", err)
+	}
+	return mapRun(row), nil
+}
+
 func validRunPhase(phase RunPhase, window *time.Time) bool {
 	if phase == PhaseRecent {
 		return window != nil && !window.IsZero()

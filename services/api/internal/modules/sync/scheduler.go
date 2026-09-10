@@ -21,6 +21,21 @@ func (scheduler *Scheduler) SetActivityTracker(activity ActivityMarker) {
 	scheduler.activity = activity
 }
 
+// Activate records a live client and pulls an idle incremental run into the
+// active polling window without enqueueing a duplicate delivery.
+func (scheduler *Scheduler) Activate(ctx context.Context, user, account string) error {
+	if scheduler.activity != nil {
+		if err := scheduler.activity.Touch(ctx, user, account); err != nil {
+			return err
+		}
+	}
+	_, err := scheduler.runs.ExpediteIncremental(ctx, user, account, scheduler.now().Add(ActivePollInterval))
+	if errors.Is(err, ErrRunNotFound) {
+		return nil
+	}
+	return err
+}
+
 func NewScheduler(runs RunStore, jobs JobEnqueuer) (*Scheduler, error) {
 	if runs == nil || jobs == nil {
 		return nil, errors.New("sync scheduler requires runs and queue")

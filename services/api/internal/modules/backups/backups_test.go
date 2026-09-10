@@ -101,6 +101,16 @@ func TestStagerCreatesPrivateBoundedManifest(t *testing.T) {
 	if err := os.WriteFile(key, []byte("private-master-key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "stale"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stageBefore, err := os.Stat(stage)
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := &fakeRunner{}
 	stager, err := NewStager(StagingConfig{Root: stage, CDNRoot: cdn, MasterKeyFile: key, DatabaseURL: "postgres://private", MaxFiles: 10, MaxBytes: 1024}, runner)
 	if err != nil {
@@ -119,6 +129,24 @@ func TestStagerCreatesPrivateBoundedManifest(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Join(stage, "secrets", "master_key")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("staged key permissions=%v err=%v", info, err)
+	}
+	stageAfter, err := os.Stat(stage)
+	if err != nil || !os.SameFile(stageBefore, stageAfter) {
+		t.Fatalf("staging root was replaced: before=%v after=%v err=%v", stageBefore, stageAfter, err)
+	}
+	if _, err := os.Stat(filepath.Join(stage, "stale")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale staging content remains: %v", err)
+	}
+	if err := stager.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	stageAfterCleanup, err := os.Stat(stage)
+	if err != nil || !os.SameFile(stageBefore, stageAfterCleanup) {
+		t.Fatalf("cleanup removed staging root: after=%v err=%v", stageAfterCleanup, err)
+	}
+	entries, err := os.ReadDir(stage)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("cleanup left staging content: entries=%v err=%v", entries, err)
 	}
 }
 

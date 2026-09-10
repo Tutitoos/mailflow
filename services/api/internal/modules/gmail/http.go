@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -156,7 +157,14 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		}
 		content, err := provider.normalizer.Normalize(bytes.NewReader(raw))
 		if err != nil {
-			return mail.ChangePage{}, err
+			if !recoverableMIMEFailure(err) {
+				return mail.ChangePage{}, err
+			}
+			// Keep the provider envelope and state so one unsafe MIME payload
+			// cannot pin the page cursor. Raw content is deliberately discarded;
+			// a later reconciliation can replace this bodyless placeholder after
+			// the normalizer learns how to handle the message safely.
+			content = mail.NormalizedMessageContent{}
 		}
 		if len(content.Attachments) > 0 {
 			if err := provider.mapAttachmentIDs(ctx, response.ID, &content); err != nil {
@@ -170,6 +178,12 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		page.Messages = append(page.Messages, remoteMessage(response.ID, response.ThreadID, milliseconds, response.LabelIDs, content))
 	}
 	return page, nil
+}
+
+func recoverableMIMEFailure(err error) bool {
+	return errors.Is(err, mail.ErrMalformedMIME) ||
+		errors.Is(err, mail.ErrMIMETooLarge) ||
+		errors.Is(err, mail.ErrTooManyParts)
 }
 
 func decodeBase64URL(value string, maxBytes int) ([]byte, bool) {

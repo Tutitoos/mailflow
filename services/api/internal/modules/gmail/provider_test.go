@@ -279,6 +279,11 @@ func TestProviderClassifiesFailuresWithoutResponseDetails(t *testing.T) {
 	if !errors.As(quota, &quotaError) || quotaError.Kind != ErrorQuota || strings.Contains(quota.Error(), "private") {
 		t.Fatalf("quota error = %v", quota)
 	}
+	daily := classify(http.StatusForbidden, "", []byte(`{"error":{"errors":[{"reason":"dailyLimitExceeded"}],"message":"private provider detail"}}`))
+	var dailyError *ProviderError
+	if !errors.As(daily, &dailyError) || dailyError.Kind != ErrorPermanent || dailyError.Reason != ReasonDailyLimit || strings.Contains(daily.Error(), "private") {
+		t.Fatalf("daily limit error = %v", daily)
+	}
 }
 
 func TestProviderFailureReasonIsClosedAndContentFree(t *testing.T) {
@@ -291,6 +296,7 @@ func TestProviderFailureReasonIsClosedAndContentFree(t *testing.T) {
 		{reason: ReasonInvalidPayload, want: "invalid_payload"},
 		{reason: ReasonAttachmentMapping, want: "attachment_mapping"},
 		{reason: ReasonInvalidEnvelope, want: "invalid_envelope"},
+		{reason: ReasonDailyLimit, want: "daily_limit"},
 		{reason: FailureReason("provider-private-detail"), want: ""},
 	} {
 		err := &ProviderError{Kind: ErrorPermanent, Reason: test.reason, StatusCode: 418}

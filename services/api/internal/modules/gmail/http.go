@@ -98,6 +98,7 @@ func (provider *Provider) json(ctx context.Context, method, path string, query u
 
 func classify(status int, retryAfter string, payload ...[]byte) error {
 	kind := ErrorPermanent
+	reason := FailureReason("")
 	switch {
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		kind = ErrorAuthorization
@@ -106,11 +107,15 @@ func classify(status int, retryAfter string, payload ...[]byte) error {
 	case status >= 500:
 		kind = ErrorTransient
 	}
-	if status == http.StatusForbidden && len(payload) > 0 && googleQuotaReason(payload[0]) {
-		kind = ErrorQuota
+	if status == http.StatusForbidden && len(payload) > 0 {
+		switch googleLimitReason(payload[0]) {
+		case "dailyLimitExceeded":
+			kind, reason = ErrorPermanent, ReasonDailyLimit
+		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded":
+			kind = ErrorQuota
+		}
 	}
-	reason := FailureReason("")
-	if kind == ErrorPermanent {
+	if kind == ErrorPermanent && reason == "" {
 		if status == http.StatusNotFound {
 			reason = ReasonNotFound
 		} else {
@@ -120,7 +125,7 @@ func classify(status int, retryAfter string, payload ...[]byte) error {
 	return &ProviderError{Kind: kind, Reason: reason, StatusCode: status, RetryAfter: parseRetryAfter(retryAfter)}
 }
 
-func googleQuotaReason(payload []byte) bool {
+func googleLimitReason(payload []byte) string {
 	var response struct {
 		Error struct {
 			Errors []struct {
@@ -129,15 +134,15 @@ func googleQuotaReason(payload []byte) bool {
 		} `json:"error"`
 	}
 	if json.Unmarshal(payload, &response) != nil {
-		return false
+		return ""
 	}
 	for _, item := range response.Error.Errors {
 		switch item.Reason {
 		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded":
-			return true
+			return item.Reason
 		}
 	}
-	return false
+	return ""
 }
 
 func parseRetryAfter(value string) time.Duration {

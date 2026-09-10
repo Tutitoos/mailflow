@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type WebSocketRoute } from "@playwright/test";
 
 const account = {
   id: "0199ed3b-c950-7000-8000-000000000018",
@@ -32,6 +32,9 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   }));
   let remoteImageRequests = 0;
   let searchRequests = 0;
+  let searchResultStarred = false;
+  const searchStarredResponses: boolean[] = [];
+  let eventSocket: WebSocketRoute | undefined;
   const actionRequests: Array<{ key: string | null; body: unknown }> = [];
   const draftRequests: Array<{ method: string; url: string; body: unknown }> = [];
   const sendRequests: Array<{ key: string | null; body: unknown }> = [];
@@ -63,6 +66,9 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     route.fulfill({ json: { user: { id: "test-owner" } } }),
   );
   await page.route("**/api/auth/token", (route) => route.fulfill({ json: { token: "test-jwt" } }));
+  await page.routeWebSocket("**/api/v1/events", (socket) => {
+    eventSocket = socket;
+  });
   await page.route("**/api/v1/translations/en", (route) =>
     route.fulfill({
       json: {
@@ -175,6 +181,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   );
   await page.route("**/api/v1/search?**", (route) => {
     searchRequests += 1;
+    searchStarredResponses.push(searchResultStarred);
     return route.fulfill({
       json: {
         items: [
@@ -188,7 +195,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
             preview: "Matched local search content",
             sentAt: "2026-09-07T17:00:00Z",
             isRead: true,
-            isStarred: false,
+            isStarred: searchResultStarred,
             isImportant: false,
             hasAttachment: false,
             attachmentCount: 0,
@@ -278,6 +285,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
 
   await page.goto("/");
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => Boolean(eventSocket)).toBe(true);
   expect(await page.locator(".message-row").count()).toBeLessThan(100);
 
   await page.keyboard.press("/");
@@ -352,6 +360,31 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Search Sender", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=quarterly\+from%3Asearch-sender%40example\.test/u);
   expect(searchRequests).toBe(1);
+  searchResultStarred = true;
+  eventSocket?.send(
+    JSON.stringify({
+      version: 1,
+      cursor: "1-0",
+      type: "mail.changed",
+      timestamp: "2026-09-07T18:00:00Z",
+      payload: { accountId: account.id },
+    }),
+  );
+  await expect.poll(() => searchRequests).toBe(2);
+  expect(searchStarredResponses.at(-1)).toBe(true);
+  await expect(page.getByRole("button", { name: "Unstar Quarterly result" })).toBeVisible();
+  searchResultStarred = false;
+  eventSocket?.send(
+    JSON.stringify({
+      version: 1,
+      cursor: "2-0",
+      type: "mail.changed",
+      timestamp: "2026-09-07T18:00:01Z",
+      payload: { accountId: account.id },
+    }),
+  );
+  await expect.poll(() => searchRequests).toBe(3);
+  await expect(page.getByRole("button", { name: "Star Quarterly result" })).toBeVisible();
   await page.getByRole("button", { name: "Select Quarterly result" }).click();
   await page.getByRole("button", { name: "Mark unread" }).first().click();
   await expect.poll(() => actionRequests.length).toBe(2);

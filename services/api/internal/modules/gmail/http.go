@@ -54,6 +54,9 @@ func decodePageCursor(cursor mail.SyncCursor, kind string) (string, error) {
 }
 
 func (provider *Provider) json(ctx context.Context, method, path string, query url.Values, body []byte, destination any) error {
+	if err := provider.quota.Wait(ctx, quotaCost(method, path)); err != nil {
+		return &ProviderError{Kind: ErrorTransient}
+	}
 	endpoint := provider.baseURL + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()

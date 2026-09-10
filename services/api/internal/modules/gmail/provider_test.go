@@ -71,13 +71,17 @@ func gmailFixture(t *testing.T) (*Provider, *httptest.Server, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := NewWithBaseURL("test-access", server.URL+"/gmail/v1/users/me", server.Client(), normalizer)
+	provider, err := newProvider("test-access", server.URL+"/gmail/v1/users/me", server.Client(), normalizer, immediateQuotaLimiter{})
 	if err != nil {
 		server.Close()
 		t.Fatal(err)
 	}
 	return provider, server, requests
 }
+
+type immediateQuotaLimiter struct{}
+
+func (immediateQuotaLimiter) Wait(context.Context, int) error { return nil }
 
 func TestProviderMapsProfileLabelsAndPaginatedChanges(t *testing.T) {
 	provider, server, _ := gmailFixture(t)

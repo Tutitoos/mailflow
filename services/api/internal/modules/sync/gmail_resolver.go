@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/accounts"
@@ -29,13 +30,15 @@ type GmailAccountResolver struct {
 	http       *http.Client
 	normalizer mail.MIMEMessageNormalizer
 	now        func() time.Time
+	mu         sync.Mutex
+	limiters   map[string]gmail.QuotaLimiter
 }
 
 func NewGmailAccountResolver(accountStore GmailAccountStore, tokens GmailTokenRefresher, client *http.Client, normalizer mail.MIMEMessageNormalizer) (*GmailAccountResolver, error) {
 	if accountStore == nil || tokens == nil || normalizer == nil {
 		return nil, errors.New("Gmail account resolver configuration is invalid")
 	}
-	return &GmailAccountResolver{accounts: accountStore, tokens: tokens, http: client, normalizer: normalizer, now: func() time.Time { return time.Now().UTC() }}, nil
+	return &GmailAccountResolver{accounts: accountStore, tokens: tokens, http: client, normalizer: normalizer, now: func() time.Time { return time.Now().UTC() }, limiters: make(map[string]gmail.QuotaLimiter)}, nil
 }
 
 func (resolver *GmailAccountResolver) ResolveGmail(ctx context.Context, user, accountID string) (GmailProvider, error) {
@@ -64,5 +67,17 @@ func (resolver *GmailAccountResolver) ResolveGmail(ctx context.Context, user, ac
 			return nil, errors.New("Gmail credentials could not be stored")
 		}
 	}
-	return gmail.New(token.AccessToken, resolver.http, resolver.normalizer)
+	return gmail.NewWithQuotaLimiter(token.AccessToken, resolver.http, resolver.normalizer, resolver.quotaLimiter(user, accountID))
+}
+
+func (resolver *GmailAccountResolver) quotaLimiter(user, accountID string) gmail.QuotaLimiter {
+	key := user + "\x00" + accountID
+	resolver.mu.Lock()
+	defer resolver.mu.Unlock()
+	limiter := resolver.limiters[key]
+	if limiter == nil {
+		limiter = gmail.NewQuotaLimiter()
+		resolver.limiters[key] = limiter
+	}
+	return limiter
 }

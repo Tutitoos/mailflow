@@ -19,10 +19,14 @@ type RemotePageWriter struct{}
 func NewRemotePageWriter() *RemotePageWriter { return &RemotePageWriter{} }
 
 func (writer *RemotePageWriter) ApplyGmailPage(ctx context.Context, tx pgx.Tx, user, account string, catalog CatalogPage, page ChangePage) error {
-	return writer.ApplyRemotePage(ctx, tx, user, account, catalog, page)
+	return writer.applyRemotePage(ctx, tx, user, account, catalog, page, true)
 }
 
 func (writer *RemotePageWriter) ApplyRemotePage(ctx context.Context, tx pgx.Tx, user, account string, catalog CatalogPage, page ChangePage) error {
+	return writer.applyRemotePage(ctx, tx, user, account, catalog, page, false)
+}
+
+func (writer *RemotePageWriter) applyRemotePage(ctx context.Context, tx pgx.Tx, user, account string, catalog CatalogPage, page ChangePage, gmailMemberships bool) error {
 	userID, accountID, err := ownerAccountIDs(user, account)
 	if err != nil {
 		return ErrInvalidMessage
@@ -105,6 +109,25 @@ func (writer *RemotePageWriter) ApplyRemotePage(ctx context.Context, tx pgx.Tx, 
 		})
 		if err != nil {
 			return fmt.Errorf("upsert remote message: %w", err)
+		}
+		if gmailMemberships {
+			if _, err := queries.DeleteMessageMailboxMemberships(ctx, dbgen.DeleteMessageMailboxMembershipsParams{MessageID: message.ID, AccountID: accountID, UserID: userID}); err != nil {
+				return fmt.Errorf("replace Gmail mailbox memberships: %w", err)
+			}
+			if _, err := queries.DeleteMessageLabelMemberships(ctx, dbgen.DeleteMessageLabelMembershipsParams{MessageID: message.ID, AccountID: accountID, UserID: userID}); err != nil {
+				return fmt.Errorf("replace Gmail label memberships: %w", err)
+			}
+			for _, labelID := range remote.LabelIDs {
+				if _, err := queries.LinkMessageMailboxByRemoteID(ctx, dbgen.LinkMessageMailboxByRemoteIDParams{MessageID: message.ID, AccountID: accountID, UserID: userID, MailboxRemoteID: labelID}); err != nil {
+					return fmt.Errorf("link Gmail mailbox membership: %w", err)
+				}
+				if _, err := queries.LinkMessageLabelByRemoteID(ctx, dbgen.LinkMessageLabelByRemoteIDParams{MessageID: message.ID, AccountID: accountID, UserID: userID, LabelRemoteID: optionalText(labelID)}); err != nil {
+					return fmt.Errorf("link Gmail label membership: %w", err)
+				}
+			}
+			if _, err := queries.LinkMessageLabelByCategory(ctx, dbgen.LinkMessageLabelByCategoryParams{MessageID: message.ID, AccountID: accountID, UserID: userID, Category: optionalText(string(remote.Category))}); err != nil {
+				return fmt.Errorf("link Gmail category membership: %w", err)
+			}
 		}
 		for _, location := range remote.Locations {
 			if !validRemoteLocation(location) {
@@ -229,7 +252,19 @@ func validRemoteMessage(remote RemoteMessage) bool {
 		Subject: remote.Content.Subject, BodyText: remote.Content.BodyText, BodyHTML: remote.Content.BodyHTML,
 		Addresses: remote.Content.Addresses, Attachments: remote.Content.Attachments,
 	}
-	return boundedText(remote.ThreadID, 512) && validCategory(remote.Category) && validMessageInput(input)
+	return boundedText(remote.ThreadID, 512) && validCategory(remote.Category) && validRemoteLabelIDs(remote.LabelIDs) && validMessageInput(input)
+}
+
+func validRemoteLabelIDs(values []string) bool {
+	if len(values) > 10_000 {
+		return false
+	}
+	for _, value := range values {
+		if !boundedText(value, 512) {
+			return false
+		}
+	}
+	return true
 }
 
 func validRemoteLocation(location RemoteLocation) bool {

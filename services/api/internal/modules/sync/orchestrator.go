@@ -74,6 +74,11 @@ type syncJobError struct {
 	retryAfter time.Duration
 }
 
+const (
+	syncStandardMaxAttempts = 8
+	syncQuotaMaxAttempts    = 32
+)
+
 func (err syncJobError) Error() string        { return err.code }
 func (err syncJobError) JobErrorCode() string { return err.code }
 func (err syncJobError) RetryDelay() time.Duration {
@@ -176,7 +181,7 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 			return nil
 		}
 		failureCode := providerFailureCode(provider, err)
-		if job.Attempt+1 >= job.MaxAttempts {
+		if job.Attempt+1 >= syncFailureAttemptLimit(provider, err, job.MaxAttempts) {
 			failed, failErr := orchestrator.runs.FailRun(ctx, payload.UserID, payload.AccountID, payload.RunID, payload.Version, failureCode, orchestrator.now())
 			if failErr != nil && !errors.Is(failErr, ErrRunStale) {
 				return syncJobError{code: "sync_fail_state_failed"}
@@ -255,6 +260,8 @@ func googlePermanentFailureCode(err error) string {
 			return "sync_provider_google_permanent_attachment_mapping_failed"
 		case "invalid_envelope":
 			return "sync_provider_google_permanent_invalid_envelope_failed"
+		case "daily_limit":
+			return "sync_provider_google_permanent_daily_limit_failed"
 		}
 	}
 	return "sync_provider_google_permanent_failed"
@@ -308,11 +315,25 @@ func (orchestrator *Orchestrator) enqueue(ctx context.Context, user string, run 
 	if err != nil {
 		return syncJobError{code: "sync_encode_failed"}
 	}
-	_, _, err = orchestrator.jobs.Enqueue(ctx, SyncExecuteJobKind, payload, queue.EnqueueOptions{IdempotencyKey: fmt.Sprintf("sync:%s:%d", run.ID, run.Version), MaxAttempts: 8})
+	_, _, err = orchestrator.jobs.Enqueue(ctx, SyncExecuteJobKind, payload, queue.EnqueueOptions{IdempotencyKey: fmt.Sprintf("sync:%s:%d", run.ID, run.Version), MaxAttempts: syncQuotaMaxAttempts})
 	if err != nil {
 		return syncJobError{code: "sync_enqueue_failed"}
 	}
 	return nil
+}
+
+func syncFailureAttemptLimit(provider mail.ProviderKind, err error, queueMaximum int) int {
+	limit := syncStandardMaxAttempts
+	if provider == mail.ProviderGoogle {
+		var classified interface{ SyncFailureCategory() string }
+		if errors.As(err, &classified) && classified.SyncFailureCategory() == "quota" {
+			limit = syncQuotaMaxAttempts
+		}
+	}
+	if queueMaximum > 0 && queueMaximum < limit {
+		return queueMaximum
+	}
+	return limit
 }
 
 func (orchestrator *Orchestrator) release(lease Lease) {

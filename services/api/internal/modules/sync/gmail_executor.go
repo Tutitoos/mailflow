@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const gmailPageSize = 100
+const gmailPageSize = 50
 
 type GmailProvider interface {
 	Profile(context.Context) (mail.ProviderProfile, error)

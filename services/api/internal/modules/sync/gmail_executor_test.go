@@ -25,6 +25,7 @@ type fakeGmailProvider struct {
 	after          *time.Time
 	before         *time.Time
 	backfills      int
+	limit          int
 }
 
 func (*fakeGmailProvider) Profile(context.Context) (mail.ProviderProfile, error) {
@@ -39,8 +40,9 @@ func (provider *fakeGmailProvider) Changes(context.Context, mail.SyncCursor) (ma
 	}
 	return mail.ChangePage{Messages: []mail.RemoteMessage{{RemoteID: "changed"}}, NextCursor: mail.SyncCursor{Kind: "google_history", Value: []byte(`{"historyId":"11"}`)}}, nil
 }
-func (provider *fakeGmailProvider) Backfill(_ context.Context, cursor mail.SyncCursor, after, before *time.Time, _ int) (mail.ChangePage, error) {
+func (provider *fakeGmailProvider) Backfill(_ context.Context, cursor mail.SyncCursor, after, before *time.Time, limit int) (mail.ChangePage, error) {
 	provider.after, provider.before = after, before
+	provider.limit = limit
 	provider.backfills++
 	if len(cursor.Value) == 0 && provider.backfills == 1 {
 		return mail.ChangePage{Messages: []mail.RemoteMessage{{RemoteID: "recent"}}, NextCursor: mail.SyncCursor{Kind: "google_backfill", Value: []byte("page-2")}, HasMore: true}, nil
@@ -79,7 +81,7 @@ func TestGmailExecutorCarriesSnapshotAcrossRecentHistoricalAndIncrementalPhases(
 	window := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 	run := Run{AccountID: "0199ed3b-c950-7000-8000-000000000016", Phase: PhaseRecent, Checkpoint: json.RawMessage(`{}`), WindowStart: &window}
 	first, err := executor.FetchPage(context.Background(), "0199ed3b-c950-7000-8000-000000000001", run)
-	if err != nil || !first.HasMore || provider.after == nil || !provider.after.Equal(window) || provider.before != nil {
+	if err != nil || !first.HasMore || provider.after == nil || !provider.after.Equal(window) || provider.before != nil || provider.limit != 50 {
 		t.Fatalf("first recent page = %+v, %v", first, err)
 	}
 	if err := first.Apply(context.Background(), nil); err != nil || writer.catalogs != 1 || writer.messages != 1 {

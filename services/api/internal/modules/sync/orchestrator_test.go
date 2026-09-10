@@ -177,6 +177,49 @@ func (expiredHistoryExecutor) FetchPage(context.Context, string, Run) (SyncPage,
 	return SyncPage{}, ErrRemoteCursorInvalid
 }
 
+type fixedFailureExecutor struct{ err error }
+
+func (executor fixedFailureExecutor) FetchPage(context.Context, string, Run) (SyncPage, error) {
+	return SyncPage{}, executor.err
+}
+
+func TestOrchestratorGivesOnlyGmailQuotaAnExtendedBoundedRetryBudget(t *testing.T) {
+	_, pool, userID, accountID := cursorFixture(t)
+	repository := NewRunRepository(pool)
+	jobs, leases := &fakeSyncQueue{}, &fakeLeases{}
+	quotaFailure := &providerPageError{provider: mail.ProviderGoogle, cause: &gmail.ProviderError{Kind: gmail.ErrorQuota, StatusCode: 429}}
+	orchestrator, err := NewOrchestrator(repository, jobs, leases, fixedFailureExecutor{err: quotaFailure}, nil, metrics.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 10, 8, 0, 0, 0, time.UTC)
+	orchestrator.now = func() time.Time { return now }
+	run, err := orchestrator.StartReconciliation(context.Background(), userID, accountID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := jobs.pop(t)
+	if job.MaxAttempts != syncQuotaMaxAttempts {
+		t.Fatalf("queue attempts = %d, want %d", job.MaxAttempts, syncQuotaMaxAttempts)
+	}
+	job.Attempt = syncStandardMaxAttempts - 1
+	if err := orchestrator.Handle(context.Background(), job); err == nil || err.Error() != "sync_provider_google_quota_failed" {
+		t.Fatalf("quota retry = %v", err)
+	}
+	requeued, err := repository.GetRun(context.Background(), userID, accountID, run.ID)
+	if err != nil || requeued.State != RunQueued || requeued.FailureCode != "" {
+		t.Fatalf("quota run after standard budget = %+v, %v", requeued, err)
+	}
+	job.Attempt = syncQuotaMaxAttempts - 1
+	if err := orchestrator.Handle(context.Background(), job); err == nil || err.Error() != "sync_provider_google_quota_failed" {
+		t.Fatalf("terminal quota = %v", err)
+	}
+	failed, err := repository.GetRun(context.Background(), userID, accountID, run.ID)
+	if err != nil || failed.State != RunFailed || failed.FailureCode != "sync_provider_google_quota_failed" {
+		t.Fatalf("quota run after extended budget = %+v, %v", failed, err)
+	}
+}
+
 func TestOrchestratorReplacesExpiredIncrementalHistoryWithBoundedRecentRecovery(t *testing.T) {
 	_, pool, userID, accountID := cursorFixture(t)
 	repository := NewRunRepository(pool)
@@ -277,7 +320,7 @@ func TestTerminalProviderFailureCanBeRecoveredWithoutDuplicatingTheRun(t *testin
 		t.Fatal(err)
 	}
 	terminal := jobs.pop(t)
-	terminal.Attempt = terminal.MaxAttempts - 1
+	terminal.Attempt = syncStandardMaxAttempts - 1
 	if err := orchestrator.Handle(context.Background(), terminal); err == nil || err.Error() != "sync_provider_unknown_failed" {
 		t.Fatalf("terminal failure = %v", err)
 	}
@@ -332,6 +375,7 @@ func TestProviderFailureCodePreservesOnlyAllowlistedGmailCategory(t *testing.T) 
 		{name: "invalid payload", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonInvalidPayload}, want: "sync_provider_google_permanent_invalid_payload_failed"},
 		{name: "attachment mapping", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonAttachmentMapping}, want: "sync_provider_google_permanent_attachment_mapping_failed"},
 		{name: "invalid envelope", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonInvalidEnvelope}, want: "sync_provider_google_permanent_invalid_envelope_failed"},
+		{name: "daily limit", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonDailyLimit, StatusCode: 403}, want: "sync_provider_google_permanent_daily_limit_failed"},
 		{name: "forged reason", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.FailureReason("private-provider-text")}, want: "sync_provider_google_permanent_failed"},
 		{name: "unknown kind", err: &gmail.ProviderError{Kind: gmail.ErrorKind("private-provider-text"), StatusCode: 418}, want: "sync_provider_google_failed"},
 		{name: "untyped", err: errors.New("private provider response"), want: "sync_provider_google_failed"},

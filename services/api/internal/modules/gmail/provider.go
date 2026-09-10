@@ -34,6 +34,7 @@ const (
 	ReasonInvalidPayload    FailureReason = "invalid_payload"
 	ReasonAttachmentMapping FailureReason = "attachment_mapping"
 	ReasonInvalidEnvelope   FailureReason = "invalid_envelope"
+	ReasonDailyLimit        FailureReason = "daily_limit"
 )
 
 var ErrInvalidCursor = errors.New("invalid Gmail cursor")
@@ -65,7 +66,7 @@ func (providerError *ProviderError) SyncFailureCategory() string {
 // responses, identifiers, URLs, and message content never cross this boundary.
 func (providerError *ProviderError) SyncFailureReason() string {
 	switch providerError.Reason {
-	case ReasonNotFound, ReasonRejected, ReasonInvalidPayload, ReasonAttachmentMapping, ReasonInvalidEnvelope:
+	case ReasonNotFound, ReasonRejected, ReasonInvalidPayload, ReasonAttachmentMapping, ReasonInvalidEnvelope, ReasonDailyLimit:
 		return string(providerError.Reason)
 	default:
 		return ""

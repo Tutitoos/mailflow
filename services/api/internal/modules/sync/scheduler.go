@@ -108,7 +108,7 @@ func (scheduler *Scheduler) enqueue(ctx context.Context, user string, run Run) e
 	if err != nil {
 		return syncJobError{code: "sync_encode_failed"}
 	}
-	_, _, err = scheduler.jobs.Enqueue(ctx, SyncExecuteJobKind, payload, queue.EnqueueOptions{IdempotencyKey: fmt.Sprintf("sync:%s:%d", run.ID, run.Version), MaxAttempts: 8})
+	_, _, err = scheduler.jobs.Enqueue(ctx, SyncExecuteJobKind, payload, queue.EnqueueOptions{IdempotencyKey: fmt.Sprintf("sync:%s:%d", run.ID, run.Version), MaxAttempts: syncQuotaMaxAttempts})
 	if err != nil {
 		return syncJobError{code: "sync_enqueue_failed"}
 	}

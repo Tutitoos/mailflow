@@ -714,6 +714,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const canAttachments = activeAccount ? accountSupports(activeAccount, "attachments") : false;
   const canCategories = activeAccount ? accountSupports(activeAccount, "categories") : false;
   const canLabels = activeAccount ? accountSupports(activeAccount, "labels") : false;
+  const actionLabelId = canLabels ? labels.find((label) => label.kind === "user")?.id : undefined;
 
   const refreshNativeAccount = useCallback(
     async (accountId: string, shouldNotify: boolean, signal?: AbortSignal) => {
@@ -1153,14 +1154,14 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                 setComposeOpen(true);
                 setSidebarCollapsed(true);
               }}
-              onAction={(kind) => {
-                void runAction(kind, [activeThreadId]);
+              onAction={(kind, labelId) => {
+                void runAction(kind, [activeThreadId], labelId);
                 if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
               }}
               canActions={canActions}
               canCompose={canCompose}
               canAttachments={canAttachments}
-              canLabels={canLabels}
+              labelId={actionLabelId}
             />
           ) : (
             <>
@@ -1210,12 +1211,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                 onTrash={() => void runAction("move_to_trash", [...selected])}
                 onUnread={() => void runAction("mark_unread", [...selected])}
                 onLabel={() => {
-                  const label = labels.find((item) => item.kind === "user");
-                  if (label) void runAction("add_label", [...selected], label.id);
+                  if (actionLabelId) void runAction("add_label", [...selected], actionLabelId);
                 }}
                 t={t}
                 actionsEnabled={canActions}
-                labelsEnabled={canLabels}
+                labelsEnabled={Boolean(actionLabelId)}
               />
               {!searching && canCategories && (
                 <CategoryTabs

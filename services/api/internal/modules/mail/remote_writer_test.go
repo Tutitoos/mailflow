@@ -13,11 +13,15 @@ func TestRemotePageWriterMaterializesIdempotentlyAndRecoversDeletion(t *testing.
 	stamp := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
 	catalog := CatalogPage{
 		Mailboxes: []RemoteMailbox{{RemoteID: "INBOX", Name: "Inbox", Role: MailboxInbox, Selectable: true, TotalCount: 1, UnreadCount: 1}},
-		Labels:    []RemoteLabel{{RemoteID: "CATEGORY_PERSONAL", Name: "Primary", Kind: LabelCategory, Category: categoryPointer(CategoryPrimary), TotalCount: 1, UnreadCount: 1}},
+		Labels: []RemoteLabel{
+			{RemoteID: "CATEGORY_PERSONAL", Name: "Primary", Kind: LabelCategory, Category: categoryPointer(CategoryPrimary), TotalCount: 1, UnreadCount: 1},
+			{RemoteID: "Label_1", Name: "Fixture", Kind: LabelUser, TotalCount: 1},
+		},
 	}
 	page := ChangePage{Messages: []RemoteMessage{{
 		RemoteID: "remote-message", ThreadID: "remote-thread", SentAt: stamp, Category: CategoryPrimary,
-		Content: NormalizedMessageContent{Subject: "Sanitized fixture", BodyText: "Fixture body", Addresses: []MessageAddressInput{{Role: AddressFrom, Address: "sender@example.test"}}, Attachments: []AttachmentInput{{RemoteID: "attachment", Filename: "fixture.txt", MediaType: "text/plain", Disposition: "attachment", SizeBytes: 12}}},
+		LabelIDs: []string{"INBOX", "CATEGORY_PERSONAL", "Label_1"},
+		Content:  NormalizedMessageContent{Subject: "Sanitized fixture", BodyText: "Fixture body", Addresses: []MessageAddressInput{{Role: AddressFrom, Address: "sender@example.test"}}, Attachments: []AttachmentInput{{RemoteID: "attachment", Filename: "fixture.txt", MediaType: "text/plain", Disposition: "attachment", SizeBytes: 12}}},
 	}}}
 	for attempt := 0; attempt < 2; attempt++ {
 		tx, err := pool.Begin(ctx)
@@ -32,13 +36,30 @@ func TestRemotePageWriterMaterializesIdempotentlyAndRecoversDeletion(t *testing.
 			t.Fatal(err)
 		}
 	}
-	for table, expected := range map[string]int{"mailboxes": 1, "labels": 1, "threads": 1, "messages": 1, "message_addresses": 1, "message_attachments": 1} {
+	for table, expected := range map[string]int{"mailboxes": 1, "labels": 2, "threads": 1, "messages": 1, "message_addresses": 1, "message_attachments": 1, "message_mailboxes": 1, "message_labels": 2} {
 		var count int
 		if err := pool.QueryRow(ctx, "select count(*) from "+table).Scan(&count); err != nil || count != expected {
 			t.Fatalf("%s count = %d, %v", table, count, err)
 		}
 	}
+	page.Messages[0].LabelIDs = nil
 	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.ApplyGmailPage(ctx, tx, userID, accountID, CatalogPage{}, page); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for table, expected := range map[string]int{"message_mailboxes": 0, "message_labels": 1} {
+		var count int
+		if err := pool.QueryRow(ctx, "select count(*) from "+table).Scan(&count); err != nil || count != expected {
+			t.Fatalf("replaced %s count = %d, %v", table, count, err)
+		}
+	}
+	tx, err = pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

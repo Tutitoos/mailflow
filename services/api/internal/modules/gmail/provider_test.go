@@ -157,6 +157,106 @@ func TestProviderBackfillActionsDraftSendAndAttachment(t *testing.T) {
 	}
 }
 
+func TestProviderMapsAndDownloadsEmbeddedAttachmentPartsFromRaw(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: Sender <sender@example.test>",
+		"To: Owner <owner@example.test>",
+		"Subject: Embedded attachment fixture",
+		"Message-ID: <embedded@example.test>",
+		"Content-Type: multipart/mixed; boundary=fixture",
+		"",
+		"--fixture",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Fixture body",
+		"--fixture",
+		"Content-Type: application/pdf",
+		"Content-Disposition: attachment; filename=one.pdf",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte("one")),
+		"--fixture",
+		"Content-Type: image/png",
+		"Content-Disposition: inline",
+		"Content-ID: <fixture-image@example.test>",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte("two")),
+		"--fixture--",
+		"",
+	}, "\r\n")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gmail/v1/users/me/messages/message-1", func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Query().Get("format") == "raw" {
+			writeJSON(response, map[string]string{"raw": base64.RawURLEncoding.EncodeToString([]byte(raw))})
+			return
+		}
+		writeJSON(response, map[string]any{"payload": map[string]any{"mimeType": "multipart/mixed", "parts": []any{
+			map[string]any{"mimeType": "text/plain", "body": map[string]string{"data": "safe-inline-body"}},
+			map[string]any{"filename": "one.pdf", "mimeType": "application/pdf", "body": map[string]string{"attachmentId": "attachment-1"}},
+			map[string]any{"mimeType": "image/png", "body": map[string]string{"data": "safe-inline-image"}},
+		}}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	normalizer, _ := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+	provider, err := newProvider("test-access", server.URL+"/gmail/v1/users/me", server.Client(), normalizer, immediateQuotaLimiter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := normalizer.Normalize(strings.NewReader(raw))
+	if err != nil || len(content.Attachments) != 2 {
+		t.Fatalf("normalized attachments=%d error=%v", len(content.Attachments), err)
+	}
+	if err := provider.mapAttachmentIDs(context.Background(), "message-1", &content); err != nil {
+		t.Fatal(err)
+	}
+	if content.Attachments[0].RemoteID != "attachment-1" || content.Attachments[1].RemoteID != rawAttachmentPrefix+"1" {
+		t.Fatalf("attachment references=%q,%q", content.Attachments[0].RemoteID, content.Attachments[1].RemoteID)
+	}
+	attachment, err := provider.DownloadAttachment(context.Background(), "message-1", content.Attachments[1].RemoteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(attachment)
+	_ = attachment.Close()
+	if string(payload) != "two" {
+		t.Fatalf("embedded attachment bytes=%d", len(payload))
+	}
+}
+
+func TestRawAttachmentReferenceRejectsForgedIndexes(t *testing.T) {
+	for _, value := range []string{"", "-1", "01", "1024", "invalid"} {
+		if _, ok := rawAttachmentIndex(rawAttachmentPrefix + value); ok {
+			t.Fatalf("forged raw attachment index accepted: %q", value)
+		}
+	}
+}
+
+func TestGmailAttachmentCandidateMatchesBoundedMIMEKinds(t *testing.T) {
+	for _, test := range []struct {
+		filename      string
+		mediaType     string
+		attachmentID  string
+		disposition   bool
+		wantCandidate bool
+	}{
+		{mediaType: "text/plain", wantCandidate: false},
+		{mediaType: "text/html; charset=utf-8", wantCandidate: false},
+		{mediaType: "multipart/alternative", wantCandidate: false},
+		{filename: "note.txt", mediaType: "text/plain", wantCandidate: true},
+		{mediaType: "text/plain", disposition: true, wantCandidate: true},
+		{mediaType: "image/png", wantCandidate: true},
+		{mediaType: "text/plain", attachmentID: "attachment-1", wantCandidate: true},
+	} {
+		got := gmailAttachmentCandidate(test.filename, test.mediaType, test.attachmentID, test.disposition)
+		if got != test.wantCandidate {
+			t.Fatalf("candidate filename=%q media_type=%q attachment_id=%t disposition=%t got=%t want=%t", test.filename, test.mediaType, test.attachmentID != "", test.disposition, got, test.wantCandidate)
+		}
+	}
+}
+
 func TestProviderClassifiesFailuresWithoutResponseDetails(t *testing.T) {
 	for _, test := range []struct {
 		status int

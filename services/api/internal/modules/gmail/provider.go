@@ -80,6 +80,10 @@ type Provider struct {
 	quota       QuotaLimiter
 }
 
+type rawAttachmentExtractor interface {
+	ExtractAttachment(io.Reader, int) ([]byte, mail.AttachmentInput, error)
+}
+
 func New(accessToken string, client *http.Client, normalizer mail.MIMEMessageNormalizer) (*Provider, error) {
 	return NewWithQuotaLimiter(accessToken, client, normalizer, NewQuotaLimiter())
 }
@@ -373,6 +377,31 @@ func (provider *Provider) DeleteDraft(ctx context.Context, draftID string) error
 func (provider *Provider) DownloadAttachment(ctx context.Context, messageID, attachmentID string) (io.ReadCloser, error) {
 	if messageID == "" || attachmentID == "" {
 		return nil, &ProviderError{Kind: ErrorPermanent}
+	}
+	if strings.HasPrefix(attachmentID, rawAttachmentPrefix) {
+		index, ok := rawAttachmentIndex(attachmentID)
+		if !ok {
+			return nil, &ProviderError{Kind: ErrorPermanent, Reason: ReasonAttachmentMapping}
+		}
+		extractor, ok := provider.normalizer.(rawAttachmentExtractor)
+		if !ok {
+			return nil, &ProviderError{Kind: ErrorPermanent, Reason: ReasonAttachmentMapping}
+		}
+		var rawResponse struct {
+			Raw string `json:"raw"`
+		}
+		if err := provider.json(ctx, http.MethodGet, "/messages/"+url.PathEscape(messageID), url.Values{"format": {"raw"}}, nil, &rawResponse); err != nil {
+			return nil, err
+		}
+		raw, ok := decodeBase64URL(rawResponse.Raw, maxDecodedPayloadBytes)
+		if !ok {
+			return nil, &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidPayload}
+		}
+		payload, _, err := extractor.ExtractAttachment(bytes.NewReader(raw), index)
+		if err != nil {
+			return nil, &ProviderError{Kind: ErrorPermanent, Reason: ReasonAttachmentMapping}
+		}
+		return io.NopCloser(bytes.NewReader(payload)), nil
 	}
 	var response struct {
 		Data string `json:"data"`

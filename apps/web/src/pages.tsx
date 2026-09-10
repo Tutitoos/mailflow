@@ -364,7 +364,8 @@ function MailToolbar({
   selectedCount,
   onArchive,
   onTrash,
-  onUnread,
+  onReadState,
+  readAction,
   onLabel,
   t,
   actionsEnabled,
@@ -381,7 +382,8 @@ function MailToolbar({
   selectedCount: number;
   onArchive: () => void;
   onTrash: () => void;
-  onUnread: () => void;
+  onReadState: () => void;
+  readAction: "mark_read" | "mark_unread";
   onLabel: () => void;
   t: Translator;
   actionsEnabled: boolean;
@@ -410,7 +412,11 @@ function MailToolbar({
             <Button size="icon" aria-label={t("delete")} onClick={onTrash}>
               <Trash2 size={17} />
             </Button>
-            <Button size="icon" aria-label={t("markUnread")} onClick={onUnread}>
+            <Button
+              size="icon"
+              aria-label={t(readAction === "mark_read" ? "markRead" : "markUnread")}
+              onClick={onReadState}
+            >
               <Mail size={17} />
             </Button>
             {labelsEnabled && (
@@ -486,8 +492,9 @@ function MessageRow({
   onOpen,
   onArchive,
   onTrash,
-  onUnread,
+  onReadToggle,
   onImportant,
+  readActionLabel,
   openLabel,
   actionsEnabled,
 }: {
@@ -499,8 +506,9 @@ function MessageRow({
   onOpen: () => void;
   onArchive: () => void;
   onTrash: () => void;
-  onUnread: () => void;
+  onReadToggle: () => void;
   onImportant: () => void;
+  readActionLabel: string;
   openLabel: string;
   actionsEnabled: boolean;
 }) {
@@ -563,7 +571,7 @@ function MessageRow({
           <Button size="icon" aria-label="Delete" onClick={onTrash}>
             <Trash2 size={16} />
           </Button>
-          <Button size="icon" aria-label="Mark unread" onClick={onUnread}>
+          <Button size="icon" aria-label={readActionLabel} onClick={onReadToggle}>
             <Mail size={16} />
           </Button>
         </div>
@@ -642,12 +650,17 @@ function VirtualMessageList({
                 onStar={() => onStar(message.id, message.isStarred)}
                 onArchive={() => onAction("archive", [message.id])}
                 onTrash={() => onAction("move_to_trash", [message.id])}
-                onUnread={() => onAction("mark_unread", [message.id])}
+                onReadToggle={() =>
+                  onAction(message.isRead ? "mark_unread" : "mark_read", [message.id])
+                }
                 onImportant={() =>
                   onAction(message.isImportant ? "mark_unimportant" : "mark_important", [
                     message.id,
                   ])
                 }
+                readActionLabel={`${t(message.isRead ? "markUnread" : "markRead")} ${
+                  message.subject || message.senderName
+                }`}
                 openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
                 actionsEnabled={actionsEnabled}
               />
@@ -956,6 +969,11 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   const searching = submittedSearch !== "";
   const displayedThreads = searching ? searchThreads : threads;
   const activeLoadState = searching ? searchLoadState : loadState;
+  const selectedReadAction = displayedThreads.some(
+    (thread) => selected.has(thread.id) && !thread.isRead,
+  )
+    ? "mark_read"
+    : "mark_unread";
 
   const submitSearch = (value: string) => {
     if (!value.trim()) {
@@ -1195,7 +1213,8 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                 selectedCount={selected.size}
                 onArchive={() => void runAction("archive", [...selected])}
                 onTrash={() => void runAction("move_to_trash", [...selected])}
-                onUnread={() => void runAction("mark_unread", [...selected])}
+                onReadState={() => void runAction(selectedReadAction, [...selected])}
+                readAction={selectedReadAction}
                 onLabel={() => {
                   if (actionLabelId) void runAction("add_label", [...selected], actionLabelId);
                 }}

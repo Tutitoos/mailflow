@@ -12,6 +12,7 @@ const account = {
 test("live inbox virtualizes large account-scoped pages and preserves selection", async ({
   page,
 }, testInfo) => {
+  testInfo.setTimeout(testInfo.project.name === "desktop-large" ? 60_000 : 30_000);
   // Exercise the 100k acceptance target once; responsive projects use a
   // smaller page so the six-project suite does not duplicate a large fixture.
   const itemCount = testInfo.project.name === "desktop-large" ? 100_000 : 500;
@@ -394,12 +395,27 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
     kind: "mark_unread",
     targetIds: [syntheticThreads[0]?.id],
   });
+  await expect(
+    page.getByRole("button", { name: "Mark read Quarterly result", includeHidden: true }),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "Select Quarterly result" }).click();
+  await expect(page.getByRole("button", { name: "Mark read" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Mark read" }).first().click();
+  await expect.poll(() => actionRequests.length).toBe(3);
+  expect(actionRequests[2]?.body).toMatchObject({
+    accountId: account.id,
+    kind: "mark_read",
+    targetIds: [syntheticThreads[0]?.id],
+  });
+  await expect(
+    page.getByRole("button", { name: "Mark unread Quarterly result", includeHidden: true }),
+  ).toHaveCount(1);
   await search.press("Escape");
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Select Sender 0" }).click();
   await page.keyboard.press("e");
-  await expect.poll(() => actionRequests.length).toBe(3);
-  expect(actionRequests[2]?.body).toMatchObject({
+  await expect.poll(() => actionRequests.length).toBe(4);
+  expect(actionRequests[3]?.body).toMatchObject({
     accountId: account.id,
     kind: "archive",
     targetIds: [syntheticThreads[0]?.id],

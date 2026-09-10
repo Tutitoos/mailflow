@@ -57,3 +57,21 @@ func TestGmailAccountResolverRefreshesExpiredEncryptedCredentials(t *testing.T) 
 		t.Fatal("refreshed credentials were not persisted correctly")
 	}
 }
+
+func TestGmailAccountResolverSharesQuotaOnlyWithinAnAccount(t *testing.T) {
+	normalizer, err := mail.NewNormalizer(mail.DefaultMIMEPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := NewGmailAccountResolver(&resolverAccounts{}, &resolverTokens{}, nil, normalizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := resolver.quotaLimiter("user-1", "account-1")
+	if first != resolver.quotaLimiter("user-1", "account-1") {
+		t.Fatal("same account received different quota limiters")
+	}
+	if first == resolver.quotaLimiter("user-1", "account-2") || first == resolver.quotaLimiter("user-2", "account-1") {
+		t.Fatal("different accounts shared a quota limiter")
+	}
+}

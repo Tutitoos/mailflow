@@ -44,21 +44,30 @@ type Provider struct {
 	baseURL     string
 	http        *http.Client
 	normalizer  mail.MIMEMessageNormalizer
+	quota       QuotaLimiter
 }
 
 func New(accessToken string, client *http.Client, normalizer mail.MIMEMessageNormalizer) (*Provider, error) {
-	return NewWithBaseURL(accessToken, defaultBaseURL, client, normalizer)
+	return NewWithQuotaLimiter(accessToken, client, normalizer, NewQuotaLimiter())
 }
 
 func NewWithBaseURL(accessToken, baseURL string, client *http.Client, normalizer mail.MIMEMessageNormalizer) (*Provider, error) {
+	return newProvider(accessToken, baseURL, client, normalizer, NewQuotaLimiter())
+}
+
+func NewWithQuotaLimiter(accessToken string, client *http.Client, normalizer mail.MIMEMessageNormalizer, limiter QuotaLimiter) (*Provider, error) {
+	return newProvider(accessToken, defaultBaseURL, client, normalizer, limiter)
+}
+
+func newProvider(accessToken, baseURL string, client *http.Client, normalizer mail.MIMEMessageNormalizer, limiter QuotaLimiter) (*Provider, error) {
 	parsed, err := url.Parse(baseURL)
-	if accessToken == "" || err != nil || !parsed.IsAbs() || normalizer == nil {
+	if accessToken == "" || err != nil || !parsed.IsAbs() || normalizer == nil || limiter == nil {
 		return nil, errors.New("gmail provider configuration is invalid")
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	return &Provider{accessToken: accessToken, baseURL: strings.TrimRight(baseURL, "/"), http: client, normalizer: normalizer}, nil
+	return &Provider{accessToken: accessToken, baseURL: strings.TrimRight(baseURL, "/"), http: client, normalizer: normalizer, quota: limiter}, nil
 }
 
 func (*Provider) Kind() mail.ProviderKind { return mail.ProviderGoogle }

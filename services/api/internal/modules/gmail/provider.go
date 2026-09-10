@@ -19,6 +19,8 @@ const defaultBaseURL = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 type ErrorKind string
 
+type FailureReason string
+
 const (
 	ErrorAuthorization ErrorKind = "authorization"
 	ErrorQuota         ErrorKind = "quota"
@@ -26,11 +28,20 @@ const (
 	ErrorPermanent     ErrorKind = "permanent"
 )
 
+const (
+	ReasonNotFound          FailureReason = "not_found"
+	ReasonRejected          FailureReason = "rejected"
+	ReasonInvalidPayload    FailureReason = "invalid_payload"
+	ReasonAttachmentMapping FailureReason = "attachment_mapping"
+	ReasonInvalidEnvelope   FailureReason = "invalid_envelope"
+)
+
 var ErrInvalidCursor = errors.New("invalid Gmail cursor")
 var ErrHistoryExpired = errors.New("Gmail history cursor expired")
 
 type ProviderError struct {
 	Kind       ErrorKind
+	Reason     FailureReason
 	StatusCode int
 	RetryAfter time.Duration
 }
@@ -45,6 +56,17 @@ func (providerError *ProviderError) SyncFailureCategory() string {
 	switch providerError.Kind {
 	case ErrorAuthorization, ErrorQuota, ErrorTransient, ErrorPermanent:
 		return string(providerError.Kind)
+	default:
+		return ""
+	}
+}
+
+// SyncFailureReason exposes a closed operational reason only. Provider
+// responses, identifiers, URLs, and message content never cross this boundary.
+func (providerError *ProviderError) SyncFailureReason() string {
+	switch providerError.Reason {
+	case ReasonNotFound, ReasonRejected, ReasonInvalidPayload, ReasonAttachmentMapping, ReasonInvalidEnvelope:
+		return string(providerError.Reason)
 	default:
 		return ""
 	}

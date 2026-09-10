@@ -228,7 +228,7 @@ func providerFailureCode(provider mail.ProviderKind, err error) string {
 			case "transient":
 				return "sync_provider_google_transient_failed"
 			case "permanent":
-				return "sync_provider_google_permanent_failed"
+				return googlePermanentFailureCode(err)
 			}
 		}
 		return "sync_provider_google_failed"
@@ -239,6 +239,25 @@ func providerFailureCode(provider mail.ProviderKind, err error) string {
 	default:
 		return "sync_provider_unknown_failed"
 	}
+}
+
+func googlePermanentFailureCode(err error) string {
+	var reasoned interface{ SyncFailureReason() string }
+	if errors.As(err, &reasoned) {
+		switch reasoned.SyncFailureReason() {
+		case "not_found":
+			return "sync_provider_google_permanent_not_found_failed"
+		case "rejected":
+			return "sync_provider_google_permanent_rejected_failed"
+		case "invalid_payload":
+			return "sync_provider_google_permanent_invalid_payload_failed"
+		case "attachment_mapping":
+			return "sync_provider_google_permanent_attachment_mapping_failed"
+		case "invalid_envelope":
+			return "sync_provider_google_permanent_invalid_envelope_failed"
+		}
+	}
+	return "sync_provider_google_permanent_failed"
 }
 
 func (orchestrator *Orchestrator) scheduleSuccessor(ctx context.Context, user string, completed Run) error {

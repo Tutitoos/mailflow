@@ -169,11 +169,33 @@ func TestProviderClassifiesFailuresWithoutResponseDetails(t *testing.T) {
 		if strings.Contains(err.Error(), "private") {
 			t.Fatal("provider error exposed response details")
 		}
+		if test.status == http.StatusNotFound && providerError.SyncFailureReason() != string(ReasonNotFound) {
+			t.Fatalf("not found reason = %q", providerError.SyncFailureReason())
+		}
 	}
 	quota := classify(http.StatusForbidden, "", []byte(`{"error":{"errors":[{"reason":"userRateLimitExceeded"}],"message":"private provider detail"}}`))
 	var quotaError *ProviderError
 	if !errors.As(quota, &quotaError) || quotaError.Kind != ErrorQuota || strings.Contains(quota.Error(), "private") {
 		t.Fatalf("quota error = %v", quota)
+	}
+}
+
+func TestProviderFailureReasonIsClosedAndContentFree(t *testing.T) {
+	for _, test := range []struct {
+		reason FailureReason
+		want   string
+	}{
+		{reason: ReasonNotFound, want: "not_found"},
+		{reason: ReasonRejected, want: "rejected"},
+		{reason: ReasonInvalidPayload, want: "invalid_payload"},
+		{reason: ReasonAttachmentMapping, want: "attachment_mapping"},
+		{reason: ReasonInvalidEnvelope, want: "invalid_envelope"},
+		{reason: FailureReason("provider-private-detail"), want: ""},
+	} {
+		err := &ProviderError{Kind: ErrorPermanent, Reason: test.reason, StatusCode: 418}
+		if got := err.SyncFailureReason(); got != test.want || strings.Contains(got, "private") || strings.Contains(err.Error(), "private") {
+			t.Fatalf("reason %q exposed as %q with error %q", test.reason, got, err.Error())
+		}
 	}
 }
 

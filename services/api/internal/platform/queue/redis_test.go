@@ -70,10 +70,34 @@ func TestRedisQueueLifecycle(t *testing.T) {
 		t.Fatalf("exhausted job should dead-letter: dead=%v err=%v", dead, err)
 	}
 	deadLetters, err := store.DeadLetters(context.Background(), 10)
-	if err != nil || len(deadLetters) != 1 || deadLetters[0].ID != retryJob.ID || deadLetters[0].Error != "job_failed" {
+	if err != nil || len(deadLetters) != 1 || deadLetters[0].ID != retryJob.ID || deadLetters[0].Receipt == "" || deadLetters[0].Error != "job_failed" {
 		t.Fatalf("unexpected dead letters: jobs=%+v err=%v", deadLetters, err)
 	}
-	assertStats(t, store, Stats{Dead: 1})
+	type resolution struct {
+		removed bool
+		err     error
+	}
+	resolutions := make(chan resolution, 2)
+	for range 2 {
+		go func() {
+			removed, resolveErr := store.ResolveDeadLetter(context.Background(), deadLetters[0].Receipt)
+			resolutions <- resolution{removed: removed, err: resolveErr}
+		}()
+	}
+	removedCount := 0
+	for range 2 {
+		result := <-resolutions
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if result.removed {
+			removedCount++
+		}
+	}
+	if removedCount != 1 {
+		t.Fatalf("concurrent resolutions removed=%d", removedCount)
+	}
+	assertStats(t, store, Stats{})
 }
 
 type delayedRetryError struct{ delay time.Duration }

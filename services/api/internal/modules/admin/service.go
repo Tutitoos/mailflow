@@ -44,6 +44,11 @@ type QueueReader interface {
 	Stats(context.Context) (queue.Stats, error)
 }
 
+type QueueOperator interface {
+	DeadLetters(context.Context, int64) ([]queue.DeadJob, error)
+	ResolveDeadLetter(context.Context, string) (bool, error)
+}
+
 type HeartbeatReader interface {
 	LastSeen(context.Context, string) (time.Time, error)
 }
@@ -60,6 +65,7 @@ type Service struct {
 	metrics       *metrics.Service
 	databaseProbe func(context.Context) error
 	queue         QueueReader
+	queueOperator QueueOperator
 	heartbeats    HeartbeatReader
 	pool          *pgxpool.Pool
 	now           func() time.Time
@@ -74,11 +80,13 @@ func NewServiceWithMetrics(version string, service *metrics.Service, options ...
 	if len(options) > 0 {
 		configured = options[0]
 	}
-	return &Service{
+	result := &Service{
 		version: version, metrics: service, databaseProbe: configured.DatabaseProbe,
 		queue: configured.Queue, heartbeats: configured.Heartbeats, pool: configured.Pool,
 		now: func() time.Time { return time.Now().UTC() },
 	}
+	result.queueOperator, _ = configured.Queue.(QueueOperator)
+	return result
 }
 
 func (service *Service) Status(ctx context.Context) Status {

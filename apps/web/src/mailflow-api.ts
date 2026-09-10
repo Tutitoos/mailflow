@@ -299,13 +299,25 @@ export type AdminStatus = {
 
 export type AdminOperation = {
   id: string;
-  action: "queue.retry_sync";
-  result: "requested" | "queued" | "already_running" | "failed";
+  action: "queue.retry_sync" | "queue.resolve_dead_letter";
+  result: "requested" | "queued" | "already_running" | "resolved" | "already_resolved" | "failed";
   createdAt: string;
   updatedAt: string;
 };
 
-export type AdminQueueOverview = { stats: QueueStats; operations: AdminOperation[] };
+export type AdminDeadLetter = {
+  id: string;
+  kind: string;
+  errorCode: string;
+  attempt: number;
+  failedAt: string;
+};
+
+export type AdminQueueOverview = {
+  stats: QueueStats;
+  deadLetters: AdminDeadLetter[];
+  operations: AdminOperation[];
+};
 
 export type AdminCDNStatus = {
   attachmentObjects: number;
@@ -587,6 +599,17 @@ export async function retryAdminQueue(accountId: string, idempotencyKey: string)
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ accountId, confirmation: "retry" }),
   });
+}
+
+export async function resolveAdminDeadLetter(receipt: string, idempotencyKey: string) {
+  return request<{ operation: AdminOperation; created: boolean }>(
+    `/admin/queue/dead-letters/${encodeURIComponent(receipt)}/resolve`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ confirmation: "resolve" }),
+    },
+  );
 }
 
 export async function loadAdminCDNStatus(signal?: AbortSignal) {

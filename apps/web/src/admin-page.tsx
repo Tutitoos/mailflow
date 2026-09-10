@@ -34,6 +34,7 @@ import {
   type AdminAlertStatus,
   type AdminBackupStatus,
   type AdminCDNStatus,
+  type AdminDeadLetter,
   type AdminHealthState,
   type AdminLogEntry,
   type AdminMetric,
@@ -55,6 +56,7 @@ import {
   loadTranslationAdminSummary,
   loadTranslationCatalog,
   type MailAccount,
+  resolveAdminDeadLetter,
   retryAdminQueue,
   type SentryTelemetrySummary,
   setAdminDebug,
@@ -226,6 +228,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [confirmAccount, setConfirmAccount] = useState<MailAccount | null>(null);
+  const [confirmDeadLetter, setConfirmDeadLetter] = useState<AdminDeadLetter | null>(null);
   const [confirmDebug, setConfirmDebug] = useState(false);
   const [notice, setNotice] = useState<TranslationKey | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | AdminLogEntry["level"]>("all");
@@ -398,6 +401,20 @@ export function AdminPage({ locale }: { locale: Locale }) {
     }
   };
 
+  const resolveDeadLetter = async () => {
+    if (!confirmDeadLetter) return;
+    try {
+      const result = await resolveAdminDeadLetter(confirmDeadLetter.id, crypto.randomUUID());
+      setNotice(result.created ? "admin.queue.deadResolved" : "admin.queue.deadAlreadyResolved");
+      setConfirmDeadLetter(null);
+      setQueue(await loadAdminQueue());
+      setStatus(await loadAdminStatus());
+    } catch {
+      setNotice("admin.queue.deadResolveFailed");
+      setConfirmDeadLetter(null);
+    }
+  };
+
   const toggleDebug = async () => {
     if (!debug) return;
     try {
@@ -478,6 +495,35 @@ export function AdminPage({ locale }: { locale: Locale }) {
             <Button variant="outline" size="sm" onClick={() => setConfirmAccount(account)}>
               <ListRestart size={14} />
               {t("admin.queue.request")}
+            </Button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+
+  const renderDeadLetters = () => (
+    <section className="admin-panel">
+      <header>
+        <strong>{t("admin.queue.deadEntries")}</strong>
+        <span>{formatNumber(queue?.deadLetters.length, locale)}</span>
+      </header>
+      <div className="admin-list">
+        {queue?.deadLetters.length === 0 && <p>{t("admin.queue.noDeadEntries")}</p>}
+        {queue?.deadLetters.map((deadLetter) => (
+          <article key={deadLetter.id}>
+            <span className="provider-icon">
+              <ShieldAlert size={14} />
+            </span>
+            <div>
+              <strong>{deadLetter.kind}</strong>
+              <small>
+                {deadLetter.errorCode} · {formatTime(deadLetter.failedAt, locale)}
+              </small>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeadLetter(deadLetter)}>
+              <CheckCircle2 size={14} />
+              {t("admin.queue.resolveDead")}
             </Button>
           </article>
         ))}
@@ -882,6 +928,7 @@ export function AdminPage({ locale }: { locale: Locale }) {
         <>
           <QueueCards queue={queue} t={t} locale={locale} />
           {renderQueueActions()}
+          {renderDeadLetters()}
           {renderOperations()}
         </>
       );
@@ -1109,6 +1156,16 @@ export function AdminPage({ locale }: { locale: Locale }) {
           cancel={t("admin.queue.cancel")}
           onConfirm={() => void retryAccount()}
           onCancel={() => setConfirmAccount(null)}
+        />
+      )}
+      {confirmDeadLetter && (
+        <Confirmation
+          title={t("admin.queue.resolveDeadTitle")}
+          body={t("admin.queue.resolveDeadBody")}
+          confirm={t("admin.queue.resolveDead")}
+          cancel={t("admin.queue.cancel")}
+          onConfirm={() => void resolveDeadLetter()}
+          onCancel={() => setConfirmDeadLetter(null)}
         />
       )}
       {confirmDebug && (

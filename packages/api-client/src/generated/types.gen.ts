@@ -32,15 +32,24 @@ export type AdminStatus = {
 
 export type AdminOperation = {
     id: string;
-    action: 'queue.retry_sync';
-    result: 'requested' | 'queued' | 'already_running' | 'failed';
+    action: 'queue.retry_sync' | 'queue.resolve_dead_letter';
+    result: 'requested' | 'queued' | 'already_running' | 'resolved' | 'already_resolved' | 'failed';
     createdAt: string;
     updatedAt: string;
 };
 
 export type AdminQueueOverview = {
     stats: QueueStats;
+    deadLetters: Array<AdminDeadLetter>;
     operations: Array<AdminOperation>;
+};
+
+export type AdminDeadLetter = {
+    id: string;
+    kind: string;
+    errorCode: string;
+    attempt: number;
+    failedAt: string;
 };
 
 export type AdminOperationResult = {
@@ -1803,6 +1812,42 @@ export type RetryAdminQueueResponses = {
 };
 
 export type RetryAdminQueueResponse = RetryAdminQueueResponses[keyof RetryAdminQueueResponses];
+
+export type ResolveAdminDeadLetterData = {
+    body: {
+        confirmation: 'resolve';
+    };
+    headers: {
+        'Idempotency-Key': string;
+    };
+    path: {
+        receipt: string;
+    };
+    query?: never;
+    url: '/admin/queue/dead-letters/{receipt}/resolve';
+};
+
+export type ResolveAdminDeadLetterErrors = {
+    /**
+     * RFC 9457 problem details
+     */
+    422: Problem;
+    /**
+     * RFC 9457 problem details
+     */
+    503: Problem;
+};
+
+export type ResolveAdminDeadLetterError = ResolveAdminDeadLetterErrors[keyof ResolveAdminDeadLetterErrors];
+
+export type ResolveAdminDeadLetterResponses = {
+    /**
+     * Dead-letter resolution completed or previously completed
+     */
+    200: AdminOperationResult;
+};
+
+export type ResolveAdminDeadLetterResponse = ResolveAdminDeadLetterResponses[keyof ResolveAdminDeadLetterResponses];
 
 export type GetAdminCdnStatusData = {
     body?: never;

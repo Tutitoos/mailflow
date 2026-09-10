@@ -28,6 +28,7 @@ type ClaimedJob struct {
 
 type DeadJob struct {
 	Job
+	Receipt  string    `json:"-"`
 	Error    string    `json:"error"`
 	FailedAt time.Time `json:"failedAt"`
 }

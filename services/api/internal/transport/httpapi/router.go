@@ -231,6 +231,8 @@ func New(deps Dependencies) *fiber.App {
 	adminRoutes.Get("/status", adminStatus(deps.Admin))
 	adminRoutes.Get("/queue", adminQueue(deps.Admin))
 	adminRoutes.Post("/queue/retry", retryAdminQueue(deps.Admin, deps.Sync))
+	adminRoutes.Post("/queue/dead-letters/:receipt/resolve", resolveAdminDeadLetter(deps.Admin))
+	adminRoutes.Post("/queue/dead-letters/:id/resolve", resolveAdminDeadLetter(deps.Admin))
 	adminRoutes.Get("/cdn", adminCDNStatus(deps.Admin))
 	adminRoutes.Get("/backups", adminBackups(deps.Backups))
 	adminRoutes.Get("/alerts", adminAlerts(deps.Alerts))

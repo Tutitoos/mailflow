@@ -39,6 +39,17 @@ func (providerError *ProviderError) Error() string {
 	return "gmail provider " + string(providerError.Kind)
 }
 
+// SyncFailureCategory exposes only the bounded operational class needed by the
+// synchronization run. It deliberately omits status codes and provider data.
+func (providerError *ProviderError) SyncFailureCategory() string {
+	switch providerError.Kind {
+	case ErrorAuthorization, ErrorQuota, ErrorTransient, ErrorPermanent:
+		return string(providerError.Kind)
+	default:
+		return ""
+	}
+}
+
 type Provider struct {
 	accessToken string
 	baseURL     string

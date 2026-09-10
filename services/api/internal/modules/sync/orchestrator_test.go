@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/events"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/gmail"
+	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/metrics"
 	"github.com/Tutitoos/mailflow/services/api/internal/platform/queue"
 	"github.com/google/uuid"
@@ -311,5 +314,32 @@ func TestTerminalProviderFailureCanBeRecoveredWithoutDuplicatingTheRun(t *testin
 	}
 	if err := pool.QueryRow(context.Background(), `select sync_state from accounts where id=$1`, accountID).Scan(&accountState); err != nil || accountState != "syncing" {
 		t.Fatalf("progressed account state = %q, %v", accountState, err)
+	}
+}
+
+func TestProviderFailureCodePreservesOnlyAllowlistedGmailCategory(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "authorization", err: &gmail.ProviderError{Kind: gmail.ErrorAuthorization, StatusCode: 403}, want: "sync_provider_google_authorization_failed"},
+		{name: "quota", err: &gmail.ProviderError{Kind: gmail.ErrorQuota, StatusCode: 403}, want: "sync_provider_google_quota_failed"},
+		{name: "transient", err: &gmail.ProviderError{Kind: gmail.ErrorTransient, StatusCode: 503}, want: "sync_provider_google_transient_failed"},
+		{name: "permanent", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, StatusCode: 400}, want: "sync_provider_google_permanent_failed"},
+		{name: "unknown kind", err: &gmail.ProviderError{Kind: gmail.ErrorKind("private-provider-text"), StatusCode: 418}, want: "sync_provider_google_failed"},
+		{name: "untyped", err: errors.New("private provider response"), want: "sync_provider_google_failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wrapped := &providerPageError{provider: mail.ProviderGoogle, cause: test.err}
+			got := providerFailureCode(mail.ProviderGoogle, wrapped)
+			if got != test.want {
+				t.Fatalf("providerFailureCode() = %q, want %q", got, test.want)
+			}
+			if strings.Contains(got, "private") || strings.Contains(got, "403") {
+				t.Fatalf("failure code leaked protected detail: %q", got)
+			}
+		})
 	}
 }

@@ -83,6 +83,12 @@ type immediateQuotaLimiter struct{}
 
 func (immediateQuotaLimiter) Wait(context.Context, int) error { return nil }
 
+type failingNormalizer struct{ err error }
+
+func (normalizer failingNormalizer) Normalize(io.Reader) (mail.NormalizedMessageContent, error) {
+	return mail.NormalizedMessageContent{}, normalizer.err
+}
+
 func TestProviderMapsProfileLabelsAndPaginatedChanges(t *testing.T) {
 	provider, server, _ := gmailFixture(t)
 	defer server.Close()
@@ -168,6 +174,50 @@ func TestProviderClassifiesFailuresWithoutResponseDetails(t *testing.T) {
 	var quotaError *ProviderError
 	if !errors.As(quota, &quotaError) || quotaError.Kind != ErrorQuota || strings.Contains(quota.Error(), "private") {
 		t.Fatalf("quota error = %v", quota)
+	}
+}
+
+func TestProviderPreservesPageProgressForBoundedMIMEFailures(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "malformed", err: mail.ErrMalformedMIME},
+		{name: "oversized", err: mail.ErrMIMETooLarge},
+		{name: "too many parts", err: mail.ErrTooManyParts},
+		{name: "wrapped malformed", err: errors.Join(errors.New("normalization failed"), mail.ErrMalformedMIME)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider, server, _ := gmailFixture(t)
+			defer server.Close()
+			provider.normalizer = failingNormalizer{err: test.err}
+			before := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+
+			page, err := provider.Backfill(context.Background(), mail.SyncCursor{}, nil, &before, 25)
+			if err != nil || len(page.Messages) != 1 || !page.HasMore || string(page.NextCursor.Value) != "backfill-page-2" {
+				t.Fatalf("degraded backfill messages=%d has_more=%t cursor=%q error=%v", len(page.Messages), page.HasMore, page.NextCursor.Value, err)
+			}
+			message := page.Messages[0]
+			if message.RemoteID != "message-1" || message.ThreadID != "thread-1" || message.SentAt.IsZero() || len(message.LabelIDs) == 0 {
+				t.Fatalf("provider envelope was not preserved: %+v", message)
+			}
+			if message.Content.Subject != "" || message.Content.MessageID != "" || len(message.Content.References) != 0 || len(message.Content.InReplyTo) != 0 || len(message.Content.Addresses) != 0 || message.Content.BodyText != "" || message.Content.BodyHTML != "" || len(message.Content.Attachments) != 0 {
+				t.Fatalf("unsafe partial content was retained: %+v", message.Content)
+			}
+		})
+	}
+}
+
+func TestProviderFailsClosedForUnknownNormalizerFailure(t *testing.T) {
+	provider, server, _ := gmailFixture(t)
+	defer server.Close()
+	want := errors.New("normalizer unavailable")
+	provider.normalizer = failingNormalizer{err: want}
+	before := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+
+	page, err := provider.Backfill(context.Background(), mail.SyncCursor{}, nil, &before, 25)
+	if !errors.Is(err, want) || len(page.Messages) != 0 {
+		t.Fatalf("unknown failure page=%+v error=%v", page, err)
 	}
 }
 

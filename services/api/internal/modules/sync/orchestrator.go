@@ -175,7 +175,7 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 			}
 			return nil
 		}
-		failureCode := providerFailureCode(provider)
+		failureCode := providerFailureCode(provider, err)
 		if job.Attempt+1 >= job.MaxAttempts {
 			failed, failErr := orchestrator.runs.FailRun(ctx, payload.UserID, payload.AccountID, payload.RunID, payload.Version, failureCode, orchestrator.now())
 			if failErr != nil && !errors.Is(failErr, ErrRunStale) {
@@ -215,9 +215,22 @@ func (orchestrator *Orchestrator) Handle(ctx context.Context, job queue.Job) err
 	return orchestrator.scheduleSuccessor(ctx, payload.UserID, committed)
 }
 
-func providerFailureCode(provider mail.ProviderKind) string {
+func providerFailureCode(provider mail.ProviderKind, err error) string {
 	switch provider {
 	case mail.ProviderGoogle:
+		var classified interface{ SyncFailureCategory() string }
+		if errors.As(err, &classified) {
+			switch classified.SyncFailureCategory() {
+			case "authorization":
+				return "sync_provider_google_authorization_failed"
+			case "quota":
+				return "sync_provider_google_quota_failed"
+			case "transient":
+				return "sync_provider_google_transient_failed"
+			case "permanent":
+				return "sync_provider_google_permanent_failed"
+			}
+		}
 		return "sync_provider_google_failed"
 	case mail.ProviderMicrosoft:
 		return "sync_provider_microsoft_failed"

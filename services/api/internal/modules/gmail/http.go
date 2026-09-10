@@ -85,7 +85,7 @@ func (provider *Provider) json(ctx context.Context, method, path string, query u
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err := decoder.Decode(destination); err != nil {
-		return &ProviderError{Kind: ErrorPermanent, StatusCode: response.StatusCode}
+		return &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidPayload, StatusCode: response.StatusCode}
 	}
 	return nil
 }
@@ -103,7 +103,15 @@ func classify(status int, retryAfter string, payload ...[]byte) error {
 	if status == http.StatusForbidden && len(payload) > 0 && googleQuotaReason(payload[0]) {
 		kind = ErrorQuota
 	}
-	return &ProviderError{Kind: kind, StatusCode: status, RetryAfter: parseRetryAfter(retryAfter)}
+	reason := FailureReason("")
+	if kind == ErrorPermanent {
+		if status == http.StatusNotFound {
+			reason = ReasonNotFound
+		} else {
+			reason = ReasonRejected
+		}
+	}
+	return &ProviderError{Kind: kind, Reason: reason, StatusCode: status, RetryAfter: parseRetryAfter(retryAfter)}
 }
 
 func googleQuotaReason(payload []byte) bool {
@@ -153,7 +161,7 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		}
 		raw, ok := decodeBase64URL(response.Raw, maxDecodedPayloadBytes)
 		if !ok {
-			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent}
+			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidPayload}
 		}
 		content, err := provider.normalizer.Normalize(bytes.NewReader(raw))
 		if err != nil {
@@ -173,7 +181,7 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		}
 		milliseconds, err := strconv.ParseInt(response.InternalDate, 10, 64)
 		if err != nil || response.ID == "" || response.ThreadID == "" {
-			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent}
+			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidEnvelope}
 		}
 		page.Messages = append(page.Messages, remoteMessage(response.ID, response.ThreadID, milliseconds, response.LabelIDs, content))
 	}
@@ -252,7 +260,7 @@ func (provider *Provider) mapAttachmentIDs(ctx context.Context, messageID string
 	}
 	visit(response.Payload)
 	if len(remoteIDs) != len(content.Attachments) {
-		return &ProviderError{Kind: ErrorPermanent}
+		return &ProviderError{Kind: ErrorPermanent, Reason: ReasonAttachmentMapping}
 	}
 	for index := range content.Attachments {
 		content.Attachments[index].RemoteID = remoteIDs[index]

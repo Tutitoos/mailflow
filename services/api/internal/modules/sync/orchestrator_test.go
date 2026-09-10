@@ -327,6 +327,12 @@ func TestProviderFailureCodePreservesOnlyAllowlistedGmailCategory(t *testing.T) 
 		{name: "quota", err: &gmail.ProviderError{Kind: gmail.ErrorQuota, StatusCode: 403}, want: "sync_provider_google_quota_failed"},
 		{name: "transient", err: &gmail.ProviderError{Kind: gmail.ErrorTransient, StatusCode: 503}, want: "sync_provider_google_transient_failed"},
 		{name: "permanent", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, StatusCode: 400}, want: "sync_provider_google_permanent_failed"},
+		{name: "not found", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonNotFound, StatusCode: 404}, want: "sync_provider_google_permanent_not_found_failed"},
+		{name: "rejected", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonRejected, StatusCode: 400}, want: "sync_provider_google_permanent_rejected_failed"},
+		{name: "invalid payload", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonInvalidPayload}, want: "sync_provider_google_permanent_invalid_payload_failed"},
+		{name: "attachment mapping", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonAttachmentMapping}, want: "sync_provider_google_permanent_attachment_mapping_failed"},
+		{name: "invalid envelope", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.ReasonInvalidEnvelope}, want: "sync_provider_google_permanent_invalid_envelope_failed"},
+		{name: "forged reason", err: &gmail.ProviderError{Kind: gmail.ErrorPermanent, Reason: gmail.FailureReason("private-provider-text")}, want: "sync_provider_google_permanent_failed"},
 		{name: "unknown kind", err: &gmail.ProviderError{Kind: gmail.ErrorKind("private-provider-text"), StatusCode: 418}, want: "sync_provider_google_failed"},
 		{name: "untyped", err: errors.New("private provider response"), want: "sync_provider_google_failed"},
 	}

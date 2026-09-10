@@ -67,6 +67,28 @@ func retryAdminQueue(service *admin.Service, synchronizer SyncRequester) fiber.H
 	}
 }
 
+func resolveAdminDeadLetter(service *admin.Service) fiber.Handler {
+	type requestBody struct {
+		Confirmation string `json:"confirmation"`
+	}
+	return func(c fiber.Ctx) error {
+		user, _ := authbridge.UserFromContext(c.Context())
+		var request requestBody
+		idempotencyKey := strings.TrimSpace(c.Get("Idempotency-Key"))
+		if c.Bind().Body(&request) != nil || request.Confirmation != "resolve" || idempotencyKey == "" {
+			return invalidAdminOperation()
+		}
+		operation, created, err := service.ResolveDeadLetter(c.Context(), user.ID, c.Params("receipt"), idempotencyKey)
+		if errors.Is(err, admin.ErrInvalidOperation) {
+			return invalidAdminOperation()
+		}
+		if err != nil {
+			return adminOperationsUnavailable()
+		}
+		return c.JSON(fiber.Map{"operation": operation, "created": created})
+	}
+}
+
 func adminCDNStatus(service *admin.Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		status, err := service.CDNStatus(c.Context())

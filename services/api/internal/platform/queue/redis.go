@@ -220,9 +220,18 @@ func (store *RedisStore) DeadLetters(ctx context.Context, limit int64) ([]DeadJo
 		if err := json.Unmarshal([]byte(encoded), &job); err != nil {
 			return nil, fmt.Errorf("decode dead letter: %w", err)
 		}
+		job.Receipt = message.ID
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+func (store *RedisStore) ResolveDeadLetter(ctx context.Context, receipt string) (bool, error) {
+	removed, err := store.client.XDel(ctx, store.dead, receipt).Result()
+	if err != nil {
+		return false, fmt.Errorf("resolve dead letter: %w", err)
+	}
+	return removed == 1, nil
 }
 
 func (store *RedisStore) Stats(ctx context.Context) (Stats, error) {

@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	QueueRetryAction  = "queue.retry_sync"
-	MaxOperations     = 100
-	MinIdempotencyKey = 16
-	MaxIdempotencyKey = 128
-	DefaultOperations = 25
+	QueueRetryAction       = "queue.retry_sync"
+	QueueResolveDeadAction = "queue.resolve_dead_letter"
+	MaxOperations          = 100
+	MinIdempotencyKey      = 16
+	MaxIdempotencyKey      = 128
+	DefaultOperations      = 25
 )
 
 var (
@@ -43,8 +44,17 @@ type Operation struct {
 }
 
 type QueueOverview struct {
-	Stats      queue.Stats `json:"stats"`
-	Operations []Operation `json:"operations"`
+	Stats       queue.Stats         `json:"stats"`
+	DeadLetters []DeadLetterSummary `json:"deadLetters"`
+	Operations  []Operation         `json:"operations"`
+}
+
+type DeadLetterSummary struct {
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	ErrorCode string    `json:"errorCode"`
+	Attempt   int       `json:"attempt"`
+	FailedAt  time.Time `json:"failedAt"`
 }
 
 type CDNStatus struct {
@@ -56,18 +66,30 @@ type CDNStatus struct {
 }
 
 func (service *Service) QueueOverview(ctx context.Context, actorUserID string) (QueueOverview, error) {
-	if service.queue == nil || service.pool == nil || !validUUID(actorUserID) {
+	if service.queue == nil || service.queueOperator == nil || service.pool == nil || !validUUID(actorUserID) {
 		return QueueOverview{}, ErrOperationsUnavailable
 	}
 	stats, err := service.queue.Stats(ctx)
 	if err != nil {
 		return QueueOverview{}, fmt.Errorf("%w: queue stats", ErrOperationsUnavailable)
 	}
+	deadJobs, err := service.queueOperator.DeadLetters(ctx, 25)
+	if err != nil {
+		return QueueOverview{}, fmt.Errorf("%w: dead letters", ErrOperationsUnavailable)
+	}
+	deadLetters := make([]DeadLetterSummary, 0, len(deadJobs))
+	for _, job := range deadJobs {
+		deadLetters = append(deadLetters, DeadLetterSummary{
+			ID: job.Receipt, Kind: job.Kind, ErrorCode: job.Error,
+			Attempt:  job.Attempt,
+			FailedAt: job.FailedAt.UTC(),
+		})
+	}
 	operations, err := service.ListOperations(ctx, actorUserID, DefaultOperations)
 	if err != nil {
 		return QueueOverview{}, err
 	}
-	return QueueOverview{Stats: stats, Operations: operations}, nil
+	return QueueOverview{Stats: stats, DeadLetters: deadLetters, Operations: operations}, nil
 }
 
 func (service *Service) RetrySynchronization(ctx context.Context, synchronizer Synchronizer, actorUserID, accountID, idempotencyKey string) (Operation, bool, error) {
@@ -75,7 +97,7 @@ func (service *Service) RetrySynchronization(ctx context.Context, synchronizer S
 	if service.pool == nil || synchronizer == nil || !validUUID(actorUserID) || !validUUID(accountID) || len(idempotencyKey) < MinIdempotencyKey || len(idempotencyKey) > MaxIdempotencyKey {
 		return Operation{}, false, ErrInvalidOperation
 	}
-	operation, created, err := service.reserveOperation(ctx, actorUserID, accountID, idempotencyKey)
+	operation, created, err := service.reserveOperation(ctx, actorUserID, QueueRetryAction, accountID, idempotencyKey)
 	if err != nil || !created {
 		return operation, created, err
 	}
@@ -95,6 +117,34 @@ func (service *Service) RetrySynchronization(ctx context.Context, synchronizer S
 		return operation, true, ErrTargetNotFound
 	}
 	if syncErr != nil {
+		return operation, true, ErrOperationsUnavailable
+	}
+	return operation, true, nil
+}
+
+func (service *Service) ResolveDeadLetter(ctx context.Context, actorUserID, receipt, idempotencyKey string) (Operation, bool, error) {
+	receipt = strings.TrimSpace(receipt)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if service.pool == nil || service.queueOperator == nil || !validUUID(actorUserID) || !validDeadLetterReceipt(receipt) || len(idempotencyKey) < MinIdempotencyKey || len(idempotencyKey) > MaxIdempotencyKey {
+		return Operation{}, false, ErrInvalidOperation
+	}
+	operation, created, err := service.reserveOperation(ctx, actorUserID, QueueResolveDeadAction, receipt, idempotencyKey)
+	if err != nil || !created {
+		return operation, created, err
+	}
+	removed, resolveErr := service.queueOperator.ResolveDeadLetter(ctx, receipt)
+	result := "resolved"
+	if !removed {
+		result = "already_resolved"
+	}
+	if resolveErr != nil {
+		result = "failed"
+	}
+	operation, updateErr := service.finishOperation(ctx, operation.ID, result)
+	if updateErr != nil {
+		return Operation{}, true, updateErr
+	}
+	if resolveErr != nil {
 		return operation, true, ErrOperationsUnavailable
 	}
 	return operation, true, nil
@@ -167,12 +217,12 @@ func (service *Service) CDNStatus(ctx context.Context) (CDNStatus, error) {
 	return result, nil
 }
 
-func (service *Service) reserveOperation(ctx context.Context, actorUserID, accountID, idempotencyKey string) (Operation, bool, error) {
+func (service *Service) reserveOperation(ctx context.Context, actorUserID, action, target, idempotencyKey string) (Operation, bool, error) {
 	operationID, err := ids.New()
 	if err != nil {
 		return Operation{}, false, ErrOperationsUnavailable
 	}
-	targetHash := hashValue(accountID)
+	targetHash := hashValue(target)
 	keyHash := hashValue(idempotencyKey)
 	var operation Operation
 	err = service.pool.QueryRow(ctx, `insert into admin_operations
@@ -180,7 +230,7 @@ func (service *Service) reserveOperation(ctx context.Context, actorUserID, accou
 		values ($1::uuid,$2::uuid,$3,$4,$5,'requested')
 		on conflict (actor_user_id, action, idempotency_key_hash) do nothing
 		returning id::text, action, result, created_at, updated_at`,
-		operationID, actorUserID, QueueRetryAction, targetHash, keyHash,
+		operationID, actorUserID, action, targetHash, keyHash,
 	).Scan(&operation.ID, &operation.Action, &operation.Result, &operation.CreatedAt, &operation.UpdatedAt)
 	if err == nil {
 		return operation, true, nil
@@ -190,7 +240,7 @@ func (service *Service) reserveOperation(ctx context.Context, actorUserID, accou
 	}
 	err = service.pool.QueryRow(ctx, `select id::text, action, result, created_at, updated_at
 		from admin_operations where actor_user_id=$1::uuid and action=$2 and idempotency_key_hash=$3`,
-		actorUserID, QueueRetryAction, keyHash,
+		actorUserID, action, keyHash,
 	).Scan(&operation.ID, &operation.Action, &operation.Result, &operation.CreatedAt, &operation.UpdatedAt)
 	if err != nil {
 		return Operation{}, false, fmt.Errorf("%w: read operation", ErrOperationsUnavailable)
@@ -218,4 +268,19 @@ func hashValue(value string) string {
 func validUUID(value string) bool {
 	_, err := uuid.Parse(value)
 	return err == nil
+}
+
+func validDeadLetterReceipt(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) != 2 || len(parts[0]) == 0 || len(parts[0]) > 20 || len(parts[1]) == 0 || len(parts[1]) > 20 {
+		return false
+	}
+	for _, part := range parts {
+		for _, character := range part {
+			if character < '0' || character > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -60,7 +60,33 @@ test("mail shell and admin remain operable", async ({ page }) => {
   );
   await page.route("**/api/v1/admin/queue", (route) =>
     route.fulfill({
-      json: { stats: { ready: 0, pending: 0, retry: 0, dead: 0 }, operations: [] },
+      json: {
+        stats: { ready: 0, pending: 0, retry: 0, dead: 1 },
+        deadLetters: [
+          {
+            id: "1234567890-0",
+            kind: "sync.run",
+            errorCode: "sync_provider_failed",
+            attempt: 2,
+            failedAt: "2026-09-07T12:00:00Z",
+          },
+        ],
+        operations: [],
+      },
+    }),
+  );
+  await page.route("**/api/v1/admin/queue/dead-letters/*/resolve", (route) =>
+    route.fulfill({
+      json: {
+        operation: {
+          id: "00000000-0000-7000-8000-000000000099",
+          action: "queue.resolve_dead_letter",
+          result: "resolved",
+          createdAt: "2026-09-07T12:00:00Z",
+          updatedAt: "2026-09-07T12:00:00Z",
+        },
+        created: true,
+      },
     }),
   );
   await page.route("**/api/v1/admin/metrics?**", (route) => route.fulfill({ json: { items: [] } }));
@@ -154,6 +180,18 @@ test("mail shell and admin remain operable", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.getByText("Available", { exact: true })).toBeVisible();
   await expect(page.getByText("0.1.0")).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) > 900) {
+    await page.getByRole("button", { name: "Synchronization", exact: true }).click();
+  } else {
+    await page.locator(".admin-mobile-navigation select").selectOption("synchronization");
+  }
+  await page.getByRole("button", { name: "Mark resolved" }).click();
+  const deadLetterConfirmation = page.getByRole("alertdialog", {
+    name: "Resolve this dead-letter entry?",
+  });
+  await expect(deadLetterConfirmation).toBeVisible();
+  await deadLetterConfirmation.getByRole("button", { name: "Mark resolved" }).click();
+  await expect(page.getByText("The dead-letter entry was resolved.")).toBeVisible();
   if ((page.viewportSize()?.width ?? 0) > 900) {
     await page.getByRole("button", { name: "Translations", exact: true }).click();
   } else {

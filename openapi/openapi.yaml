@@ -765,6 +765,32 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
+  /admin/queue/dead-letters/{receipt}/resolve:
+    post:
+      operationId: resolveAdminDeadLetter
+      parameters:
+        - name: receipt
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9]{1,20}-[0-9]{1,20}$" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation]
+              properties:
+                confirmation: { type: string, const: resolve }
+      responses:
+        "200":
+          description: Dead-letter resolution completed or previously completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOperationResult" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /admin/cdn:
     get:
       operationId: getAdminCDNStatus
@@ -1072,19 +1098,32 @@ components:
       required: [id, action, result, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
-        action: { type: string, enum: [queue.retry_sync] }
-        result: { type: string, enum: [requested, queued, already_running, failed] }
+        action: { type: string, enum: [queue.retry_sync, queue.resolve_dead_letter] }
+        result: { type: string, enum: [requested, queued, already_running, resolved, already_resolved, failed] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AdminQueueOverview:
       type: object
-      required: [stats, operations]
+      required: [stats, deadLetters, operations]
       properties:
         stats: { $ref: "#/components/schemas/QueueStats" }
+        deadLetters:
+          type: array
+          maxItems: 25
+          items: { $ref: "#/components/schemas/AdminDeadLetter" }
         operations:
           type: array
           maxItems: 100
           items: { $ref: "#/components/schemas/AdminOperation" }
+    AdminDeadLetter:
+      type: object
+      required: [id, kind, errorCode, attempt, failedAt]
+      properties:
+        id: { type: string, pattern: "^[0-9]{1,20}-[0-9]{1,20}$" }
+        kind: { type: string, maxLength: 64 }
+        errorCode: { type: string, maxLength: 128 }
+        attempt: { type: integer, minimum: 0 }
+        failedAt: { type: string, format: date-time }
     AdminOperationResult:
       type: object
       required: [operation, created]

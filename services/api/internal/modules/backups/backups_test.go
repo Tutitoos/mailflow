@@ -172,6 +172,33 @@ func TestStagerRejectsSymlinksAndLimits(t *testing.T) {
 	}
 }
 
+func TestEmptyDirectoryRejectsFileAndSymlinkRoots(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"file":    file,
+		"symlink": filepath.Join(root, "symlink"),
+	} {
+		if name == "symlink" {
+			if err := os.Symlink(root, path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Run(name, func(t *testing.T) {
+			if err := emptyDirectory(path); !errors.Is(err, ErrInvalidSource) {
+				t.Fatalf("emptyDirectory() error=%v", err)
+			}
+		})
+	}
+	contents, err := os.ReadFile(file)
+	if err != nil || string(contents) != "keep" {
+		t.Fatalf("protected file changed: contents=%q err=%v", contents, err)
+	}
+}
+
 func TestBackupOnlySucceedsAfterVerificationAndRetention(t *testing.T) {
 	root := t.TempDir()
 	cdn := filepath.Join(root, "cdn")

@@ -215,7 +215,7 @@ func emptyDirectory(path string) error {
 	if err := safeAbsolutePath(path); err != nil {
 		return err
 	}
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return os.MkdirAll(path, 0o700)
 	}

@@ -113,6 +113,10 @@ verify_stack_health() {
     "  google_oauth_client_secret: { file: $acceptance_temp_dir/secrets/google_oauth_client_secret }" \
     "  microsoft_oauth_client_secret: { file: $acceptance_temp_dir/secrets/microsoft_oauth_client_secret }" \
     "  alert_smtp_password: { file: $acceptance_temp_dir/secrets/alert_smtp_password }" \
+    'services:' \
+    '  backup:' \
+    '    environment:' \
+    '      DATABASE_URL: postgres://mailflow:acceptance-postgres-password@postgres:5432/mailflow?sslmode=disable' \
     > "$acceptance_override"
 
   export MAILFLOW_DOMAIN=mailflow.test
@@ -124,6 +128,8 @@ verify_stack_health() {
   export MAILFLOW_BACKUP_IMAGE="${MAILFLOW_BACKUP_IMAGE:-mailflow-backup:acceptance}"
   local compose=(docker compose --project-name "$acceptance_project" --env-file deploy/.env.example -f deploy/compose.yml -f "$acceptance_override" --profile backup)
   "${compose[@]}" config --quiet
+  "${compose[@]}" run --rm --no-deps --entrypoint /bin/sh backup -ec \
+    'for secret in /run/secrets/postgres_password /run/secrets/restic_password /run/secrets/master_key; do test -r "$secret"; done'
   "${compose[@]}" up -d --no-build postgres redis
   for service in postgres redis; do
     wait_for_health "${compose[@]}" "$service"

@@ -51,6 +51,12 @@ describe("1.0 product acceptance policy", () => {
     expect(restart).toContain("committed action changed across the PostgreSQL restart");
     expect(restart).toContain("Redis restart marker was not durable");
     expect(restart).toContain("restart api worker");
+    expect(restart).toContain(
+      "DATABASE_URL: postgres://mailflow:acceptance-postgres-password@postgres:5432/mailflow?sslmode=disable",
+    );
+    expect(restart).toContain(
+      'for secret in /run/secrets/postgres_password /run/secrets/restic_password /run/secrets/master_key; do test -r "$secret"; done',
+    );
     for (const component of ["web", "auth", "api", "worker", "backup"]) {
       expect(build).toContain(`mailflow-${component}:acceptance`);
     }

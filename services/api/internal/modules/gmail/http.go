@@ -22,6 +22,8 @@ import (
 // policy below.
 const maxResponseBytes = 96 << 20
 const maxDecodedPayloadBytes = 25 << 20
+const rawAttachmentPrefix = "mailflow:google:raw-part:v1:"
+const maxRawAttachmentIndex = 1023
 
 type historyCursor struct {
 	HistoryID string `json:"historyId"`
@@ -261,7 +263,11 @@ func (provider *Provider) mapAttachmentIDs(ctx context.Context, messageID string
 	type part struct {
 		Filename string `json:"filename"`
 		MimeType string `json:"mimeType"`
-		Body     struct {
+		Headers  []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"headers"`
+		Body struct {
 			AttachmentID string `json:"attachmentId"`
 		} `json:"body"`
 		Parts []part `json:"parts"`
@@ -275,8 +281,19 @@ func (provider *Provider) mapAttachmentIDs(ctx context.Context, messageID string
 	remoteIDs := make([]string, 0)
 	var visit func(part)
 	visit = func(current part) {
-		if current.Body.AttachmentID != "" {
-			remoteIDs = append(remoteIDs, current.Body.AttachmentID)
+		hasAttachmentDisposition := false
+		for _, header := range current.Headers {
+			if strings.EqualFold(header.Name, "Content-Disposition") && strings.HasPrefix(strings.ToLower(strings.TrimSpace(header.Value)), "attachment") {
+				hasAttachmentDisposition = true
+				break
+			}
+		}
+		if gmailAttachmentCandidate(current.Filename, current.MimeType, current.Body.AttachmentID, hasAttachmentDisposition) {
+			remoteID := current.Body.AttachmentID
+			if remoteID == "" {
+				remoteID = rawAttachmentPrefix + strconv.Itoa(len(remoteIDs))
+			}
+			remoteIDs = append(remoteIDs, remoteID)
 		}
 		for _, child := range current.Parts {
 			visit(child)
@@ -290,6 +307,26 @@ func (provider *Provider) mapAttachmentIDs(ctx context.Context, messageID string
 		content.Attachments[index].RemoteID = remoteIDs[index]
 	}
 	return nil
+}
+
+func gmailAttachmentCandidate(filename, mediaType, attachmentID string, hasAttachmentDisposition bool) bool {
+	if attachmentID != "" || filename != "" || hasAttachmentDisposition {
+		return true
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(strings.SplitN(mediaType, ";", 2)[0]))
+	return mediaType != "" && mediaType != "text/plain" && mediaType != "text/html" && !strings.HasPrefix(mediaType, "multipart/")
+}
+
+func rawAttachmentIndex(remoteID string) (int, bool) {
+	if !strings.HasPrefix(remoteID, rawAttachmentPrefix) {
+		return 0, false
+	}
+	value := strings.TrimPrefix(remoteID, rawAttachmentPrefix)
+	index, err := strconv.Atoi(value)
+	if err != nil || index < 0 || index > maxRawAttachmentIndex || value != strconv.Itoa(index) {
+		return 0, false
+	}
+	return index, true
 }
 
 func encodeRaw(reader io.Reader) (string, error) {

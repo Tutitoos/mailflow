@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +274,24 @@ func TestDecodeBase64URLAcceptsPaddedAndUnpaddedValues(t *testing.T) {
 		if decoded, ok := decodeBase64URL(invalid.value, invalid.limit); ok || decoded != nil {
 			t.Fatalf("invalid base64url accepted: limit=%d decoded_bytes=%d", invalid.limit, len(decoded))
 		}
+	}
+}
+
+func TestProviderDiscardsOversizedRawPayloadAndRejectsMalformedEncoding(t *testing.T) {
+	provider, server, _ := gmailFixture(t)
+	defer server.Close()
+
+	const limit = 32
+	oversized := base64.RawURLEncoding.EncodeToString(make([]byte, limit+1))
+	content, err := provider.normalizeRawPayload(oversized, limit)
+	if err != nil || !reflect.DeepEqual(content, mail.NormalizedMessageContent{}) {
+		t.Fatalf("oversized payload content=%+v error=%v", content, err)
+	}
+
+	content, err = provider.normalizeRawPayload("%%%", limit)
+	var providerError *ProviderError
+	if !errors.As(err, &providerError) || providerError.SyncFailureReason() != string(ReasonInvalidPayload) || !reflect.DeepEqual(content, mail.NormalizedMessageContent{}) {
+		t.Fatalf("malformed payload content=%+v error=%v", content, err)
 	}
 }
 

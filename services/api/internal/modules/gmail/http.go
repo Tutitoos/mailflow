@@ -16,7 +16,11 @@ import (
 	"github.com/Tutitoos/mailflow/services/api/internal/modules/mail"
 )
 
-const maxResponseBytes = 32 << 20
+// A RAW Gmail response base64url-encodes an RFC 2822 message whose MIME parts
+// may already be base64 encoded. Keep the transport bound above that nested
+// encoding overhead; the MIME normalizer still enforces the smaller content
+// policy below.
+const maxResponseBytes = 96 << 20
 const maxDecodedPayloadBytes = 25 << 20
 
 type historyCursor struct {
@@ -159,20 +163,9 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 		if err := provider.json(ctx, http.MethodGet, "/messages/"+url.PathEscape(id), url.Values{"format": {"raw"}}, nil, &response); err != nil {
 			return mail.ChangePage{}, err
 		}
-		raw, ok := decodeBase64URL(response.Raw, maxDecodedPayloadBytes)
-		if !ok {
-			return mail.ChangePage{}, &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidPayload}
-		}
-		content, err := provider.normalizer.Normalize(bytes.NewReader(raw))
+		content, err := provider.normalizeRawPayload(response.Raw, maxDecodedPayloadBytes)
 		if err != nil {
-			if !recoverableMIMEFailure(err) {
-				return mail.ChangePage{}, err
-			}
-			// Keep the provider envelope and state so one unsafe MIME payload
-			// cannot pin the page cursor. Raw content is deliberately discarded;
-			// a later reconciliation can replace this bodyless placeholder after
-			// the normalizer learns how to handle the message safely.
-			content = mail.NormalizedMessageContent{}
+			return mail.ChangePage{}, err
 		}
 		if len(content.Attachments) > 0 {
 			if err := provider.mapAttachmentIDs(ctx, response.ID, &content); err != nil {
@@ -188,6 +181,29 @@ func (provider *Provider) loadMessages(ctx context.Context, ids []string) (mail.
 	return page, nil
 }
 
+func (provider *Provider) normalizeRawPayload(encoded string, maxBytes int) (mail.NormalizedMessageContent, error) {
+	if encodedPayloadExceedsDecodedLimit(encoded, maxBytes) {
+		// Preserve only the provider envelope and state. The oversized raw MIME
+		// body is deliberately neither decoded nor retained.
+		return mail.NormalizedMessageContent{}, nil
+	}
+	raw, ok := decodeBase64URL(encoded, maxBytes)
+	if !ok {
+		return mail.NormalizedMessageContent{}, &ProviderError{Kind: ErrorPermanent, Reason: ReasonInvalidPayload}
+	}
+	content, err := provider.normalizer.Normalize(bytes.NewReader(raw))
+	if err == nil {
+		return content, nil
+	}
+	if !recoverableMIMEFailure(err) {
+		return mail.NormalizedMessageContent{}, err
+	}
+	// Keep the provider envelope and state so one unsafe MIME payload cannot
+	// pin the page cursor. A later reconciliation can replace the bodyless
+	// placeholder after the normalizer learns how to handle the message safely.
+	return mail.NormalizedMessageContent{}, nil
+}
+
 func recoverableMIMEFailure(err error) bool {
 	return errors.Is(err, mail.ErrMalformedMIME) ||
 		errors.Is(err, mail.ErrMIMETooLarge) ||
@@ -195,7 +211,7 @@ func recoverableMIMEFailure(err error) bool {
 }
 
 func decodeBase64URL(value string, maxBytes int) ([]byte, bool) {
-	if maxBytes < 0 || len(value) > base64.URLEncoding.EncodedLen(maxBytes) {
+	if encodedPayloadExceedsDecodedLimit(value, maxBytes) {
 		return nil, false
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(value)
@@ -206,6 +222,14 @@ func decodeBase64URL(value string, maxBytes int) ([]byte, bool) {
 		return nil, false
 	}
 	return decoded, true
+}
+
+func encodedPayloadExceedsDecodedLimit(value string, maxBytes int) bool {
+	if maxBytes < 0 {
+		return true
+	}
+	value = strings.TrimRight(value, "=")
+	return len(value) > base64.RawURLEncoding.EncodedLen(maxBytes)
 }
 
 func remoteMessage(id, threadID string, milliseconds int64, labels []string, content mail.NormalizedMessageContent) mail.RemoteMessage {

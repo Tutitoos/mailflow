@@ -107,6 +107,17 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
             totalCount: itemCount,
             unreadCount: 1,
           },
+          {
+            id: "label-user-1",
+            accountId: account.id,
+            remoteName: "Acceptance",
+            localName: null,
+            kind: "user",
+            category: null,
+            color: null,
+            totalCount: 0,
+            unreadCount: 0,
+          },
         ],
       },
     }),
@@ -311,6 +322,14 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect.poll(() => remoteImageRequests).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Download attachment" }).click();
   await expect.poll(() => attachmentDownloads).toBe(1);
+  await page.getByRole("button", { name: "Labels", exact: true }).click();
+  await expect.poll(() => actionRequests.length).toBe(1);
+  expect(actionRequests[0]?.body).toMatchObject({
+    accountId: account.id,
+    kind: "add_label",
+    targetIds: [syntheticThreads[0]?.id],
+    labelId: "label-user-1",
+  });
   await page.getByRole("button", { name: "Reply", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Recipients" })).toHaveValue(
     "sender-0@example.test",
@@ -333,10 +352,11 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Search Sender", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=quarterly\+from%3Asearch-sender%40example\.test/u);
   expect(searchRequests).toBe(1);
+  await page.getByRole("button", { name: "Select Quarterly result" }).click();
   await page.getByRole("button", { name: "Mark unread" }).first().click();
-  await expect.poll(() => actionRequests.length).toBe(1);
-  expect(actionRequests[0]?.key).toMatch(/^mailflow-/u);
-  expect(actionRequests[0]?.body).toMatchObject({
+  await expect.poll(() => actionRequests.length).toBe(2);
+  expect(actionRequests[1]?.key).toMatch(/^mailflow-/u);
+  expect(actionRequests[1]?.body).toMatchObject({
     accountId: account.id,
     kind: "mark_unread",
     targetIds: [syntheticThreads[0]?.id],
@@ -345,8 +365,8 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Select Sender 0" }).click();
   await page.keyboard.press("e");
-  await expect.poll(() => actionRequests.length).toBe(2);
-  expect(actionRequests[1]?.body).toMatchObject({
+  await expect.poll(() => actionRequests.length).toBe(3);
+  expect(actionRequests[2]?.body).toMatchObject({
     accountId: account.id,
     kind: "archive",
     targetIds: [syntheticThreads[0]?.id],

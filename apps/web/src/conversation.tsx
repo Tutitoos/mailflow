@@ -232,18 +232,18 @@ export function ConversationView({
   canActions,
   canCompose,
   canAttachments,
-  canLabels,
+  labelId,
 }: {
   accountId: string;
   threadId: string;
   locale: Locale;
   onBack: () => void;
   onCompose: (context: ComposeContext) => void;
-  onAction: (kind: MailActionKind) => void;
+  onAction: (kind: MailActionKind, labelId?: string) => void;
   canActions: boolean;
   canCompose: boolean;
   canAttachments: boolean;
-  canLabels: boolean;
+  labelId?: string;
 }) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [page, setPage] = useState<ConversationPage | null>(null);
@@ -312,8 +312,12 @@ export function ConversationView({
             >
               <Mail size={17} />
             </Button>
-            {canLabels && (
-              <Button size="icon" aria-label={t("labels")}>
+            {labelId && (
+              <Button
+                size="icon"
+                aria-label={t("labels")}
+                onClick={() => onAction("add_label", labelId)}
+              >
                 <Tag size={17} />
               </Button>
             )}

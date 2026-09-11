@@ -735,10 +735,7 @@ function MessageRow({
   onTrash,
   onReadToggle,
   onImportant,
-  readActionLabel,
-  readActionText,
-  openLabel,
-  openActionText,
+  t,
   actionsEnabled,
 }: {
   message: InboxThread;
@@ -751,14 +748,17 @@ function MessageRow({
   onTrash: () => void;
   onReadToggle: () => void;
   onImportant: () => void;
-  readActionLabel: string;
-  readActionText: string;
-  openLabel: string;
-  openActionText: string;
+  t: Translator;
   actionsEnabled: boolean;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const senderText =
+    message.senderName.trim() || message.senderAddress.trim() || t("unknownSender");
+  const subjectText = message.subject.trim() || t("noSubject");
+  const previewText = message.preview.trim() || t("noPreview");
+  const actionIdentity = message.subject.trim() || senderText;
+  const readActionText = t(message.isRead ? "markUnread" : "markRead");
   useEffect(() => {
     if (!menu) return;
     menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
@@ -792,7 +792,7 @@ function MessageRow({
         className={selected ? "select-box checked" : "select-box"}
         type="button"
         onClick={onSelect}
-        aria-label={`Select ${message.subject || message.senderName}`}
+        aria-label={`${t("selectMessage")} ${actionIdentity}`}
       >
         {selected ? "✓" : ""}
       </button>
@@ -800,7 +800,7 @@ function MessageRow({
         className={starred ? "row-icon starred" : "row-icon"}
         type="button"
         onClick={onStar}
-        aria-label={`${starred ? "Unstar" : "Star"} ${message.subject || message.senderName}`}
+        aria-label={`${t(starred ? "unstarMessage" : "starMessage")} ${actionIdentity}`}
         disabled={!actionsEnabled}
       >
         <Star size={16} fill={starred ? "currentColor" : "none"} />
@@ -808,17 +808,22 @@ function MessageRow({
       <button
         className="row-icon important"
         type="button"
-        aria-label={`Mark ${message.subject || message.senderName} important`}
+        aria-label={`${t(message.isImportant ? "markUnimportant" : "markImportant")} ${actionIdentity}`}
         onClick={onImportant}
         disabled={!actionsEnabled}
       >
         <ChevronsUpDown size={16} />
       </button>
-      <button className="message-content" type="button" onClick={onOpen} aria-label={openLabel}>
-        <span className="sender">{message.senderName || message.senderAddress}</span>
+      <button
+        className="message-content"
+        type="button"
+        onClick={onOpen}
+        aria-label={`${t("openMessage")} ${actionIdentity}`}
+      >
+        <span className="sender">{senderText}</span>
         <span className="subject-line">
-          <strong>{message.subject}</strong>
-          <span> — {message.preview}</span>
+          <strong>{subjectText}</strong>
+          {message.preview.trim() ? <span> — {previewText}</span> : <span> · {previewText}</span>}
         </span>
         {message.attachmentCount > 0 && (
           <span className="attachment-chip">
@@ -837,13 +842,17 @@ function MessageRow({
       </button>
       {actionsEnabled && (
         <div className="quick-actions">
-          <Button size="icon" aria-label="Archive" onClick={onArchive}>
+          <Button size="icon" aria-label={t("archive")} onClick={onArchive}>
             <Archive size={16} />
           </Button>
-          <Button size="icon" aria-label="Delete" onClick={onTrash}>
+          <Button size="icon" aria-label={t("delete")} onClick={onTrash}>
             <Trash2 size={16} />
           </Button>
-          <Button size="icon" aria-label={readActionLabel} onClick={onReadToggle}>
+          <Button
+            size="icon"
+            aria-label={`${readActionText} ${actionIdentity}`}
+            onClick={onReadToggle}
+          >
             <Mail size={16} />
           </Button>
         </div>
@@ -854,7 +863,7 @@ function MessageRow({
             ref={menuRef}
             className="message-context-menu ui-menu"
             role="menu"
-            aria-label={`Actions for ${message.subject || message.senderName}`}
+            aria-label={`${t("actionsFor")} ${actionIdentity}`}
             style={{ left: menu.x, top: menu.y }}
             onPointerDown={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
@@ -887,7 +896,7 @@ function MessageRow({
                 setMenu(null);
               }}
             >
-              <MailOpen size={16} /> <span>{openActionText}</span>
+              <MailOpen size={16} /> <span>{t("openMessage")}</span>
             </button>
             {actionsEnabled && (
               <>
@@ -900,7 +909,7 @@ function MessageRow({
                     setMenu(null);
                   }}
                 >
-                  <Archive size={16} /> Archive
+                  <Archive size={16} /> <span>{t("archive")}</span>
                 </button>
                 <button
                   className="ui-menu-item"
@@ -922,7 +931,8 @@ function MessageRow({
                     setMenu(null);
                   }}
                 >
-                  <Tag size={16} /> {message.isImportant ? "Mark unimportant" : "Mark important"}
+                  <Tag size={16} />
+                  <span>{t(message.isImportant ? "markUnimportant" : "markImportant")}</span>
                 </button>
                 <button
                   className="ui-menu-item danger"
@@ -933,7 +943,7 @@ function MessageRow({
                     setMenu(null);
                   }}
                 >
-                  <Trash2 size={16} /> Delete
+                  <Trash2 size={16} /> <span>{t("delete")}</span>
                 </button>
               </>
             )}
@@ -1002,12 +1012,7 @@ function VirtualMessageList({
                     message.id,
                   ])
                 }
-                readActionLabel={`${t(message.isRead ? "markUnread" : "markRead")} ${
-                  message.subject || message.senderName
-                }`}
-                readActionText={t(message.isRead ? "markUnread" : "markRead")}
-                openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
-                openActionText={t("openMessage")}
+                t={t}
                 actionsEnabled={actionsEnabled}
               />
             </div>

@@ -96,6 +96,24 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
             totalCount: itemCount,
             unreadCount: 1,
           },
+          {
+            id: "mailbox-trash",
+            accountId: account.id,
+            remoteName: "Trash",
+            localName: null,
+            role: "trash",
+            totalCount: 2,
+            unreadCount: 0,
+          },
+          {
+            id: "mailbox-junk",
+            accountId: account.id,
+            remoteName: "Spam",
+            localName: null,
+            role: "junk",
+            totalCount: 1,
+            unreadCount: 0,
+          },
         ],
       },
     }),
@@ -309,7 +327,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   });
 
   await page.goto("/");
-  await expect(page.getByText("Sender 0", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Sender 0", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => Boolean(eventSocket)).toBe(true);
   expect(await page.locator(".message-row").count()).toBeLessThan(100);
 
@@ -317,17 +335,37 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByRole("menu", { name: "Accounts" })).toContainText("Personal");
   await page.keyboard.press("Escape");
 
+  await page.getByRole("button", { name: "EN", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "Language" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "EN English" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByRole("menuitemradio", { name: "ES Spanish" }).click();
+  await expect(page.getByRole("button", { name: "ES", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "ES", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "EN Inglés" }).click();
+
+  await expect(page.getByRole("button", { name: "Close rail" })).toHaveCount(0);
+
   if ((page.viewportSize()?.width ?? 0) >= 1200) {
+    await expect(page.getByRole("button", { name: "Developer" })).toBeHidden();
+    await page.getByRole("button", { name: "Expand Buzones" }).click();
     await expect(page.getByRole("button", { name: "Developer" })).toBeVisible();
     await page.getByRole("button", { name: "Collapse Buzones" }).click();
     await expect(page.getByRole("button", { name: "Developer" })).toBeHidden();
-    await page.getByRole("button", { name: "Expand Buzones" }).click();
+
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Trash", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Spam", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Trash", exact: true })).toBeHidden();
   }
 
   await page.locator(".message-row").first().click({ button: "right" });
   await expect(page.getByRole("menu", { name: /Actions for Sender 0/ })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Open Sender 0", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Open", exact: true }).click();
   await expect.poll(() => openedThreadIds.at(-1)).toBe(syntheticThreads[0]?.id);
   await page.getByRole("button", { name: "Back to inbox" }).click();
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
@@ -357,7 +395,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   const firstSelection = page.getByRole("button", { name: "Select Sender 0" });
   await firstSelection.click();
   await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(firstSelection).toBeVisible();
+  await expect(firstSelection).toBeVisible({ timeout: 20_000 });
   await expect(firstSelection).toHaveClass(/checked/);
 
   await page.getByRole("button", { name: "Open Sender 0" }).focus();

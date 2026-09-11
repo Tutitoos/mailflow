@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
-  CircleUserRound,
   FileText,
   Folder,
   Inbox,
@@ -19,7 +18,6 @@ import {
   MailOpen,
   Menu,
   MoreHorizontal,
-  PanelRightClose,
   Paperclip,
   Pencil,
   Plus,
@@ -128,7 +126,7 @@ function Header({
   t,
 }: {
   locale: Locale;
-  onLocaleChange: () => void;
+  onLocaleChange: (locale: Locale) => void;
   query: string;
   onQueryChange: (value: string) => void;
   onSearch: (value: string) => void;
@@ -145,7 +143,9 @@ function Header({
   const searchInput = useRef<HTMLInputElement>(null);
   const [showSearchHelp, setShowSearchHelp] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
+  const [showLocales, setShowLocales] = useState(false);
   const accountMenu = useRef<HTMLDivElement>(null);
+  const localeMenu = useRef<HTMLDivElement>(null);
   const activeAccount = accounts.find(({ id }) => id === activeAccountId);
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -167,12 +167,17 @@ function Header({
     };
   }, []);
   useEffect(() => {
-    if (!showAccounts) return;
+    if (!showAccounts && !showLocales) return;
     const close = (event: PointerEvent) => {
-      if (!accountMenu.current?.contains(event.target as Node)) setShowAccounts(false);
+      const target = event.target as Node;
+      if (!accountMenu.current?.contains(target)) setShowAccounts(false);
+      if (!localeMenu.current?.contains(target)) setShowLocales(false);
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShowAccounts(false);
+      if (event.key === "Escape") {
+        setShowAccounts(false);
+        setShowLocales(false);
+      }
     };
     window.addEventListener("pointerdown", close);
     window.addEventListener("keydown", handleEscape);
@@ -180,7 +185,7 @@ function Header({
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [showAccounts]);
+  }, [showAccounts, showLocales]);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -263,9 +268,45 @@ function Header({
         <Button size="icon" aria-label="Notifications">
           <Bell size={18} />
         </Button>
-        <Button className="locale-button" size="sm" onClick={onLocaleChange}>
-          <Languages size={16} /> {locale.toUpperCase()}
-        </Button>
+        <div className="locale-menu-anchor" ref={localeMenu}>
+          <Button
+            className="locale-button"
+            size="sm"
+            aria-haspopup="menu"
+            aria-expanded={showLocales}
+            onClick={() => {
+              setShowAccounts(false);
+              setShowLocales((value) => !value);
+            }}
+          >
+            <Languages size={16} />
+            <span>{locale.toUpperCase()}</span>
+            <ChevronDown size={13} />
+          </Button>
+          {showLocales && (
+            <div className="locale-popover ui-menu" role="menu" aria-label={t("language")}>
+              {(["en", "es"] as const).map((option) => (
+                <button
+                  className="ui-menu-item locale-option"
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={locale === option}
+                  key={option}
+                  onClick={() => {
+                    onLocaleChange(option);
+                    setShowLocales(false);
+                  }}
+                >
+                  <span className="locale-code">{option.toUpperCase()}</span>
+                  <span>{t(option === "en" ? "languageEnglish" : "languageSpanish")}</span>
+                  <span className="menu-check" aria-hidden="true">
+                    {locale === option ? "✓" : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="account-menu-anchor" ref={accountMenu}>
           <button
             className="avatar"
@@ -273,7 +314,10 @@ function Header({
             aria-label="Account menu"
             aria-haspopup="menu"
             aria-expanded={showAccounts}
-            onClick={() => setShowAccounts((value) => !value)}
+            onClick={() => {
+              setShowLocales(false);
+              setShowAccounts((value) => !value);
+            }}
           >
             {(activeAccount?.displayName || "M").slice(0, 1).toUpperCase()}
           </button>
@@ -426,6 +470,7 @@ function Sidebar({
   mailboxes,
   labels,
   onLabelSelect,
+  onMailboxSelect,
   t,
   canCompose,
 }: {
@@ -434,15 +479,29 @@ function Sidebar({
   mailboxes: Mailbox[];
   labels: MailLabel[];
   onLabelSelect: (label: MailLabel) => void;
+  onMailboxSelect: (mailbox: Mailbox) => void;
   t: Translator;
   canCompose: boolean;
 }) {
   const mailboxByRole = new Map(mailboxes.map((mailbox) => [mailbox.role, mailbox]));
   const [collapsedLabels, setCollapsedLabels] = useState<Set<string>>(new Set());
+  const [showMore, setShowMore] = useState(false);
   const userLabels = useMemo(
     () => buildLabelTree(labels.filter((label) => label.kind === "user")),
     [labels],
   );
+  useEffect(() => {
+    const collectParents = (nodes: LabelTreeNode[]): string[] =>
+      nodes.flatMap((node) => [
+        ...(node.children.length ? [node.path] : []),
+        ...collectParents(node.children),
+      ]);
+    setCollapsedLabels(new Set(collectParents(userLabels)));
+  }, [userLabels]);
+  const extraMailboxes = mailboxes.filter((mailbox) =>
+    (["archive", "trash", "junk"] as const).includes(mailbox.role as "archive" | "trash" | "junk"),
+  );
+  const extraIcons = { archive: Archive, trash: Trash2, junk: Mail } as const;
   return (
     <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
       <Button
@@ -467,6 +526,8 @@ function Sidebar({
               className={index === 0 ? "nav-item active" : "nav-item"}
               type="button"
               key={key}
+              disabled={!mailbox}
+              onClick={() => mailbox && onMailboxSelect(mailbox)}
             >
               <Icon size={17} />
               <span>{label}</span>
@@ -474,10 +535,36 @@ function Sidebar({
             </button>
           );
         })}
-        <button className="nav-item" type="button">
-          <ChevronDown size={17} />
+        <button
+          className="nav-item more-toggle"
+          type="button"
+          aria-expanded={showMore}
+          aria-controls="secondary-mailboxes"
+          onClick={() => setShowMore((value) => !value)}
+        >
+          <ChevronRight size={17} />
           <span>{t("more")}</span>
         </button>
+        {showMore && (
+          <div id="secondary-mailboxes" className="secondary-mailboxes">
+            {extraMailboxes.map((mailbox) => {
+              const Icon = extraIcons[mailbox.role as keyof typeof extraIcons];
+              return (
+                <button
+                  aria-label={mailbox.localName || mailbox.remoteName}
+                  className="nav-item"
+                  type="button"
+                  key={mailbox.id}
+                  onClick={() => onMailboxSelect(mailbox)}
+                >
+                  <Icon size={17} />
+                  <span>{mailbox.localName || mailbox.remoteName}</span>
+                  {mailbox.unreadCount > 0 && <strong>{mailbox.unreadCount}</strong>}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </nav>
       <div className="sidebar-section-title">
         <span>{t("labels")}</span>
@@ -649,7 +736,9 @@ function MessageRow({
   onReadToggle,
   onImportant,
   readActionLabel,
+  readActionText,
   openLabel,
+  openActionText,
   actionsEnabled,
 }: {
   message: InboxThread;
@@ -663,13 +752,16 @@ function MessageRow({
   onReadToggle: () => void;
   onImportant: () => void;
   readActionLabel: string;
+  readActionText: string;
   openLabel: string;
+  openActionText: string;
   actionsEnabled: boolean;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     const close = () => setMenu(null);
     const closeOutside = (event: PointerEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return;
@@ -765,6 +857,26 @@ function MessageRow({
             aria-label={`Actions for ${message.subject || message.senderName}`}
             style={{ left: menu.x, top: menu.y }}
             onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              const items = [
+                ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+              ];
+              const current = items.indexOf(document.activeElement as HTMLButtonElement);
+              const next =
+                event.key === "ArrowDown"
+                  ? (current + 1) % items.length
+                  : event.key === "ArrowUp"
+                    ? (current - 1 + items.length) % items.length
+                    : event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? items.length - 1
+                        : -1;
+              if (next >= 0) {
+                event.preventDefault();
+                items[next]?.focus();
+              }
+            }}
           >
             <button
               className="ui-menu-item"
@@ -775,7 +887,7 @@ function MessageRow({
                 setMenu(null);
               }}
             >
-              <MailOpen size={16} /> {openLabel}
+              <MailOpen size={16} /> <span>{openActionText}</span>
             </button>
             {actionsEnabled && (
               <>
@@ -799,7 +911,7 @@ function MessageRow({
                     setMenu(null);
                   }}
                 >
-                  <Mail size={16} /> {readActionLabel}
+                  <Mail size={16} /> <span>{readActionText}</span>
                 </button>
                 <button
                   className="ui-menu-item"
@@ -829,26 +941,6 @@ function MessageRow({
           document.body,
         )}
     </article>
-  );
-}
-
-function ContextRail({ t }: { t: Translator }) {
-  return (
-    <aside className="context-rail">
-      <Button size="icon" aria-label={t("details")}>
-        <Info size={18} />
-      </Button>
-      <Button size="icon" aria-label={t("attachments")}>
-        <Paperclip size={18} />
-      </Button>
-      <Button size="icon" aria-label={t("account")}>
-        <CircleUserRound size={18} />
-      </Button>
-      <div className="rail-spacer" />
-      <Button size="icon" aria-label="Close rail">
-        <PanelRightClose size={18} />
-      </Button>
-    </aside>
   );
 }
 
@@ -913,7 +1005,9 @@ function VirtualMessageList({
                 readActionLabel={`${t(message.isRead ? "markUnread" : "markRead")} ${
                   message.subject || message.senderName
                 }`}
+                readActionText={t(message.isRead ? "markUnread" : "markRead")}
                 openLabel={`${t("openMessage")} ${message.subject || message.senderName}`}
+                openActionText={t("openMessage")}
                 actionsEnabled={actionsEnabled}
               />
             </div>
@@ -1364,10 +1458,10 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " sidebar-shell-collapsed" : ""}`}>
       <Header
         locale={locale}
-        onLocaleChange={() => setLocale(locale === "en" ? "es" : "en")}
+        onLocaleChange={setLocale}
         query={query}
         onQueryChange={setQuery}
         onSearch={submitSearch}
@@ -1397,6 +1491,22 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
           labels={labels}
           onLabelSelect={(label) => {
             const nextQuery = `label:"${label.remoteName.replaceAll('"', '\\"')}"`;
+            setQuery(nextQuery);
+            submitSearch(nextQuery);
+          }}
+          onMailboxSelect={(mailbox) => {
+            setActiveThreadId(null);
+            setPageCursor(undefined);
+            setCursorHistory([]);
+            if (mailbox.role === "inbox") {
+              setQuery("");
+              setSubmittedSearch("");
+              setSearchResults([]);
+              setCategory("primary");
+              window.history.replaceState(null, "", "/");
+              return;
+            }
+            const nextQuery = `in:"${mailbox.remoteName.replaceAll('"', '\\"')}"`;
             setQuery(nextQuery);
             submitSearch(nextQuery);
           }}
@@ -1577,7 +1687,6 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             </>
           )}
         </main>
-        <ContextRail t={t} />
       </div>
       {composeOpen && activeAccountId && canCompose && (
         <ComposePanel

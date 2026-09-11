@@ -375,6 +375,39 @@ select:focus-visible {
   color: #000;
   font-weight: 700;
 }
+.account-menu-anchor {
+  position: relative;
+}
+.account-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(340px, calc(100vw - 24px));
+  padding: 8px;
+}
+.account-popover header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 10px;
+  color: var(--text);
+  font-weight: 650;
+}
+.account-popover header small,
+.account-option small {
+  color: var(--muted);
+}
+.account-option > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  text-align: left;
+}
+.account-option strong,
+.account-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .app-body {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--rail-width);
@@ -383,7 +416,7 @@ select:focus-visible {
   gap: 0;
   padding: 0 12px 12px 0;
 }
-.app-body:has(.sidebar.collapsed) {
+.app-body.sidebar-is-collapsed {
   grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr) var(--rail-width);
 }
 .sidebar {
@@ -466,6 +499,37 @@ select:focus-visible {
   color: #f4f4f5;
   font-size: 14px;
   font-weight: 600;
+}
+.label-tree-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  padding-left: calc(var(--label-depth) * 16px);
+}
+.label-disclosure,
+.label-disclosure-spacer {
+  width: 20px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+}
+.label-disclosure {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.label-disclosure[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.label-item {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  padding-left: 4px;
+}
+.label-item:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .label-dot {
   width: 13px;
@@ -604,7 +668,7 @@ select:focus-visible {
   position: relative;
   min-height: 45px;
   display: grid;
-  grid-template-columns: 22px 24px 24px minmax(0, 1fr);
+  grid-template-columns: 22px 24px 24px minmax(0, 1fr) 108px;
   align-items: center;
   gap: 5px;
   padding: 0 12px;
@@ -716,15 +780,26 @@ select:focus-visible {
   font-weight: 500;
 }
 .quick-actions {
-  position: absolute;
-  right: 8px;
-  display: none;
+  position: static;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  padding-left: 20px;
-  background: linear-gradient(90deg, transparent, var(--hover) 15%);
+  visibility: hidden;
 }
 .message-row:hover .quick-actions {
-  display: flex;
+  visibility: visible;
+}
+.message-context-menu {
+  position: fixed;
+  z-index: 120;
+  width: 216px;
+  padding: 6px;
+}
+.message-context-menu .ui-menu-item {
+  width: 100%;
+}
+.message-context-menu .danger {
+  color: #fca5a5;
 }
 .empty-state {
   height: 280px;
@@ -809,7 +884,7 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 28px 30px 22px 72px;
+  padding: 26px 32px 18px 58px;
 }
 .conversation-heading > div {
   display: flex;
@@ -868,8 +943,8 @@ select:focus-visible {
 }
 .conversation-messages {
   display: grid;
-  gap: 10px;
-  padding: 0 30px 40px;
+  gap: 0;
+  padding: 0 32px 40px;
 }
 .conversation-messages > .mail-state {
   height: 260px;
@@ -881,9 +956,10 @@ select:focus-visible {
   display: block;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #0c0c0c;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 .message-summary {
   width: 100%;
@@ -933,7 +1009,7 @@ select:focus-visible {
   width: 100%;
   min-height: 300px;
   border: 0;
-  background: var(--surface);
+  background: #fff;
 }
 .plain-mail-body {
   margin: 0;
@@ -2041,7 +2117,7 @@ select:focus-visible {
   }
 }
 
-@media (max-width: 1279px) {
+@media (max-width: 1199px) {
   .topbar {
     grid-template-columns: 80px minmax(280px, 1fr) auto;
   }
@@ -2051,7 +2127,7 @@ select:focus-visible {
   .app-body {
     grid-template-columns: 64px minmax(0, 1fr);
   }
-  .app-body:has(.sidebar.collapsed) {
+  .app-body.sidebar-is-collapsed {
     grid-template-columns: 64px minmax(0, 1fr);
   }
   .sidebar {
@@ -2087,14 +2163,14 @@ select:focus-visible {
     grid-template-columns: auto 1fr auto;
     gap: 8px;
   }
-  .topbar-actions > :not(.avatar):not(.locale-button) {
+  .topbar-actions > :not(.account-menu-anchor):not(.locale-button) {
     display: none;
   }
   .app-body {
     grid-template-columns: 1fr;
     padding-left: 12px;
   }
-  .app-body:has(.sidebar.collapsed) {
+  .app-body.sidebar-is-collapsed {
     grid-template-columns: 1fr;
   }
   .sidebar {

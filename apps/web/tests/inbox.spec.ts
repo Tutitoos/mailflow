@@ -117,7 +117,29 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
           {
             id: "label-user-1",
             accountId: account.id,
-            remoteName: "Acceptance",
+            remoteName: "Buzones",
+            localName: null,
+            kind: "user",
+            category: null,
+            color: null,
+            totalCount: 0,
+            unreadCount: 0,
+          },
+          {
+            id: "label-user-2",
+            accountId: account.id,
+            remoteName: "Buzones/Developer",
+            localName: null,
+            kind: "user",
+            category: null,
+            color: null,
+            totalCount: 3,
+            unreadCount: 3,
+          },
+          {
+            id: "label-user-3",
+            accountId: account.id,
+            remoteName: "Buzones/Jobs",
             localName: null,
             kind: "user",
             category: null,
@@ -289,8 +311,25 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect.poll(() => Boolean(eventSocket)).toBe(true);
   expect(await page.locator(".message-row").count()).toBeLessThan(100);
 
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await expect(page.getByRole("menu", { name: "Accounts" })).toContainText("Personal");
+  await page.keyboard.press("Escape");
+
+  if ((page.viewportSize()?.width ?? 0) >= 1200) {
+    await expect(page.getByRole("button", { name: "Developer" })).toBeVisible();
+    await page.getByRole("button", { name: "Collapse Buzones" }).click();
+    await expect(page.getByRole("button", { name: "Developer" })).toBeHidden();
+    await page.getByRole("button", { name: "Expand Buzones" }).click();
+  }
+
+  await page.locator(".message-row").first().click({ button: "right" });
+  await expect(page.getByRole("menu", { name: /Actions for Sender 0/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
   await page.keyboard.press("/");
   await expect(page.getByRole("combobox", { name: "Search mail" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "from:", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   const reducedMotion = await page.evaluate(() => {
     const probe = document.createElement("div");

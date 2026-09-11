@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
   CircleUserRound,
   FileText,
+  Folder,
   Inbox,
   Info,
   KeyRound,
@@ -32,7 +33,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { registerPasskey, signOut } from "./auth-client";
 import { Button } from "./components/ui/button";
@@ -120,6 +121,9 @@ function Header({
   onMenu,
   syncLabel,
   connected,
+  accounts,
+  activeAccountId,
+  onAccountChange,
   t,
 }: {
   locale: Locale;
@@ -131,11 +135,17 @@ function Header({
   onMenu: () => void;
   syncLabel: string;
   connected: boolean;
+  accounts: MailAccount[];
+  activeAccountId: string | null;
+  onAccountChange: (accountId: string) => void;
   t: Translator;
 }) {
   const navigate = useNavigate();
   const searchInput = useRef<HTMLInputElement>(null);
   const [showSearchHelp, setShowSearchHelp] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const accountMenu = useRef<HTMLDivElement>(null);
+  const activeAccount = accounts.find(({ id }) => id === activeAccountId);
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
       if (
@@ -155,6 +165,21 @@ function Header({
       window.removeEventListener("mailflow:focus-search", focusNativeSearch);
     };
   }, []);
+  useEffect(() => {
+    if (!showAccounts) return;
+    const close = (event: PointerEvent) => {
+      if (!accountMenu.current?.contains(event.target as Node)) setShowAccounts(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowAccounts(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showAccounts]);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -188,13 +213,13 @@ function Header({
             aria-label={t("search")}
             aria-invalid={searchInvalid || undefined}
             aria-describedby={searchInvalid ? "search-error" : undefined}
-            list="mailflow-search-operators"
+            autoComplete="off"
+            aria-expanded={showSearchHelp}
+            aria-controls="mailflow-search-suggestions"
+            role="combobox"
+            onFocus={() => setShowSearchHelp(true)}
+            onBlur={() => window.setTimeout(() => setShowSearchHelp(false), 120)}
           />
-          <datalist id="mailflow-search-operators">
-            {searchSuggestions.map((suggestion) => (
-              <option key={suggestion} value={suggestion} />
-            ))}
-          </datalist>
           <kbd>/</kbd>
           <Button
             size="icon"
@@ -206,7 +231,7 @@ function Header({
             <SlidersHorizontal size={17} />
           </Button>
           {showSearchHelp && (
-            <fieldset className="search-help">
+            <fieldset className="search-help" id="mailflow-search-suggestions">
               <legend>{t("searchFilters")}</legend>
               {searchSuggestions.map((suggestion) => (
                 <button
@@ -240,9 +265,55 @@ function Header({
         <Button className="locale-button" size="sm" onClick={onLocaleChange}>
           <Languages size={16} /> {locale.toUpperCase()}
         </Button>
-        <button className="avatar" type="button" aria-label="Account menu">
-          G
-        </button>
+        <div className="account-menu-anchor" ref={accountMenu}>
+          <button
+            className="avatar"
+            type="button"
+            aria-label="Account menu"
+            aria-haspopup="menu"
+            aria-expanded={showAccounts}
+            onClick={() => setShowAccounts((value) => !value)}
+          >
+            {(activeAccount?.displayName || "M").slice(0, 1).toUpperCase()}
+          </button>
+          {showAccounts && (
+            <div className="account-popover ui-popover" role="menu" aria-label={t("accounts")}>
+              <header>
+                <span>{t("accounts")}</span>
+                <small>{accounts.length}</small>
+              </header>
+              {accounts.map((account) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={account.id === activeAccountId}
+                  className="account-option ui-menu-item"
+                  key={account.id}
+                  onClick={() => {
+                    onAccountChange(account.id);
+                    setShowAccounts(false);
+                  }}
+                >
+                  <span className="provider-icon">
+                    {account.provider.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <strong>{account.displayName}</strong>
+                    <small>{account.provider}</small>
+                  </span>
+                  <span className={account.syncState === "error" ? "offline-dot" : "online-dot"} />
+                </button>
+              ))}
+              <button
+                className="ui-menu-item"
+                type="button"
+                onClick={() => navigate("/settings/accounts")}
+              >
+                <Plus size={16} /> {t("connectedAccounts")}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
@@ -257,28 +328,120 @@ const mailboxItems = [
   ["sent", Send, ""],
 ] as const;
 
+type LabelTreeNode = {
+  name: string;
+  path: string;
+  label?: MailLabel;
+  children: LabelTreeNode[];
+};
+
+export function buildLabelTree(labels: MailLabel[]): LabelTreeNode[] {
+  const roots: LabelTreeNode[] = [];
+  for (const label of labels) {
+    const parts = (label.localName || label.remoteName).split("/").filter(Boolean);
+    let siblings = roots;
+    let path = "";
+    parts.forEach((name, index) => {
+      path = path ? `${path}/${name}` : name;
+      let node = siblings.find((candidate) => candidate.name === name);
+      if (!node) {
+        node = { name, path, children: [] };
+        siblings.push(node);
+      }
+      if (index === parts.length - 1) node.label = label;
+      siblings = node.children;
+    });
+  }
+  const sort = (nodes: LabelTreeNode[]): LabelTreeNode[] =>
+    nodes
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+      .map((node) => ({ ...node, children: sort(node.children) }));
+  return sort(roots);
+}
+
+function LabelBranch({
+  node,
+  depth,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  node: LabelTreeNode;
+  depth: number;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
+  onSelect: (label: MailLabel) => void;
+}) {
+  const hasChildren = node.children.length > 0;
+  const isCollapsed = collapsed.has(node.path);
+  return (
+    <div className="label-branch">
+      <div className="label-tree-row" style={{ "--label-depth": depth } as CSSProperties}>
+        {hasChildren ? (
+          <button
+            className="label-disclosure"
+            type="button"
+            aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${node.name}`}
+            aria-expanded={!isCollapsed}
+            onClick={() => onToggle(node.path)}
+          >
+            <ChevronRight size={14} />
+          </button>
+        ) : (
+          <span className="label-disclosure-spacer" />
+        )}
+        <button
+          className="nav-item label-item"
+          type="button"
+          disabled={!node.label}
+          onClick={() => node.label && onSelect(node.label)}
+        >
+          <Folder size={15} fill="currentColor" />
+          <span>{node.name}</span>
+          {(node.label?.unreadCount || 0) > 0 && <strong>{node.label?.unreadCount}</strong>}
+        </button>
+      </div>
+      {hasChildren && !isCollapsed && (
+        <div>
+          {node.children.map((child) => (
+            <LabelBranch
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Sidebar({
   collapsed,
   onCompose,
-  accounts,
-  activeAccountId,
-  onAccountChange,
   mailboxes,
   labels,
+  onLabelSelect,
   t,
   canCompose,
 }: {
   collapsed: boolean;
   onCompose: () => void;
-  accounts: MailAccount[];
-  activeAccountId: string | null;
-  onAccountChange: (accountId: string) => void;
   mailboxes: Mailbox[];
   labels: MailLabel[];
+  onLabelSelect: (label: MailLabel) => void;
   t: Translator;
   canCompose: boolean;
 }) {
   const mailboxByRole = new Map(mailboxes.map((mailbox) => [mailbox.role, mailbox]));
+  const [collapsedLabels, setCollapsedLabels] = useState<Set<string>>(new Set());
+  const userLabels = useMemo(
+    () => buildLabelTree(labels.filter((label) => label.kind === "user")),
+    [labels],
+  );
   return (
     <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
       <Button
@@ -320,32 +483,22 @@ function Sidebar({
         <Plus size={16} />
       </div>
       <nav className="nav-list labels" aria-label={t("labels")}>
-        {labels
-          .filter((label) => label.kind === "user")
-          .slice(0, 12)
-          .map((label) => (
-            <button className="nav-item" type="button" key={label.id}>
-              <span className="label-dot" style={{ background: label.color || undefined }} />
-              <span>{label.localName || label.remoteName}</span>
-              {label.unreadCount > 0 && <strong>{label.unreadCount}</strong>}
-            </button>
-          ))}
-      </nav>
-      <div className="sidebar-section-title account-title">
-        <span>{t("accounts")}</span>
-      </div>
-      <nav className="nav-list accounts" aria-label={t("accounts")}>
-        {accounts.map((account) => (
-          <button
-            className={account.id === activeAccountId ? "nav-item active" : "nav-item"}
-            type="button"
-            key={account.id}
-            onClick={() => onAccountChange(account.id)}
-          >
-            <span className="provider-icon">{account.provider.slice(0, 1).toUpperCase()}</span>
-            <span>{account.displayName}</span>
-            <span className={account.syncState === "error" ? "offline-dot" : "online-dot"} />
-          </button>
+        {userLabels.map((node) => (
+          <LabelBranch
+            key={node.path}
+            node={node}
+            depth={0}
+            collapsed={collapsedLabels}
+            onToggle={(path) =>
+              setCollapsedLabels((current) => {
+                const next = new Set(current);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              })
+            }
+            onSelect={onLabelSelect}
+          />
         ))}
       </nav>
     </aside>
@@ -512,9 +665,30 @@ function MessageRow({
   openLabel: string;
   actionsEnabled: boolean;
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const handleEscape = (event: KeyboardEvent) => event.key === "Escape" && close();
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", handleEscape);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("blur", close);
+    };
+  }, [menu]);
   return (
     <article
       className={`message-row${!message.isRead ? " unread" : ""}${selected ? " selected" : ""}`}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenu({
+          x: Math.max(8, Math.min(event.clientX, window.innerWidth - 224)),
+          y: Math.max(8, Math.min(event.clientY, window.innerHeight - 290)),
+        });
+      }}
     >
       <button
         className={selected ? "select-box checked" : "select-box"}
@@ -574,6 +748,75 @@ function MessageRow({
           <Button size="icon" aria-label={readActionLabel} onClick={onReadToggle}>
             <Mail size={16} />
           </Button>
+        </div>
+      )}
+      {menu && (
+        <div
+          className="message-context-menu ui-menu"
+          role="menu"
+          aria-label={`Actions for ${message.subject || message.senderName}`}
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            className="ui-menu-item"
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              onOpen();
+              setMenu(null);
+            }}
+          >
+            <MailOpen size={16} /> {openLabel}
+          </button>
+          {actionsEnabled && (
+            <>
+              <button
+                className="ui-menu-item"
+                role="menuitem"
+                type="button"
+                onClick={() => {
+                  onArchive();
+                  setMenu(null);
+                }}
+              >
+                <Archive size={16} /> Archive
+              </button>
+              <button
+                className="ui-menu-item"
+                role="menuitem"
+                type="button"
+                onClick={() => {
+                  onReadToggle();
+                  setMenu(null);
+                }}
+              >
+                <Mail size={16} /> {readActionLabel}
+              </button>
+              <button
+                className="ui-menu-item"
+                role="menuitem"
+                type="button"
+                onClick={() => {
+                  onImportant();
+                  setMenu(null);
+                }}
+              >
+                <Tag size={16} /> {message.isImportant ? "Mark unimportant" : "Mark important"}
+              </button>
+              <button
+                className="ui-menu-item danger"
+                role="menuitem"
+                type="button"
+                onClick={() => {
+                  onTrash();
+                  setMenu(null);
+                }}
+              >
+                <Trash2 size={16} /> Delete
+              </button>
+            </>
+          )}
         </div>
       )}
     </article>
@@ -1123,9 +1366,17 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         onMenu={() => setSidebarCollapsed((value) => !value)}
         syncLabel={!online ? t("offline") : eventsConnected ? t("liveUpdates") : t("syncing")}
         connected={online && eventsConnected}
+        accounts={accounts}
+        activeAccountId={activeAccountId}
+        onAccountChange={(accountId) => {
+          setPageCursor(undefined);
+          setCursorHistory([]);
+          setActiveThreadId(null);
+          setActiveAccountId(accountId);
+        }}
         t={t}
       />
-      <div className="app-body">
+      <div className={`app-body${sidebarCollapsed ? " sidebar-is-collapsed" : ""}`}>
         <Sidebar
           collapsed={sidebarCollapsed}
           onCompose={() => {
@@ -1133,16 +1384,13 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
             setComposeOpen(true);
             setSidebarCollapsed(true);
           }}
-          accounts={accounts}
-          activeAccountId={activeAccountId}
-          onAccountChange={(accountId) => {
-            setPageCursor(undefined);
-            setCursorHistory([]);
-            setActiveThreadId(null);
-            setActiveAccountId(accountId);
-          }}
           mailboxes={mailboxes}
           labels={labels}
+          onLabelSelect={(label) => {
+            const nextQuery = `label:"${label.remoteName.replaceAll('"', '\\"')}"`;
+            setQuery(nextQuery);
+            submitSearch(nextQuery);
+          }}
           t={t}
           canCompose={canCompose}
         />

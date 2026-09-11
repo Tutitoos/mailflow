@@ -157,8 +157,9 @@ test("mail shell and admin remain operable", async ({ page }) => {
     const mailSurface = page.locator(".mail-surface");
     const expandedLeft = (await mailSurface.boundingBox())?.x ?? 0;
     await page.getByRole("button", { name: "Toggle navigation" }).click();
-    const collapsedLeft = (await mailSurface.boundingBox())?.x ?? 0;
-    expect(expandedLeft - collapsedLeft).toBeGreaterThan(150);
+    await expect
+      .poll(async () => expandedLeft - ((await mailSurface.boundingBox())?.x ?? 0))
+      .toBeGreaterThan(150);
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
       .toBe(0);

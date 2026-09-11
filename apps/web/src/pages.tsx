@@ -34,6 +34,7 @@ import {
   Users,
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { registerPasskey, signOut } from "./auth-client";
 import { Button } from "./components/ui/button";
@@ -666,15 +667,20 @@ function MessageRow({
   actionsEnabled: boolean;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    const closeOutside = (event: PointerEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      close();
+    };
     const handleEscape = (event: KeyboardEvent) => event.key === "Escape" && close();
-    window.addEventListener("pointerdown", close);
+    window.addEventListener("pointerdown", closeOutside);
     window.addEventListener("keydown", handleEscape);
     window.addEventListener("blur", close);
     return () => {
-      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("pointerdown", closeOutside);
       window.removeEventListener("keydown", handleEscape);
       window.removeEventListener("blur", close);
     };
@@ -750,75 +756,78 @@ function MessageRow({
           </Button>
         </div>
       )}
-      {menu && (
-        <div
-          className="message-context-menu ui-menu"
-          role="menu"
-          aria-label={`Actions for ${message.subject || message.senderName}`}
-          style={{ left: menu.x, top: menu.y }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <button
-            className="ui-menu-item"
-            role="menuitem"
-            type="button"
-            onClick={() => {
-              onOpen();
-              setMenu(null);
-            }}
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="message-context-menu ui-menu"
+            role="menu"
+            aria-label={`Actions for ${message.subject || message.senderName}`}
+            style={{ left: menu.x, top: menu.y }}
+            onPointerDown={(event) => event.stopPropagation()}
           >
-            <MailOpen size={16} /> {openLabel}
-          </button>
-          {actionsEnabled && (
-            <>
-              <button
-                className="ui-menu-item"
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  onArchive();
-                  setMenu(null);
-                }}
-              >
-                <Archive size={16} /> Archive
-              </button>
-              <button
-                className="ui-menu-item"
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  onReadToggle();
-                  setMenu(null);
-                }}
-              >
-                <Mail size={16} /> {readActionLabel}
-              </button>
-              <button
-                className="ui-menu-item"
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  onImportant();
-                  setMenu(null);
-                }}
-              >
-                <Tag size={16} /> {message.isImportant ? "Mark unimportant" : "Mark important"}
-              </button>
-              <button
-                className="ui-menu-item danger"
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  onTrash();
-                  setMenu(null);
-                }}
-              >
-                <Trash2 size={16} /> Delete
-              </button>
-            </>
-          )}
-        </div>
-      )}
+            <button
+              className="ui-menu-item"
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                onOpen();
+                setMenu(null);
+              }}
+            >
+              <MailOpen size={16} /> {openLabel}
+            </button>
+            {actionsEnabled && (
+              <>
+                <button
+                  className="ui-menu-item"
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    onArchive();
+                    setMenu(null);
+                  }}
+                >
+                  <Archive size={16} /> Archive
+                </button>
+                <button
+                  className="ui-menu-item"
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    onReadToggle();
+                    setMenu(null);
+                  }}
+                >
+                  <Mail size={16} /> {readActionLabel}
+                </button>
+                <button
+                  className="ui-menu-item"
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    onImportant();
+                    setMenu(null);
+                  }}
+                >
+                  <Tag size={16} /> {message.isImportant ? "Mark unimportant" : "Mark important"}
+                </button>
+                <button
+                  className="ui-menu-item danger"
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    onTrash();
+                    setMenu(null);
+                  }}
+                >
+                  <Trash2 size={16} /> Delete
+                </button>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </article>
   );
 }

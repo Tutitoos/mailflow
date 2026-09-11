@@ -35,6 +35,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   let searchRequests = 0;
   let searchResultStarred = false;
   const searchStarredResponses: boolean[] = [];
+  const openedThreadIds: string[] = [];
   let eventSocket: WebSocketRoute | undefined;
   const actionRequests: Array<{ key: string | null; body: unknown }> = [];
   const draftRequests: Array<{ method: string; url: string; body: unknown }> = [];
@@ -157,8 +158,9 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
       json: { items: category === "primary" ? syntheticThreads : [], nextCursor: null },
     });
   });
-  await page.route("**/api/v1/threads/*?**", (route) =>
-    route.fulfill({
+  await page.route("**/api/v1/threads/*?**", (route) => {
+    openedThreadIds.push(new URL(route.request().url()).pathname.split("/").at(-1) ?? "");
+    return route.fulfill({
       json: {
         thread: {
           id: syntheticThreads[0]?.id,
@@ -200,8 +202,8 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
         ],
         nextCursor: null,
       },
-    }),
-  );
+    });
+  });
   await page.route("**/api/v1/search?**", (route) => {
     searchRequests += 1;
     searchStarredResponses.push(searchResultStarred);
@@ -325,7 +327,10 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await page.locator(".message-row").first().click({ button: "right" });
   await expect(page.getByRole("menu", { name: /Actions for Sender 0/ })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.getByRole("menuitem", { name: "Open Sender 0", exact: true }).click();
+  await expect.poll(() => openedThreadIds.at(-1)).toBe(syntheticThreads[0]?.id);
+  await page.getByRole("button", { name: "Back to inbox" }).click();
+  await expect(page.getByText("Sender 0", { exact: true })).toBeVisible();
 
   await page.keyboard.press("/");
   await expect(page.getByRole("combobox", { name: "Search mail" })).toBeFocused();

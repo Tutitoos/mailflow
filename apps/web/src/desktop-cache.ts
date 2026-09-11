@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { isDesktopRuntime } from "./desktop-runtime";
 
 export type DesktopCacheKind = "navigation" | "inbox" | "search" | "conversation";
@@ -9,6 +8,7 @@ const desktopOfflineKey = "mailflow.desktop.offline";
 async function invokeDesktop<T>(command: string, arguments_: Record<string, unknown> = {}) {
   if (!isDesktopRuntime()) return undefined;
   try {
+    const { invoke } = await import("@tauri-apps/api/core");
     return await invoke<T>(command, arguments_);
   } catch {
     return undefined;
@@ -68,6 +68,7 @@ export async function writeDesktopCache(
 
 export async function removeDesktopAccount(accountId: string) {
   if (!isDesktopRuntime()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
   await invoke("offline_cache_remove_account", { accountId });
 }
 

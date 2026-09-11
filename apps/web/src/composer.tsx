@@ -44,6 +44,17 @@ type EditorContent = { text: string; html: string };
 export const DRAFT_LOCAL_SAVE_MS = 2_000;
 export const DRAFT_REMOTE_CHECKPOINT_MS = 15_000;
 
+export function hasMeaningfulDraftContent(
+  draft: Pick<DraftContent, "attachments" | "bodyText" | "recipients" | "subject">,
+) {
+  return (
+    draft.recipients.length > 0 ||
+    draft.attachments.length > 0 ||
+    draft.subject.trim().length > 0 ||
+    draft.bodyText.trim().length > 0
+  );
+}
+
 function InitialContentPlugin({ text }: { text: string }) {
   const [editor] = useLexicalComposerContext();
   const initialized = useRef(false);
@@ -206,7 +217,13 @@ export function ComposePanel({
     }
   }, [accountId, content]);
 
+  const hasMeaningfulContent = useCallback(
+    () => hasMeaningfulDraftContent(content(latest.current.draft?.localRevision)),
+    [content],
+  );
+
   const checkpoint = useCallback(async () => {
+    if (!latest.current.draft && !hasMeaningfulContent()) return null;
     const saved =
       latest.current.dirty || !latest.current.draft ? await saveLocal() : latest.current.draft;
     if (!saved) throw new Error("draft_unavailable");
@@ -214,7 +231,7 @@ export function ComposePanel({
     setDraft(remote);
     setStatus("saved");
     return remote;
-  }, [accountId, saveLocal]);
+  }, [accountId, hasMeaningfulContent, saveLocal]);
 
   useEffect(() => {
     if (!editor || recovered.current || context.mode !== "new") return;
@@ -277,12 +294,13 @@ export function ComposePanel({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: content fields intentionally restart the two-second debounce.
   useEffect(() => {
+    if (!latest.current.draft && !hasMeaningfulContent()) return;
     const timer = window.setTimeout(
       () => void saveLocal().catch(() => undefined),
       DRAFT_LOCAL_SAVE_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [to, cc, bcc, subject, editorContent, attachments, saveLocal]);
+  }, [to, cc, bcc, subject, editorContent, attachments, hasMeaningfulContent, saveLocal]);
 
   useEffect(() => {
     const interval = window.setInterval(
@@ -317,6 +335,10 @@ export function ComposePanel({
   const requestClose = async () => {
     if (uploadController.current) {
       setStatus("conflict");
+      return;
+    }
+    if (!latest.current.draft && !hasMeaningfulContent()) {
+      onClose();
       return;
     }
     try {

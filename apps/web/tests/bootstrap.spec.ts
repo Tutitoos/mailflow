@@ -1,9 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("rerenders authentication when an equal-revision locale catalog arrives", async ({
-  page,
-}) => {
+test("rerenders authentication when an equal-revision locale catalog arrives", async ({ page }) => {
   await page.route("**/api/auth/setup/status", (route) =>
     route.fulfill({ json: { configured: true } }),
   );

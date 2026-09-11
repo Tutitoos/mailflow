@@ -1228,14 +1228,15 @@ select:focus-visible {
 }
 
 .settings-shell {
-  min-height: 100vh;
-  background: var(--background);
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -20%, rgb(255 255 255 / 5%), transparent 38%), var(--background);
 }
 
 .settings-content {
-  width: min(900px, calc(100% - 32px));
+  width: min(1040px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 64px 0;
+  padding: 48px 0 72px;
 }
 
 .settings-heading {
@@ -1243,8 +1244,10 @@ select:focus-visible {
   align-items: end;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--border);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 3px);
+  background: var(--surface-raised);
 }
 
 .settings-actions {
@@ -1279,7 +1282,8 @@ select:focus-visible {
   margin: 20px 0;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--surface-subtle);
 }
 
 .settings-notice a {
@@ -1295,7 +1299,8 @@ select:focus-visible {
   margin: 20px 0;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--surface-subtle);
 }
 
 .native-notification-settings > div,
@@ -1414,7 +1419,9 @@ select:focus-visible {
 }
 
 .account-list {
-  margin-top: 24px;
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .account-list article {
@@ -1422,8 +1429,10 @@ select:focus-visible {
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 14px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--surface-subtle);
 }
 
 .account-list article div {
@@ -1482,6 +1491,8 @@ select:focus-visible {
 }
 .admin-content {
   min-width: 0;
+  width: 100%;
+  max-width: 1500px;
   padding: 36px;
 }
 .admin-title {
@@ -1542,7 +1553,8 @@ select:focus-visible {
 .admin-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #080808;
+  background: var(--surface-subtle);
+  box-shadow: var(--shadow-card);
 }
 .admin-panel > header {
   min-height: 50px;
@@ -1797,6 +1809,7 @@ select:focus-visible {
   border-bottom: 0;
 }
 .admin-data-table table {
+  min-width: 680px;
   width: 100%;
   border-collapse: collapse;
 }
@@ -1976,11 +1989,11 @@ select:focus-visible {
 }
 
 .auth-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   grid-template-rows: 64px 1fr 48px;
   overflow-y: auto;
-  background: #000;
+  background: radial-gradient(circle at 50% 15%, rgb(255 255 255 / 6%), transparent 34%), #000;
 }
 .auth-header,
 .auth-shell > footer {
@@ -2014,7 +2027,8 @@ select:focus-visible {
   padding: 30px;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: #080808;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  backdrop-filter: blur(18px);
   box-shadow: 0 24px 80px rgb(0 0 0 / 65%);
 }
 .auth-card.compact {
@@ -2072,8 +2086,8 @@ select:focus-visible {
   color: white;
 }
 .auth-card input:focus {
-  border-color: #71717a;
-  box-shadow: 0 0 0 1px #71717a;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .auth-card label small {
   color: #8f8f97;

@@ -393,7 +393,7 @@ function RecoveryForm({
 export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNode }) {
   const [locale, setLocale] = useState<Locale>("en");
   const [phase, setPhase] = useState<Phase>("loading");
-  const [, setCatalogRevision] = useState(0);
+  const [, setCatalogInstallations] = useState(0);
   const t: Translator = (key) => translate(locale, key);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -432,7 +432,9 @@ export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNo
     const controller = new AbortController();
     void loadTranslationCatalog(locale, controller.signal)
       .then((catalog) => {
-        if (installTranslationCatalog(catalog)) setCatalogRevision(catalog.revision);
+        if (installTranslationCatalog(catalog)) {
+          setCatalogInstallations((installations) => installations + 1);
+        }
       })
       .catch(() => undefined);
     return () => controller.abort();

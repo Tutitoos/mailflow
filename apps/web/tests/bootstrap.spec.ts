@@ -1,6 +1,53 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+test("rerenders authentication when an equal-revision locale catalog arrives", async ({
+  page,
+}) => {
+  await page.route("**/api/auth/setup/status", (route) =>
+    route.fulfill({ json: { configured: true } }),
+  );
+  await page.route("**/api/auth/get-session", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/v1/translations/en", (route) =>
+    route.fulfill({
+      json: {
+        locale: "en",
+        defaultLocale: "en",
+        revision: 7,
+        messages: {
+          signInTitle: "Sign in to Mailflow",
+          signInDescription: "Use the owner account for this installation.",
+        },
+        missingKeys: [],
+      },
+    }),
+  );
+  await page.route("**/api/v1/translations/es", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({
+      json: {
+        locale: "es",
+        defaultLocale: "en",
+        revision: 7,
+        messages: {
+          signInTitle: "Inicia sesión en Mailflow",
+          signInDescription: "Usa la cuenta propietaria de esta instalación.",
+        },
+        missingKeys: [],
+      },
+    });
+  });
+
+  const englishCatalog = page.waitForResponse("**/api/v1/translations/en");
+  await page.goto("/");
+  await englishCatalog;
+  await page.getByRole("button", { name: "Language" }).click();
+  await page.getByRole("menuitemradio", { name: "ES Spanish" }).click();
+
+  await expect(page.getByRole("heading", { name: "Inicia sesión en Mailflow" })).toBeVisible();
+  await expect(page.getByText("Usa la cuenta propietaria de esta instalación.")).toBeVisible();
+});
+
 test("creates the only owner in Spanish without persisting secrets", async ({ page }) => {
   const bootstrapToken = "browser-only-bootstrap-token";
   const password = "browser-test-password";

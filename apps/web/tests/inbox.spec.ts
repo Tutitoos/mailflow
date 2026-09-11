@@ -19,8 +19,8 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   const syntheticThreads = Array.from({ length: itemCount }, (_, index) => ({
     id: `10000000-0000-7000-8000-${index.toString(16).padStart(12, "0")}`,
     accountId: account.id,
-    senderName: `Sender ${index}`,
-    senderAddress: `sender-${index}@example.test`,
+    senderName: index === 1 ? "" : `Sender ${index}`,
+    senderAddress: index === 1 ? "" : `sender-${index}@example.test`,
     subject: "",
     preview: "",
     lastMessageAt: "2026-09-07T17:00:00Z",
@@ -397,6 +397,10 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(firstSelection).toBeVisible({ timeout: 20_000 });
   await expect(firstSelection).toHaveClass(/checked/);
+  await expect(page.locator(".message-row").first()).toContainText("(No subject)");
+  await expect(page.locator(".message-row").first()).toContainText("No preview");
+  await expect(page.locator(".message-row").first()).not.toContainText("— No preview");
+  await expect(page.locator(".message-row").nth(1)).toContainText("Unknown sender");
 
   await page.getByRole("button", { name: "Open Sender 0" }).focus();
   await page.keyboard.press("Enter");

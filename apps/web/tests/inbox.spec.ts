@@ -12,7 +12,7 @@ const account = {
 test("live inbox virtualizes large account-scoped pages and preserves selection", async ({
   page,
 }, testInfo) => {
-  testInfo.setTimeout(60_000);
+  testInfo.setTimeout(90_000);
   // Exercise the 100k acceptance target once; responsive projects use a
   // smaller page so the six-project suite does not duplicate a large fixture.
   const itemCount = testInfo.project.name === "desktop-large" ? 100_000 : 500;
@@ -509,6 +509,16 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("No messages here")).toBeVisible();
 
   const composeButton = page.getByRole("button", { name: "Compose" });
+  if (!(await composeButton.isVisible())) {
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+  }
+  const draftsBeforeEmptyCompose = draftRequests.length;
+  await composeButton.click();
+  await page.waitForTimeout(2_100);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("region", { name: "New message" })).toHaveCount(0);
+  expect(draftRequests).toHaveLength(draftsBeforeEmptyCompose);
+
   if (!(await composeButton.isVisible())) {
     await page.getByRole("button", { name: "Toggle navigation" }).click();
   }

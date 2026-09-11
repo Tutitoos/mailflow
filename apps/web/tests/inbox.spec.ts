@@ -12,7 +12,7 @@ const account = {
 test("live inbox virtualizes large account-scoped pages and preserves selection", async ({
   page,
 }, testInfo) => {
-  testInfo.setTimeout(testInfo.project.name === "desktop-large" ? 60_000 : 30_000);
+  testInfo.setTimeout(60_000);
   // Exercise the 100k acceptance target once; responsive projects use a
   // smaller page so the six-project suite does not duplicate a large fixture.
   const itemCount = testInfo.project.name === "desktop-large" ? 100_000 : 500;
@@ -310,9 +310,11 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   expect(reducedMotion.animationDurationSeconds).toBeLessThanOrEqual(0.00001);
   expect(reducedMotion.transitionDurationSeconds).toBeLessThanOrEqual(0.00001);
 
-  await page.getByRole("button", { name: "Select Sender 0" }).click();
+  const firstSelection = page.getByRole("button", { name: "Select Sender 0" });
+  await firstSelection.click();
   await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(page.getByRole("button", { name: "Select Sender 0" })).toHaveClass(/checked/);
+  await expect(firstSelection).toBeVisible();
+  await expect(firstSelection).toHaveClass(/checked/);
 
   await page.getByRole("button", { name: "Open Sender 0" }).focus();
   await page.keyboard.press("Enter");

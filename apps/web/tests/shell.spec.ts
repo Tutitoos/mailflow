@@ -144,6 +144,26 @@ test("mail shell and admin remain operable", async ({ page }) => {
   }
   await expect(catalogInbox).toBeVisible();
 
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        body: document.body.scrollWidth - document.body.clientWidth,
+        root: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      })),
+    )
+    .toEqual({ body: 0, root: 0 });
+
+  if ((page.viewportSize()?.width ?? 0) >= 1280) {
+    const mailSurface = page.locator(".mail-surface");
+    const expandedLeft = (await mailSurface.boundingBox())?.x ?? 0;
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+    const collapsedLeft = (await mailSurface.boundingBox())?.x ?? 0;
+    expect(expandedLeft - collapsedLeft).toBeGreaterThan(150);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
+      .toBe(0);
+  }
+
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
     await page.getByRole("button", { name: "Settings" }).click();
   } else {

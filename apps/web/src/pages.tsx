@@ -189,7 +189,7 @@ function Header({
   return (
     <header className="topbar">
       <div className="topbar-start">
-        <Button size="icon" aria-label="Toggle navigation" onClick={onMenu}>
+        <Button size="icon" aria-label={t("toggleNavigation")} onClick={onMenu}>
           <Menu size={19} />
         </Button>
         <Brand />
@@ -265,7 +265,7 @@ function Header({
         >
           <Settings size={18} />
         </Button>
-        <Button size="icon" aria-label="Notifications">
+        <Button size="icon" aria-label={t("notifications")}>
           <Bell size={18} />
         </Button>
         <div className="locale-menu-anchor" ref={localeMenu}>
@@ -311,7 +311,7 @@ function Header({
           <button
             className="avatar"
             type="button"
-            aria-label="Account menu"
+            aria-label={t("accountMenu")}
             aria-haspopup="menu"
             aria-expanded={showAccounts}
             onClick={() => {
@@ -410,12 +410,14 @@ function LabelBranch({
   collapsed,
   onToggle,
   onSelect,
+  t,
 }: {
   node: LabelTreeNode;
   depth: number;
   collapsed: Set<string>;
   onToggle: (path: string) => void;
   onSelect: (label: MailLabel) => void;
+  t: Translator;
 }) {
   const hasChildren = node.children.length > 0;
   const isCollapsed = collapsed.has(node.path);
@@ -426,7 +428,7 @@ function LabelBranch({
           <button
             className="label-disclosure"
             type="button"
-            aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${node.name}`}
+            aria-label={`${t(isCollapsed ? "expandLabel" : "collapseLabel")} ${node.name}`}
             aria-expanded={!isCollapsed}
             onClick={() => onToggle(node.path)}
           >
@@ -456,6 +458,7 @@ function LabelBranch({
               collapsed={collapsed}
               onToggle={onToggle}
               onSelect={onSelect}
+              t={t}
             />
           ))}
         </div>
@@ -514,12 +517,12 @@ function Sidebar({
         <Pencil size={18} />
         <span>{t("compose")}</span>
       </Button>
-      <nav aria-label="Mailboxes" className="nav-list">
+      <nav aria-label={t("mailboxes")} className="nav-list">
         {mailboxItems.map(([key, Icon], index) => {
           const role = key === "allMail" ? "all" : key;
           const mailbox = mailboxByRole.get(role as Mailbox["role"]);
           const count = mailbox?.unreadCount ?? 0;
-          const label = mailbox?.localName || mailbox?.remoteName || t(key);
+          const label = t(key);
           return (
             <button
               aria-label={label}
@@ -549,16 +552,18 @@ function Sidebar({
           <div id="secondary-mailboxes" className="secondary-mailboxes">
             {extraMailboxes.map((mailbox) => {
               const Icon = extraIcons[mailbox.role as keyof typeof extraIcons];
+              const labelKey = mailbox.role === "junk" ? "spam" : mailbox.role;
+              const label = t(labelKey as TranslationKey);
               return (
                 <button
-                  aria-label={mailbox.localName || mailbox.remoteName}
+                  aria-label={label}
                   className="nav-item"
                   type="button"
                   key={mailbox.id}
                   onClick={() => onMailboxSelect(mailbox)}
                 >
                   <Icon size={17} />
-                  <span>{mailbox.localName || mailbox.remoteName}</span>
+                  <span>{label}</span>
                   {mailbox.unreadCount > 0 && <strong>{mailbox.unreadCount}</strong>}
                 </button>
               );
@@ -586,6 +591,7 @@ function Sidebar({
               })
             }
             onSelect={onLabelSelect}
+            t={t}
           />
         ))}
       </nav>
@@ -667,7 +673,7 @@ function MailToolbar({
             )}
           </>
         )}
-        <Button size="icon" aria-label="More actions">
+        <Button size="icon" aria-label={t("moreActions")}>
           <MoreHorizontal size={18} />
         </Button>
       </div>
@@ -735,6 +741,7 @@ function MessageRow({
   onTrash,
   onReadToggle,
   onImportant,
+  locale,
   t,
   actionsEnabled,
 }: {
@@ -748,6 +755,7 @@ function MessageRow({
   onTrash: () => void;
   onReadToggle: () => void;
   onImportant: () => void;
+  locale: Locale;
   t: Translator;
   actionsEnabled: boolean;
 }) {
@@ -835,7 +843,7 @@ function MessageRow({
           {message.messageCount}
         </span>
         <time dateTime={message.lastMessageAt}>
-          {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+          {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
             new Date(message.lastMessageAt),
           )}
         </time>
@@ -961,6 +969,7 @@ function VirtualMessageList({
   onStar,
   onOpen,
   onAction,
+  locale,
   t,
   actionsEnabled,
 }: {
@@ -970,6 +979,7 @@ function VirtualMessageList({
   onStar: (id: string, starred: boolean) => void;
   onOpen: (id: string) => void;
   onAction: (kind: MailActionKind, ids: string[]) => void;
+  locale: Locale;
   t: Translator;
   actionsEnabled: boolean;
 }) {
@@ -1012,6 +1022,7 @@ function VirtualMessageList({
                     message.id,
                   ])
                 }
+                locale={locale}
                 t={t}
                 actionsEnabled={actionsEnabled}
               />
@@ -1679,6 +1690,7 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
                   onSelect={toggleSelection}
                   onOpen={setActiveThreadId}
                   onAction={(kind, ids) => void runAction(kind, ids)}
+                  locale={locale}
                   t={t}
                   onStar={(id, isStarred) => void runAction(isStarred ? "unstar" : "star", [id])}
                   actionsEnabled={canActions}

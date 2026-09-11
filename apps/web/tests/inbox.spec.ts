@@ -330,6 +330,14 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   await expect(page.getByText("Sender 0", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => Boolean(eventSocket)).toBe(true);
   expect(await page.locator(".message-row").count()).toBeLessThan(100);
+  const visualRegressionProjects = new Set(["desktop-large", "tablet-portrait", "mobile"]);
+  if (visualRegressionProjects.has(testInfo.project.name)) {
+    await expect(page).toHaveScreenshot(`inbox-${testInfo.project.name}-en.png`, {
+      animations: "disabled",
+      caret: "hide",
+      maxDiffPixelRatio: 0.05,
+    });
+  }
 
   await page.getByRole("button", { name: "Account menu" }).click();
   await expect(page.getByRole("menu", { name: "Accounts" })).toContainText("Personal");
@@ -343,6 +351,34 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   );
   await page.getByRole("menuitemradio", { name: "ES Spanish" }).click();
   await expect(page.getByRole("button", { name: "ES", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alternar navegación" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Notificaciones" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Menú de cuenta" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Más acciones" })).toBeVisible();
+  await expect(page.locator("time").first()).toContainText("sept");
+  if (visualRegressionProjects.has(testInfo.project.name)) {
+    await expect(page).toHaveScreenshot(`inbox-${testInfo.project.name}-es.png`, {
+      animations: "disabled",
+      caret: "hide",
+      maxDiffPixelRatio: 0.05,
+    });
+  }
+  if ((page.viewportSize()?.width ?? 0) >= 1200) {
+    await expect(page.getByRole("navigation", { name: "Buzones" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Recibidos", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Developer" })).toBeHidden();
+    await page.getByRole("button", { name: "Expandir Buzones" }).click();
+    await expect(page.getByRole("button", { name: "Developer" })).toBeVisible();
+    await page.getByRole("button", { name: "Contraer Buzones" }).click();
+    await page.getByRole("button", { name: "Más", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Papelera", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Spam", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Más", exact: true }).click();
+  }
+  await page.locator(".message-row").first().click({ button: "right" });
+  await expect(page.getByRole("menu", { name: /Acciones para Sender 0/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Abrir", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "ES", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "EN Inglés" }).click();
 

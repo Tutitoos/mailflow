@@ -28,7 +28,14 @@ test("creates the only owner in Spanish without persisting secrets", async ({ pa
       (violation) => violation.impact === "critical" || violation.impact === "serious",
     ),
   ).toEqual([]);
-  await page.getByRole("button", { name: "EN" }).click();
+  await page.getByRole("button", { name: "Language" }).click();
+  const languageMenu = page.getByRole("menu", { name: "Language" });
+  await expect(languageMenu).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "EN English" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByRole("menuitemradio", { name: "ES Spanish" }).click();
   await expect(
     page.getByRole("heading", { name: "Crea el propietario de Mailflow" }),
   ).toBeVisible();

@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { isDesktopRuntime } from "./desktop-runtime";
 import type { Locale } from "./i18n";
 
@@ -8,6 +7,11 @@ type NativeSession = {
 };
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
+async function invokeDesktop<T>(command: string, arguments_?: Record<string, unknown>) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return arguments_ ? invoke<T>(command, arguments_) : invoke<T>(command);
+}
 
 function cacheToken(session: NativeSession) {
   const encoded = session.accessToken.split(".")[1];
@@ -28,7 +32,7 @@ function cacheToken(session: NativeSession) {
 
 export async function nativeRequestHeaders(): Promise<Record<string, string>> {
   if (!isDesktopRuntime()) return {};
-  const installation = await invoke<string>("native_session_identity");
+  const installation = await invokeDesktop<string>("native_session_identity");
   return { "x-mailflow-native": "1", "x-mailflow-installation": installation };
 }
 
@@ -36,14 +40,14 @@ export async function activateDesktopSession(response: Response): Promise<Native
   if (!isDesktopRuntime()) return null;
   const sessionToken = response.headers.get("set-auth-token");
   if (!sessionToken) throw new Error("native_session_missing");
-  const session = await invoke<NativeSession>("native_session_activate", { sessionToken });
+  const session = await invokeDesktop<NativeSession>("native_session_activate", { sessionToken });
   cacheToken(session);
   return session;
 }
 
 export async function currentDesktopSession(): Promise<NativeSession | null> {
   if (!isDesktopRuntime()) return null;
-  const session = await invoke<NativeSession | null>("native_session_current");
+  const session = await invokeDesktop<NativeSession | null>("native_session_current");
   if (session) cacheToken(session);
   else cachedAccessToken = null;
   return session;
@@ -60,7 +64,7 @@ export async function desktopAccessToken(): Promise<string | null> {
 export async function logoutDesktopSession() {
   if (!isDesktopRuntime()) return false;
   try {
-    await invoke("native_session_logout");
+    await invokeDesktop("native_session_logout");
   } finally {
     cachedAccessToken = null;
   }
@@ -70,7 +74,7 @@ export async function logoutDesktopSession() {
 export async function forgetDesktopSession() {
   if (!isDesktopRuntime()) return;
   try {
-    await invoke("native_session_forget_local");
+    await invokeDesktop("native_session_forget_local");
   } finally {
     cachedAccessToken = null;
   }
@@ -78,11 +82,11 @@ export async function forgetDesktopSession() {
 
 export async function beginDesktopPasskey(name: string): Promise<unknown | null> {
   if (!isDesktopRuntime()) return null;
-  return invoke("native_passkey_begin", { name });
+  return invokeDesktop("native_passkey_begin", { name });
 }
 
 export async function finishDesktopPasskey(name: string, response: unknown): Promise<boolean> {
   if (!isDesktopRuntime()) return false;
-  await invoke("native_passkey_finish", { name, response });
+  await invokeDesktop("native_passkey_finish", { name, response });
   return true;
 }

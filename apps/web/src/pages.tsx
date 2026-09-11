@@ -31,13 +31,21 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { registerPasskey, signOut } from "./auth-client";
 import { Button } from "./components/ui/button";
-import { type ComposeContext, ComposePanel } from "./composer";
-import { ConversationView } from "./conversation";
+import type { ComposeContext } from "./composer";
 import { desktopConnectivityEvent, isDesktopCacheFallback } from "./desktop-cache";
 import {
   listenForNativeExperience,
@@ -85,6 +93,11 @@ import {
 import { type SearchSyntaxError, searchSuggestions, validateSearchSyntax } from "./search-syntax";
 
 type Translator = (key: TranslationKey) => string;
+
+const ComposePanel = lazy(async () => ({ default: (await import("./composer")).ComposePanel }));
+const ConversationView = lazy(async () => ({
+  default: (await import("./conversation")).ConversationView,
+}));
 
 const inboxCategories: Array<{
   id: MailCategory;
@@ -1531,25 +1544,34 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         />
         <main className="mail-surface">
           {activeThreadId && activeAccountId ? (
-            <ConversationView
-              accountId={activeAccountId}
-              threadId={activeThreadId}
-              locale={locale}
-              onBack={() => setActiveThreadId(null)}
-              onCompose={(context) => {
-                setComposeContext(context);
-                setComposeOpen(true);
-                setSidebarCollapsed(true);
-              }}
-              onAction={(kind, labelId) => {
-                void runAction(kind, [activeThreadId], labelId);
-                if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
-              }}
-              canActions={canActions}
-              canCompose={canCompose}
-              canAttachments={canAttachments}
-              labelId={actionLabelId}
-            />
+            <Suspense
+              fallback={
+                <div className="mail-state" role="status">
+                  <span className="loading-spinner" />
+                  <strong>{t("loadingConversation")}</strong>
+                </div>
+              }
+            >
+              <ConversationView
+                accountId={activeAccountId}
+                threadId={activeThreadId}
+                locale={locale}
+                onBack={() => setActiveThreadId(null)}
+                onCompose={(context) => {
+                  setComposeContext(context);
+                  setComposeOpen(true);
+                  setSidebarCollapsed(true);
+                }}
+                onAction={(kind, labelId) => {
+                  void runAction(kind, [activeThreadId], labelId);
+                  if (kind === "archive" || kind === "move_to_trash") setActiveThreadId(null);
+                }}
+                canActions={canActions}
+                canCompose={canCompose}
+                canAttachments={canAttachments}
+                labelId={actionLabelId}
+              />
+            </Suspense>
           ) : (
             <>
               <MailToolbar
@@ -1706,17 +1728,26 @@ export function MailPage({ initialLocale = "en" }: { initialLocale?: Locale }) {
         </main>
       </div>
       {composeOpen && activeAccountId && canCompose && (
-        <ComposePanel
-          accountId={activeAccountId}
-          context={composeContext}
-          locale={locale}
-          maximized={composeMaximized}
-          onMaximize={() => setComposeMaximized((value) => !value)}
-          onClose={() => {
-            setComposeOpen(false);
-            setComposeMaximized(false);
-          }}
-        />
+        <Suspense
+          fallback={
+            <div className="compose-panel" role="status">
+              <span className="loading-spinner" />
+              <strong>{t("loadingComposer")}</strong>
+            </div>
+          }
+        >
+          <ComposePanel
+            accountId={activeAccountId}
+            context={composeContext}
+            locale={locale}
+            maximized={composeMaximized}
+            onMaximize={() => setComposeMaximized((value) => !value)}
+            onClose={() => {
+              setComposeOpen(false);
+              setComposeMaximized(false);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

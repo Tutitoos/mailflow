@@ -1,5 +1,5 @@
-import { Check, KeyRound, Languages, LoaderCircle, LockKeyhole } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
+import { Check, ChevronDown, KeyRound, Languages, LoaderCircle, LockKeyhole } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   AuthRequestError,
   createOwner,
@@ -18,11 +18,72 @@ import { Brand } from "./pages";
 type Phase = "loading" | "setup" | "sign-in" | "recovery" | "app" | "error";
 type Translator = (key: TranslationKey) => string;
 
-function LanguageButton({ locale, onChange }: { locale: Locale; onChange: () => void }) {
+function LanguageButton({
+  locale,
+  onChange,
+}: {
+  locale: Locale;
+  onChange: (locale: Locale) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const t: Translator = (key) => translate(locale, key);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
   return (
-    <Button className="locale-button" size="sm" onClick={onChange} type="button">
-      <Languages size={16} /> {locale.toUpperCase()}
-    </Button>
+    <div className="locale-menu-anchor" ref={menu}>
+      <Button
+        className="locale-button"
+        size="sm"
+        type="button"
+        aria-label={t("language")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Languages size={16} />
+        <span>{locale.toUpperCase()}</span>
+        <ChevronDown size={13} />
+      </Button>
+      {open && (
+        <div className="locale-popover ui-menu" role="menu" aria-label={t("language")}>
+          {(["en", "es"] as const).map((option) => (
+            <button
+              className="ui-menu-item locale-option"
+              type="button"
+              role="menuitemradio"
+              aria-checked={locale === option}
+              key={option}
+              onClick={() => {
+                onChange(option);
+                setOpen(false);
+              }}
+            >
+              <span className="locale-code">{option.toUpperCase()}</span>
+              <span>{t(option === "en" ? "languageEnglish" : "languageSpanish")}</span>
+              <span className="menu-check" aria-hidden="true">
+                {locale === option ? "✓" : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -32,12 +93,12 @@ function AuthFrame({
   children,
 }: {
   locale: Locale;
-  onLocaleChange: () => void;
+  onLocaleChange: (locale: Locale) => void;
   children: ReactNode;
 }) {
   return (
     <main className="auth-shell">
-      <header className="auth-header">
+      <header className="auth-header z-10">
         <Brand />
         <LanguageButton locale={locale} onChange={onLocaleChange} />
       </header>
@@ -380,10 +441,7 @@ export function AuthGate({ renderApp }: { renderApp: (locale: Locale) => ReactNo
   if (phase === "app") return renderApp(locale);
 
   return (
-    <AuthFrame
-      locale={locale}
-      onLocaleChange={() => setLocale((value) => (value === "en" ? "es" : "en"))}
-    >
+    <AuthFrame locale={locale} onLocaleChange={setLocale}>
       {phase === "loading" && (
         <section className="auth-state" aria-live="polite">
           <LoaderCircle className="spin" size={22} />

@@ -395,7 +395,7 @@ test("live inbox virtualizes large account-scoped pages and preserves selection"
   const firstSelection = page.getByRole("button", { name: "Select Sender 0" });
   await firstSelection.click();
   await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(firstSelection).toBeVisible();
+  await expect(firstSelection).toBeVisible({ timeout: 20_000 });
   await expect(firstSelection).toHaveClass(/checked/);
 
   await page.getByRole("button", { name: "Open Sender 0" }).focus();

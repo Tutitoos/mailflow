@@ -37,7 +37,6 @@
   --sidebar-width: 248px;
   --sidebar-collapsed-width: 64px;
   --topbar-height: 64px;
-  --rail-width: 48px;
 }
 
 * {
@@ -119,6 +118,14 @@ select:focus-visible {
   background: var(--surface-overlay);
   box-shadow: var(--shadow-overlay);
   color: var(--text);
+  transform-origin: top right;
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }
 .ui-menu {
   min-width: 220px;
@@ -137,6 +144,21 @@ select:focus-visible {
   color: var(--text);
   text-align: left;
   cursor: default;
+  font-size: 13px;
+  line-height: 1.2;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out);
+}
+.ui-menu-item > svg {
+  flex: 0 0 auto;
+}
+.ui-menu-item > span:not(.menu-check):not(.provider-icon):not(.online-dot):not(.offline-dot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ui-menu-item:hover,
 .ui-menu-item:focus-visible,
@@ -362,8 +384,34 @@ select:focus-visible {
   margin: 0 10px;
 }
 .locale-button {
-  font-family: ui-monospace, "SFMono-Regular", monospace;
+  min-width: 72px;
+  justify-content: center;
+  gap: 6px;
   color: var(--muted);
+}
+.locale-menu-anchor {
+  position: relative;
+}
+.locale-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 184px;
+}
+.locale-option {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 16px;
+}
+.locale-code {
+  color: var(--muted);
+  font:
+    600 11px ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+.menu-check {
+  color: var(--text);
+  text-align: right;
 }
 .avatar {
   width: 34px;
@@ -383,15 +431,16 @@ select:focus-visible {
   z-index: 80;
   top: calc(100% + 10px);
   right: 0;
-  width: min(340px, calc(100vw - 24px));
-  padding: 8px;
+  width: min(304px, calc(100vw - 24px));
+  padding: 6px;
 }
 .account-popover header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 10px;
+  padding: 7px 9px 9px;
   color: var(--text);
+  font-size: 13px;
   font-weight: 650;
 }
 .account-popover header small,
@@ -407,17 +456,18 @@ select:focus-visible {
 .account-option small {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app-body {
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   gap: 0;
   padding: 0 12px 12px 0;
 }
 .app-body.sidebar-is-collapsed {
-  grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
 }
 .sidebar {
   min-width: 0;
@@ -440,6 +490,10 @@ select:focus-visible {
 .sidebar.collapsed .nav-item strong,
 .sidebar.collapsed .sidebar-section-title,
 .sidebar.collapsed .accounts {
+  display: none;
+}
+.sidebar.collapsed .labels,
+.sidebar.collapsed .secondary-mailboxes {
   display: none;
 }
 .compose-button {
@@ -478,6 +532,13 @@ select:focus-visible {
 .nav-item:hover {
   background: #111;
   color: white;
+}
+.nav-item:disabled {
+  color: #5c5c63;
+  cursor: default;
+}
+.nav-item:disabled:hover {
+  background: transparent;
 }
 .nav-item.active {
   background: #1d1d1f;
@@ -522,6 +583,18 @@ select:focus-visible {
 }
 .label-disclosure[aria-expanded="true"] svg {
   transform: rotate(90deg);
+}
+.label-disclosure svg,
+.more-toggle svg {
+  transition: transform 160ms var(--ease-out);
+}
+.more-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.secondary-mailboxes {
+  display: grid;
+  gap: 2px;
+  padding-left: 18px;
 }
 .label-item {
   grid-template-columns: 20px minmax(0, 1fr) auto;
@@ -568,7 +641,7 @@ select:focus-visible {
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 9px 0 0 9px;
+  border-radius: 9px;
 }
 .mail-toolbar {
   height: 48px;
@@ -668,7 +741,7 @@ select:focus-visible {
   position: relative;
   min-height: 45px;
   display: grid;
-  grid-template-columns: 22px 24px 24px minmax(0, 1fr) 108px;
+  grid-template-columns: 22px 24px 24px minmax(0, 1fr);
   align-items: center;
   gap: 5px;
   padding: 0 12px;
@@ -713,7 +786,7 @@ select:focus-visible {
   min-width: 0;
   min-height: 44px;
   display: grid;
-  grid-template-columns: minmax(120px, 190px) minmax(180px, 1fr) auto 24px 72px;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) auto 24px 64px;
   align-items: center;
   gap: 10px;
   padding: 0;
@@ -780,23 +853,40 @@ select:focus-visible {
   font-weight: 500;
 }
 .quick-actions {
-  position: static;
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 8px;
+  height: 36px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  visibility: hidden;
+  padding-left: 8px;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(3px);
+  transition:
+    opacity 120ms ease,
+    transform 140ms var(--ease-out);
 }
-.message-row:hover .quick-actions {
-  visibility: visible;
+.message-row:hover .quick-actions,
+.message-row:focus-within .quick-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
 }
 .message-context-menu {
   position: fixed;
   z-index: 120;
-  width: 216px;
-  padding: 6px;
+  width: 204px;
+  padding: 5px;
+  transform-origin: top left;
 }
 .message-context-menu .ui-menu-item {
   width: 100%;
+  min-height: 34px;
+  padding-inline: 9px;
 }
 .message-context-menu .danger {
   color: #fca5a5;
@@ -850,22 +940,6 @@ select:focus-visible {
     animation: none;
     border-top-color: var(--border-strong);
   }
-}
-.context-rail {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding-top: 6px;
-  border: 1px solid var(--border);
-  border-left: 0;
-  border-radius: 0 9px 9px 0;
-  background: #070707;
-}
-.rail-spacer {
-  flex: 1;
 }
 .conversation {
   height: 100%;
@@ -2159,12 +2233,6 @@ select:focus-visible {
   .sidebar .accounts {
     display: none;
   }
-  .context-rail {
-    display: none;
-  }
-  .mail-surface {
-    border-radius: 9px;
-  }
   .message-content {
     grid-template-columns: 150px minmax(180px, 1fr) 24px 64px;
   }
@@ -2177,7 +2245,7 @@ select:focus-visible {
     grid-template-columns: auto 1fr auto;
     gap: 8px;
   }
-  .topbar-actions > :not(.account-menu-anchor):not(.locale-button) {
+  .topbar-actions > :not(.account-menu-anchor):not(.locale-menu-anchor) {
     display: none;
   }
   .app-body {
@@ -2287,7 +2355,14 @@ select:focus-visible {
     display: none;
   }
   .topbar .locale-button {
+    min-width: 42px;
+    padding-inline: 8px;
+  }
+  .topbar .locale-button > svg:first-child {
     display: none;
+  }
+  .topbar .locale-button > svg:last-child {
+    width: 11px;
   }
   .app-body {
     padding: 0;

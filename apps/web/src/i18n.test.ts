@@ -14,6 +14,10 @@ describe("translations", () => {
     resetTranslationCatalogForTests();
     expect(translate("en", "inbox")).toBe("Inbox");
     expect(translate("es", "inbox")).toBe("Recibidos");
+    expect(translate("es", "accountMenu")).toBe("Menú de cuenta");
+    expect(translate("es", "moreActions")).toBe("Más acciones");
+    expect(translate("es", "trash")).toBe("Papelera");
+    expect(translate("es", "formatting")).toBe("Formato");
     expect(Object.keys(builtinTranslations.es).sort()).toEqual(
       Object.keys(builtinTranslations.en).sort(),
     );

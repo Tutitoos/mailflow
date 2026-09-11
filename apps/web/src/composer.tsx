@@ -78,18 +78,19 @@ function EditorReferencePlugin({ onReady }: { onReady: (editor: LexicalEditor) =
   return null;
 }
 
-function FormatToolbar({ editor }: { editor: LexicalEditor | null }) {
+function FormatToolbar({ editor, locale }: { editor: LexicalEditor | null; locale: Locale }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const format = (kind: "bold" | "italic" | "underline") =>
     editor?.dispatchCommand(FORMAT_TEXT_COMMAND, kind);
   return (
-    <div className="compose-format" aria-label="Formatting" role="toolbar">
-      <Button size="icon" aria-label="Bold" onClick={() => format("bold")}>
+    <div className="compose-format" aria-label={t("formatting")} role="toolbar">
+      <Button size="icon" aria-label={t("bold")} onClick={() => format("bold")}>
         <Bold size={15} />
       </Button>
-      <Button size="icon" aria-label="Italic" onClick={() => format("italic")}>
+      <Button size="icon" aria-label={t("italic")} onClick={() => format("italic")}>
         <Italic size={15} />
       </Button>
-      <Button size="icon" aria-label="Underline" onClick={() => format("underline")}>
+      <Button size="icon" aria-label={t("underline")} onClick={() => format("underline")}>
         <Underline size={15} />
       </Button>
     </div>
@@ -534,7 +535,7 @@ export function ComposePanel({
               >
                 <Send size={16} /> {t("send")}
               </Button>
-              <FormatToolbar editor={editor} />
+              <FormatToolbar editor={editor} locale={locale} />
               <input
                 ref={fileInput}
                 className="compose-file-input"

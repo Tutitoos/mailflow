@@ -219,7 +219,7 @@ jobs:
           mkdir -p release-digests
           jq -n --arg name '${{ matrix.name }}' --arg image "${IMAGE,,}" --arg digest "$DIGEST" \
             '{name:$name,image:$image,digest:$digest}' > "release-digests/${{ matrix.name }}.json"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: container-digest-${{ matrix.name }}
           path: |
@@ -297,7 +297,7 @@ jobs:
           subject-checksums: release-evidence/container-SHA256SUMS
       - name: Retain the signed provenance bundle
         run: cp '${{ steps.evidence-provenance.outputs.bundle-path }}' release-evidence/container-provenance.sigstore.json
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: container-release-${{ github.ref_name }}
           path: release-evidence/*

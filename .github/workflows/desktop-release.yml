@@ -299,7 +299,7 @@ jobs:
             '${{ steps.artifacts.outputs.release_root }}/macos-sbom-attestation.sigstore.json'
 
       - name: Retain verified workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Mailflow-${{ env.RELEASE_VERSION }}-macOS-universal
           path: ${{ steps.artifacts.outputs.release_root }}/*

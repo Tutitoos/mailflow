@@ -196,7 +196,7 @@ jobs:
             --config "$MAILFLOW_TAURI_RELEASE_CONFIG"
 
       - id: syft
-        uses: anchore/sbom-action/download-syft@v0.24.0
+        uses: anchore/sbom-action/download-syft@v0.24.2
 
       - uses: sigstore/cosign-installer@v4.1.2
 

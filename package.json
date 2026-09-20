@@ -18,7 +18,7 @@
     "test": "bun run --cwd apps/web test && bun run --cwd services/auth test && bun test scripts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.12",
+    "@biomejs/biome": "2.5.14",
     "@typescript/typescript6": "6.0.2",
     "typescript": "7.0.2"
   }

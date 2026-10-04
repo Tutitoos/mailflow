@@ -12,15 +12,15 @@ tauri-build = { version = "2.5.6", features = [] }
 url = "2.5.8"
 
 [dependencies]
-aes-gcm = "0.10.3"
-getrandom = "0.3.4"
+aes-gcm = "0.11.1"
+getrandom = "0.4.3"
 hex = "0.4.3"
-rusqlite = { version = "0.37.0", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-deep-link = "2.4.10"
 tauri-plugin-opener = "2.5.5"
@@ -39,8 +39,8 @@ tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
 tauri-plugin-window-state = "2.4.1"
 
 [dev-dependencies]
-base64 = "0.22.1"
-minisign-verify = "0.2.5"
+base64 = "0.23.1"
+minisign-verify = "0.3.0"
 tempfile = "3.27.0"
 
 [features]

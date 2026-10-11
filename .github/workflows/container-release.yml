@@ -191,7 +191,7 @@ jobs:
       - name: Prepare release evidence directory
         run: mkdir -p release-digests
       - name: Generate downloadable CycloneDX SBOM
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.3
         with:
           image: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}@${{ steps.build.outputs.digest }}
           format: cyclonedx-json

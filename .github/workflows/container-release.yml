@@ -182,7 +182,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=container-${{ matrix.name }}
           provenance: mode=max
           sbom: true
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Sign the immutable manifest digest
         env:
           IMAGE: ${{ env.IMAGE_NAMESPACE }}/mailflow-${{ matrix.name }}
@@ -258,7 +258,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Verify digests, architectures, signatures, and attestations
         env:
           CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/container-release.yml@${{ github.ref }}
